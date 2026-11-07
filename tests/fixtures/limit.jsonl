@@ -1,0 +1,4 @@
+{"type":"system","subtype":"init","session_id":"SESSION","tools":[],"mcp_servers":[],"model":"claude-sonnet-5-5","permissionMode":"dontAsk","apiKeySource":"none"}
+{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","rateLimitType":"five_hour","resetsAt":1794086400},"session_id":"SESSION"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"You've hit your limit · resets 5pm"}],"usage":{"input_tokens":0,"output_tokens":0}},"session_id":"SESSION"}
+{"type":"result","subtype":"success","is_error":true,"result":"You've hit your limit · resets 5pm","session_id":"SESSION","num_turns":1,"usage":{"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":0},"api_error_status":429}

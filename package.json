@@ -1,0 +1,63 @@
+{
+  "name": "jarvis",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Desktop AI assistant driven by the Claude Code CLI",
+  "main": "dist/app/main.cjs",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "npm run build && node scripts/start.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "dist": "npm run build && electron-builder",
+    "measure": "esbuild scripts/measure-baseline.ts --bundle --platform=node --format=esm --target=node22 --packages=external --outfile=dist/measure.mjs && node dist/measure.mjs"
+  },
+  "build": {
+    "appId": "dev.jarvis.desktop",
+    "productName": "Jarvis",
+    "files": [
+      "dist/**",
+      "docs/**",
+      "package.json"
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "minimumSystemVersion": "13.0"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "asarUnpack": [
+      "dist/gateway/**"
+    ],
+    "directories": {
+      "output": "release"
+    }
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "@napi-rs/keyring": "^2.1.2",
+    "fflate": "^0.8.2",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.10"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "electron-winstaller@5.4.0": true
+  },
+  "type": "module"
+}

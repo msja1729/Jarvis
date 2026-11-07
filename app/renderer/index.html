@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
+    <title>Jarvis</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="nebula" aria-hidden="true">
+      <i class="f1"></i><i class="f2"></i><i class="f3"></i><i class="f4"></i><i class="f5"></i><i class="f6"></i><i class="f7"></i>
+      <i class="grain-bg"></i>
+    </div>
+    <div id="app">
+      <nav id="nav" class="glass">
+        <div class="brand">
+          <span class="brand-orb" aria-hidden="true"></span>
+          <span>JARVIS</span>
+        </div>
+        <button data-view="chat" class="active">
+          <svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z" /></svg><span>Chat</span>
+        </button>
+        <button data-view="hub">
+          <svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5" /><rect x="13" y="4" width="7" height="7" rx="1.5" /><rect x="4" y="13" width="7" height="7" rx="1.5" /><path d="M16.5 13v7M13 16.5h7" /></svg><span>Tool Hub</span>
+        </button>
+        <button data-view="whiteboard">
+          <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 21l4-4 4 4M7 13l3-3 2 2 4-4" /></svg><span>Whiteboard</span>
+        </button>
+        <button data-view="usage">
+          <svg viewBox="0 0 24 24"><path d="M5 20V11M10 20V5M15 20v-7M20 20V8" /></svg><span>Usage</span>
+        </button>
+        <button data-view="activity">
+          <svg viewBox="0 0 24 24"><path d="M3 12h4l3-7 4 14 3-7h4" /></svg><span>Activity</span>
+        </button>
+        <button data-view="settings">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" /></svg><span>Settings</span>
+        </button>
+        <div class="spacer"></div>
+        <button id="open-box" title="Floating box (Ctrl/Cmd+Shift+Space)">
+          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" /><rect x="12" y="12" width="7" height="7" rx="1" /></svg><span>Floating box</span>
+        </button>
+      </nav>
+
+      <div id="frame">
+        <header id="topbar" class="glass">
+          <h1 id="page-title">Chat</h1>
+          <div class="spacer"></div>
+          <div class="chip" title="Jarvis status"><span id="status-dot" class="dot ok"></span><span id="status-text">Ready</span></div>
+          <div class="chip" title="Tokens used today"><span class="chip-label">Today</span><b id="chip-tokens">–</b></div>
+          <div class="chip" title="Connected apps"><span class="chip-label">Apps</span><b id="chip-apps">–</b></div>
+        </header>
+
+        <main>
+          <section id="view-chat" class="view active">
+            <div id="notice" class="notice hidden"></div>
+            <div id="messages" aria-live="polite">
+              <div id="empty" class="empty">
+                <div class="orb" id="orb"><span>AI</span></div>
+                <p class="empty-title">How can I help?</p>
+                <div class="suggestions">
+                  <button class="suggest" data-suggest="Read my 5 latest mails">Read my 5 latest mails</button>
+                  <button class="suggest" data-suggest="What's on my calendar today?">What's on my calendar today?</button>
+                  <button class="suggest" data-suggest="Explain binary search on the whiteboard">Explain binary search on the whiteboard</button>
+                  <button class="suggest" data-suggest="Look at my screen and explain this">Look at my screen and explain this</button>
+                </div>
+              </div>
+            </div>
+            <div id="progress" class="progress hidden"><span class="mini-orb"></span><span id="progress-text"></span></div>
+            <form id="composer" class="glass">
+              <button type="button" id="mic" class="mic" title="Talk to Jarvis (or press the push-to-talk shortcut from any app)" aria-label="Talk">
+                <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
+              </button>
+              <input id="input" autocomplete="off" placeholder="Ask Jarvis… e.g. “read my 5 latest mails”" />
+              <button type="submit" id="send" class="primary">Send</button>
+            </form>
+          </section>
+
+          <section id="view-hub" class="view">
+            <p class="lead">Choose which apps Jarvis can use and what it may do in each. Changes apply on the next request.</p>
+            <h2>Accounts</h2>
+            <p class="muted">Sign in once per account. Google covers Gmail and Google Calendar; Microsoft covers Outlook mail and calendar.</p>
+            <div id="accounts" class="grid"></div>
+            <div id="signin-wait" class="card wait hidden">
+              <b>Finish signing in in your browser…</b>
+              <span class="muted">A browser tab has opened. When you are done there, come back here.</span>
+              <div><button id="signin-cancel">Cancel</button></div>
+            </div>
+            <div id="hub-error" class="error"></div>
+
+            <h2>Your apps</h2>
+            <div id="hub-list" class="stack-list"></div>
+
+            <h2>Add more apps</h2>
+            <div id="suggested" class="grid"></div>
+            <details class="card add-app">
+              <summary>Add another app by address (MCP server)</summary>
+              <form id="add-app">
+                <label>Name <input name="name" required placeholder="My tool" /></label>
+                <label>Server address <input name="url" placeholder="https://example.com/mcp" /></label>
+                <label>…or a command to start it <input name="command" placeholder="npx -y some-mcp-server" /></label>
+                <label>API key, if the app gave you one (kept in your system keychain) <input name="apiKey" type="password" autocomplete="off" /></label>
+                <p class="muted">No key? Leave it empty. If the app needs you to sign in, your browser opens.</p>
+                <button type="submit" class="primary">Add app</button>
+                <div id="add-error" class="error"></div>
+              </form>
+            </details>
+          </section>
+
+          <section id="view-whiteboard" class="view">
+            <div class="wb-toolbar glass">
+              <div class="seg" role="group" aria-label="Tool">
+                <button class="tool active" data-tool="pen" title="Pen">
+                  <svg viewBox="0 0 24 24"><path d="M4 20l4-1 11-11-3-3L5 16z" /></svg>Pen
+                </button>
+                <button class="tool" data-tool="eraser" title="Eraser">
+                  <svg viewBox="0 0 24 24"><path d="M7 20h12M5 15l8-8 6 6-6 6H9z" /></svg>Eraser
+                </button>
+              </div>
+              <span class="sep"></span>
+              <div class="swatches" role="group" aria-label="Ink color">
+                <button class="swatch active" data-pen="white" title="White"></button>
+                <button class="swatch" data-pen="cyan" title="Cyan"></button>
+                <button class="swatch" data-pen="magenta" title="Magenta"></button>
+                <button class="swatch" data-pen="green" title="Green"></button>
+                <button class="swatch" data-pen="yellow" title="Yellow"></button>
+              </div>
+              <span class="sep"></span>
+              <div class="seg" role="group" aria-label="Size">
+                <button class="size" data-size="2" title="Fine"><span style="width:4px;height:4px"></span></button>
+                <button class="size active" data-size="4" title="Medium"><span style="width:7px;height:7px"></span></button>
+                <button class="size" data-size="8" title="Bold"><span style="width:11px;height:11px"></span></button>
+              </div>
+              <span class="sep"></span>
+              <button id="wb-undo">Undo</button>
+              <button id="wb-clear">Clear</button>
+              <span class="spacer"></span>
+              <button id="wb-png">Save PNG</button>
+              <button id="wb-pdf">Save PDF</button>
+            </div>
+            <div class="board-wrap">
+              <canvas id="board" aria-label="Glass whiteboard"></canvas>
+            </div>
+            <p class="muted board-hint">Ask “explain … on the whiteboard”, or draw here and ask “what did I draw?”</p>
+          </section>
+
+          <section id="view-usage" class="view">
+            <div id="usage-stats" class="stats"></div>
+            <div id="usage-rings" class="rings"></div>
+            <div class="card chart-card">
+              <div class="card-head">
+                <h3>Tokens per request</h3>
+                <span class="muted" id="chart-sub"></span>
+                <span class="spacer"></span>
+                <span class="key"><span class="key-mark warn">▲</span>above 3× baseline</span>
+              </div>
+              <div id="usage-chart" class="chart"></div>
+              <div id="chart-tip" class="tip hidden" role="tooltip"></div>
+            </div>
+            <h2>Most expensive today</h2>
+            <div class="table-wrap"><table id="usage-top"></table></div>
+            <h2>Recent requests</h2>
+            <div class="table-wrap"><table id="usage-table"></table></div>
+          </section>
+
+          <section id="view-activity" class="view">
+            <p class="lead">Every action Jarvis took or was blocked from taking.</p>
+            <div class="table-wrap"><table id="activity-table"></table></div>
+          </section>
+
+          <section id="view-settings" class="view">
+            <div class="card settings-card">
+              <label>Model
+                <select id="model-override">
+                  <option value="">Automatic (haiku for look-ups, sonnet for drafting)</option>
+                  <option value="haiku">Always haiku</option>
+                  <option value="sonnet">Always sonnet</option>
+                </select>
+              </label>
+              <label class="switch-row">
+                <span>Speak replies aloud</span>
+                <input type="checkbox" id="voice-output" class="switch" />
+              </label>
+            </div>
+            <h2>Voice</h2>
+            <div class="card settings-card">
+              <div class="app-head"><h3>Speech engine (runs on this computer)</h3><span id="speech-pill" class="pill">Checking...</span></div>
+              <p class="help">Speech is turned into text with whisper.cpp on your computer. Your voice is never sent to Claude, only the text.</p>
+              <div id="speech-help" class="help hidden"></div>
+              <div class="row-buttons">
+                <button id="speech-install" class="primary hidden">Download speech engine (about 155 MB)</button>
+                <button id="speech-check">Check again</button>
+              </div>
+              <div id="speech-progress" class="meter-bar hidden"><i></i><span></span></div>
+              <label>Push-to-talk shortcut (works in any app)
+                <div class="row-buttons">
+                  <input id="ptt-hotkey" placeholder="Control+Alt+Space" autocomplete="off" />
+                  <button id="ptt-save">Save</button>
+                </div>
+              </label>
+              <p class="help">Press the shortcut, speak, and Jarvis stops listening after a short pause (or press it again). The answer appears in the floating box.</p>
+              <div id="ptt-error" class="error"></div>
+            </div>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <div id="voice-card" class="voice-card hidden" aria-live="polite">
+      <div class="vc-head">
+        <span class="mini-orb"></span><b>Jarvis</b>
+        <span class="spacer"></span>
+        <button id="vc-open" class="link" type="button">Open Jarvis</button>
+        <button id="vc-close" class="vc-x" type="button" aria-label="Close">×</button>
+      </div>
+      <div class="vc-you"><span class="muted">You said</span> <span id="vc-you"></span></div>
+      <div id="vc-status" class="vc-status hidden"><span class="dots"><i></i><i></i><i></i></span><span id="vc-status-text"></span></div>
+      <div id="vc-answer" class="vc-answer"></div>
+    </div>
+
+    <div id="setup" class="overlay hidden">
+      <div class="dialog glass">
+        <div class="orb small"><span>AI</span></div>
+        <h1>Set up Jarvis</h1>
+        <pre id="setup-text"></pre>
+        <div class="actions">
+          <button id="setup-retry">Check again</button>
+          <button id="setup-test" class="primary hidden">Run test request</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="confirm" class="overlay hidden" role="alertdialog" aria-modal="true">
+      <div class="dialog glass">
+        <div id="confirm-badge" class="badge"></div>
+        <h1 id="confirm-title"></h1>
+        <pre id="confirm-body"></pre>
+        <div class="actions">
+          <button id="confirm-no">No</button>
+          <button id="confirm-yes" class="primary">Yes</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="screen-pick" class="overlay hidden" role="dialog" aria-modal="true">
+      <div class="dialog glass wide">
+        <h1>Choose what Jarvis can see</h1>
+        <p id="screen-reason" class="muted"></p>
+        <div id="screen-sources" class="sources"></div>
+        <label class="switch-row"><span>Let me select an area after choosing</span><input type="checkbox" id="screen-area" class="switch" /></label>
+        <p class="muted">Jarvis takes one picture, only now. Its own windows are hidden while it does.</p>
+        <div class="actions"><button id="screen-cancel">Cancel</button></div>
+      </div>
+    </div>
+
+    <div id="area-pick" class="overlay hidden" role="dialog" aria-modal="true">
+      <div class="area-box glass">
+        <div class="area-head"><b>Drag to select the area Jarvis should look at</b>
+          <span class="spacer"></span>
+          <button id="area-cancel">Cancel</button>
+          <button id="area-ok" class="primary" disabled>Use this area</button>
+        </div>
+        <div class="area-stage"><img id="area-img" alt="Screenshot preview" draggable="false" /><div id="area-rect" class="hidden"></div></div>
+      </div>
+    </div>
+
+    <script src="renderer.js"></script>
+  </body>
+</html>

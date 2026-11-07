@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'" />
+    <title>Jarvis indicator</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; font: 13px system-ui, -apple-system, "Segoe UI", sans-serif; color: #f2f4ff; }
+      .pill {
+        margin: 6px;
+        height: calc(100% - 12px);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0 8px 0 14px;
+        border-radius: 999px;
+        background: linear-gradient(140deg, rgb(255 255 255 / 0.14), rgb(255 255 255 / 0.04)), rgb(14 16 44 / 0.86);
+        border: 1px solid rgb(255 255 255 / 0.28);
+        box-shadow: 0 8px 22px rgb(0 0 0 / 0.55), inset 0 1px 0 rgb(255 255 255 / 0.25);
+        -webkit-app-region: drag;
+      }
+      .dot { width: 10px; height: 10px; border-radius: 50%; background: #ff3b5c; box-shadow: 0 0 10px #ff3b5c; animation: pulse 1.2s ease-in-out infinite; flex: none; }
+      .dot.listen { background: #3ee8ff; box-shadow: 0 0 10px #3ee8ff; }
+      .dot.busy { background: #9b6bff; box-shadow: 0 0 10px #9b6bff; }
+      .dot.off { animation: none; background: #a7b0d6; box-shadow: none; }
+      .label { font-weight: 600; letter-spacing: .08em; white-space: nowrap; }
+      .time { font-variant-numeric: tabular-nums; color: #a7b0d6; }
+      .sub { color: #a7b0d6; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+      .meter { flex: 1; height: 6px; border-radius: 3px; background: rgb(255 255 255 / 0.12); overflow: hidden; min-width: 60px; }
+      .meter i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #3ee8ff, #ff4fd8); transition: width .1s; }
+      button {
+        -webkit-app-region: no-drag;
+        font: inherit;
+        font-weight: 600;
+        color: #fff;
+        border: 0;
+        border-radius: 999px;
+        padding: 6px 14px;
+        background: linear-gradient(100deg, #22d3ee, #8b5cf6 55%, #ff4fd8);
+        cursor: pointer;
+      }
+      .hidden { display: none !important; }
+      @keyframes pulse { 50% { opacity: .4; } }
+    </style>
+  </head>
+  <body>
+    <div class="pill">
+      <span id="dot" class="dot"></span>
+      <span id="label" class="label">REC</span>
+      <span id="time" class="time"></span>
+      <span id="sub" class="sub"></span>
+      <span id="meter" class="meter hidden"><i id="level"></i></span>
+      <button id="action">Stop</button>
+    </div>
+    <script src="indicator.js"></script>
+  </body>
+</html>

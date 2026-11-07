@@ -1,0 +1,66 @@
+/** The only bridge between the renderer and the main process. */
+import { contextBridge, ipcRenderer } from 'electron';
+
+const on = (channel: string) => (cb: (payload: any) => void) => {
+  const listener = (_e: unknown, payload: any) => cb(payload);
+  ipcRenderer.on(channel, listener);
+  return () => ipcRenderer.removeListener(channel, listener);
+};
+
+contextBridge.exposeInMainWorld('jarvis', {
+  setupCheck: () => ipcRenderer.invoke('setup:check'),
+  setupBaseline: () => ipcRenderer.invoke('setup:baseline'),
+  ask: (text: string) => ipcRenderer.invoke('ask', text),
+  answerConfirm: (id: string, yes: boolean) => ipcRenderer.send('confirm:answer', id, yes),
+  hubList: () => ipcRenderer.invoke('hub:list'),
+  hubSetEnabled: (appId: string, on: boolean) => ipcRenderer.invoke('hub:setEnabled', appId, on),
+  hubSetAbility: (appId: string, ability: string, setting: string) => ipcRenderer.invoke('hub:setAbility', appId, ability, setting),
+  hubAddMcp: (input: unknown) => ipcRenderer.invoke('hub:addMcp', input),
+  hubRemove: (appId: string) => ipcRenderer.invoke('hub:remove', appId),
+  hubSuggested: () => ipcRenderer.invoke('hub:suggested'),
+  hubSignIn: (appId: string) => ipcRenderer.invoke('hub:signIn', appId),
+  accountsList: () => ipcRenderer.invoke('accounts:list'),
+  accountsSetup: (id: string, clientId: string, clientSecret?: string) => ipcRenderer.invoke('accounts:setup', id, clientId, clientSecret),
+  accountsConnect: (id: string) => ipcRenderer.invoke('accounts:connect', id),
+  accountsDisconnect: (id: string) => ipcRenderer.invoke('accounts:disconnect', id),
+  accountsOpenConsole: (id: string) => ipcRenderer.invoke('accounts:openConsole', id),
+  accountsOpenGuide: (id: string) => ipcRenderer.invoke('accounts:openGuide', id),
+  cancelSignIn: () => ipcRenderer.send('auth:cancel'),
+  usageSummary: () => ipcRenderer.invoke('usage:summary'),
+  activityList: () => ipcRenderer.invoke('activity:list'),
+  settingsGet: () => ipcRenderer.invoke('settings:get'),
+  settingsSet: (patch: unknown) => ipcRenderer.invoke('settings:set', patch),
+  toggleBox: () => ipcRenderer.send('box:toggle'),
+  // voice
+  onAudioStart: on('audio:start'),
+  onAudioStop: on('audio:stop'),
+  audioReply: (channel: string, id: string, value: unknown) => ipcRenderer.send(`${channel}:reply`, id, value),
+  sendPcm: (kind: string, data: Uint8Array, level: number) => ipcRenderer.send('audio:pcm', kind, data, level),
+  voiceToggle: () => ipcRenderer.send('voice:toggle'),
+  onVoiceAsk: on('voice:ask'),
+  speechStatus: () => ipcRenderer.invoke('speech:status'),
+  speechInstall: () => ipcRenderer.invoke('speech:install'),
+  onSpeechProgress: on('speech:progress'),
+  setHotkey: (accelerator: string | null) => ipcRenderer.invoke('voice:setHotkey', accelerator),
+  onIndicator: on('indicator'),
+  indicatorAction: (mode: string) => ipcRenderer.send('indicator:action', mode),
+  voiceResize: (height: number) => ipcRenderer.send('voice:resize', height),
+  voiceHide: () => ipcRenderer.send('voice:hide'),
+  showMain: () => ipcRenderer.send('main:show'),
+  onProgress: on('progress'),
+  onConfirm: on('confirm:request'),
+  onConfirmCancel: on('confirm:cancel'),
+  onNavigate: on('ui:navigate'),
+  onNotice: on('notice'),
+  onSettings: on('settings:changed'),
+  onWhiteboardClear: on('whiteboard:clear'),
+  onWbDraw: on('wb:draw'),
+  onWbSnapshot: on('wb:snapshot'),
+  wbSnapshotReply: (id: string, data: unknown) => ipcRenderer.send('wb:snapshot:reply', id, data),
+  wbCleared: () => ipcRenderer.send('wb:cleared'),
+  wbExport: (format: 'png' | 'pdf', dataUrl: string) => ipcRenderer.invoke('wb:export', format, dataUrl),
+  onScreenPick: on('screen:pick'),
+  screenPickReply: (id: string, choice: unknown) => ipcRenderer.send('screen:pick:reply', id, choice),
+  onScreenArea: on('screen:area'),
+  screenAreaReply: (id: string, rect: unknown) => ipcRenderer.send('screen:area:reply', id, rect),
+});

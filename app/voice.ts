@@ -1,0 +1,309 @@
+/**
+ * Voice in the main process: speech engine install, meeting recording, push-to-talk,
+ * the global hotkey, and the floating REC / Listening badges.
+ * Audio stays on this computer; only transcribed text reaches Jarvis/Claude (T8).
+ */
+import { BrowserWindow, desktopCapturer, globalShortcut, ipcMain, screen, session, systemPreferences, WebContents } from 'electron';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { wavHeader } from '../speech/pcm.js';
+import { PushToTalk, PttState } from '../speech/ptt.js';
+import { WhisperEngine } from '../speech/whisper.js';
+import { MeetingRecorder } from '../tools/recorder/recorder.js';
+
+export const DEFAULT_PTT_HOTKEY = process.platform === 'darwin' ? 'Alt+Space' : 'Control+Alt+Space';
+
+type Kind = 'meeting' | 'ptt';
+type Badge = 'rec' | 'ptt';
+
+export interface VoiceDeps {
+  dataDir: string;
+  preloadPath: string;
+  rendererDir: string;
+  /** Request to the main window's renderer (created hidden if needed; not focused). */
+  askRenderer<T>(channel: string, payload: Record<string, unknown>, timeoutMs: number): Promise<T | null>;
+  /** Puts recognised speech into a chat (the floating box by default) and sends it. */
+  deliver(text: string, target: WebContents | null): Promise<void>;
+  notify(text: string): void;
+  progress(label: string | null): void;
+}
+
+export interface LocalReply {
+  reply: string;
+  followUp?: string;
+}
+
+export class VoiceController {
+  readonly engine: WhisperEngine;
+  readonly recorder: MeetingRecorder;
+  readonly ptt: PushToTalk;
+  private capture: Kind | null = null;
+  private pttBuf: Buffer[] = [];
+  private pttTarget: WebContents | null = null;
+  private badges = new Map<Badge, BrowserWindow>();
+  private recTimer: ReturnType<typeof setInterval> | null = null;
+  private recSystemAudio = false;
+  private lastLevelSent = 0;
+  private hotkey: string | null = null;
+
+  constructor(private readonly deps: VoiceDeps) {
+    this.engine = new WhisperEngine(path.join(deps.dataDir, 'speech'));
+    this.recorder = new MeetingRecorder(
+      { work: path.join(deps.dataDir, 'recordings'), transcripts: path.join(deps.dataDir, 'transcripts') },
+      async (wav) => {
+        await this.ensureEngine();
+        return this.engine.transcribe(wav);
+      },
+      () => new Date(),
+      (done, total) => {
+        if (!this.recorder.recording) deps.progress(`Transcribing the meeting… ${done}/${total}`);
+      },
+    );
+    this.ptt = new PushToTalk({
+      startCapture: async () => {
+        if (this.recorder.recording) throw new Error('a meeting is being recorded; push-to-talk is paused');
+        if (!this.engine.status().ready) {
+          void this.ensureEngine().catch(() => undefined);
+          throw new Error('the speech engine is still being set up. Open Settings → Voice.');
+        }
+        this.pttBuf = [];
+        await this.startCapture('ptt');
+      },
+      stopCapture: async () => {
+        await this.stopCapture();
+        return new Uint8Array(Buffer.concat(this.pttBuf));
+      },
+      transcribe: (pcm) => this.transcribePcm(pcm),
+      deliver: (text) => void this.deps.deliver(text, this.pttTarget),
+      indicate: (state, message) => this.pttIndicate(state, message),
+    });
+  }
+
+  /* ---------- setup ---------- */
+
+  setupSession(): void {
+    const ses = session.defaultSession;
+    // Only audio capture is ever allowed, and only for Jarvis's own pages.
+    ses.setPermissionRequestHandler((wc, permission, callback, details) => {
+      const own = wc.getURL().startsWith('file://');
+      const audioOnly = permission === 'media' && ((details as { mediaTypes?: string[] }).mediaTypes ?? []).every((t) => t === 'audio');
+      callback(own && audioOnly);
+    });
+    ses.setPermissionCheckHandler((_wc, permission, origin) => permission === 'media' && origin.startsWith('file://'));
+    // Meeting audio: the computer's own sound (Windows loopback). No picker is shown.
+    ses.setDisplayMediaRequestHandler(
+      (_req, callback) => {
+        desktopCapturer
+          .getSources({ types: ['screen'] })
+          .then((sources) => callback(process.platform === 'win32' ? { video: sources[0], audio: 'loopback' } : { video: sources[0] }))
+          .catch(() => callback({}));
+      },
+      { useSystemPicker: false },
+    );
+  }
+
+  registerIpc(): void {
+    ipcMain.on('audio:pcm', (_e, kind: Kind, data: Uint8Array, level: number) => {
+      if (kind !== this.capture) return;
+      if (kind === 'meeting') this.recorder.push(data);
+      else {
+        this.pttBuf.push(Buffer.from(data));
+        this.ptt.level(level);
+        const t = Date.now();
+        if (t - this.lastLevelSent > 100) {
+          this.lastLevelSent = t;
+          this.badge('ptt', { mode: 'ptt', state: 'listening', label: 'Listening', level, action: 'Done' });
+        }
+      }
+    });
+    ipcMain.on('indicator:action', (_e, mode: Badge) => {
+      if (mode === 'rec') void this.deps.deliver('stop recording', null);
+      else void this.ptt.toggle();
+    });
+    ipcMain.on('voice:toggle', (e) => {
+      this.pttTarget = e.sender;
+      void this.ptt.toggle();
+    });
+    ipcMain.handle('speech:status', () => ({ ...this.engine.status(), hotkey: this.hotkey }));
+    ipcMain.handle('speech:install', async (e) => {
+      await this.engine.install((label, f) => e.sender.send('speech:progress', { label, fraction: f }));
+      return this.engine.status();
+    });
+  }
+
+  /** Registers the push-to-talk hotkey. Returns false if another app already uses it. */
+  setHotkey(accelerator: string): boolean {
+    if (this.hotkey) globalShortcut.unregister(this.hotkey);
+    this.hotkey = null;
+    let ok = false;
+    try {
+      ok = globalShortcut.register(accelerator, () => {
+        this.pttTarget = null; // hotkey → floating box
+        void this.ptt.toggle();
+      });
+    } catch {
+      ok = false;
+    }
+    if (ok) this.hotkey = accelerator;
+    return ok;
+  }
+
+  /** Downloads the speech engine if needed (Windows), with progress in the chat. */
+  async ensureEngine(): Promise<void> {
+    if (this.engine.status().ready) return;
+    this.deps.notify('Setting up the local speech engine (one-time download, about 155 MB)…');
+    await this.engine.install((label, f) => this.deps.progress(`${label}… ${Math.round(f * 100)}%`));
+    this.deps.progress(null);
+    this.deps.notify('The speech engine is ready.');
+  }
+
+  /* ---------- capture ---------- */
+
+  private async startCapture(kind: Kind): Promise<{ systemAudio: boolean }> {
+    if (process.platform === 'darwin' && !(await systemPreferences.askForMediaAccess('microphone'))) {
+      throw new Error('microphone access is off. Turn it on in System Settings → Privacy & Security → Microphone.');
+    }
+    this.capture = kind;
+    const res = await this.deps.askRenderer<{ ok: boolean; systemAudio?: boolean; error?: string }>('audio:start', { kind }, 8000);
+    if (!res?.ok) {
+      this.capture = null;
+      throw new Error(res?.error ?? 'the microphone did not start');
+    }
+    return { systemAudio: Boolean(res.systemAudio) };
+  }
+
+  private async stopCapture(): Promise<void> {
+    await this.deps.askRenderer('audio:stop', {}, 5000);
+    this.capture = null;
+  }
+
+  private async transcribePcm(pcm: Uint8Array): Promise<string> {
+    const wav = path.join(os.tmpdir(), `jarvis-ptt-${crypto.randomBytes(6).toString('hex')}.wav`);
+    fs.writeFileSync(wav, Buffer.concat([Buffer.from(wavHeader(pcm.length)), Buffer.from(pcm)]));
+    try {
+      return await this.engine.transcribe(wav);
+    } finally {
+      fs.rmSync(wav, { force: true });
+    }
+  }
+
+  /* ---------- meeting recording (local commands, 0 tokens) ---------- */
+
+  async startRecording(): Promise<LocalReply> {
+    if (this.recorder.recording) return { reply: 'Already recording. Say "stop recording" when the meeting ends.' };
+    if (this.ptt.state !== 'idle') await this.ptt.toggle();
+    let systemAudio = false;
+    try {
+      ({ systemAudio } = await this.startCapture('meeting'));
+    } catch (err) {
+      return { reply: `I couldn't start recording: ${err instanceof Error ? err.message : String(err)}` };
+    }
+    this.recorder.start();
+    this.recSystemAudio = systemAudio;
+    this.showRecBadge();
+    if (!this.engine.status().ready) void this.ensureEngine().catch((e) => this.deps.notify(`Speech engine: ${e.message}`));
+    const what = systemAudio ? 'your microphone and your computer’s sound' : 'your microphone (computer sound is not available here)';
+    return {
+      reply:
+        `Recording started (${what}). Please tell everyone in the meeting that it is being recorded — recording laws differ between countries.\n` +
+        'Say "stop recording" or click Stop on the REC badge when you are done.',
+    };
+  }
+
+  async stopRecording(): Promise<LocalReply> {
+    if (!this.recorder.recording) return { reply: 'Nothing is being recorded right now.' };
+    await this.stopCapture();
+    this.hideBadge('rec');
+    if (this.recTimer) clearInterval(this.recTimer);
+    this.recTimer = null;
+    this.deps.progress('Finishing the transcript…');
+    try {
+      const r = await this.recorder.stop();
+      const mins = Math.max(1, Math.round(r.seconds / 60));
+      if (!r.text) {
+        return { reply: `Recording stopped (${mins} min). No speech was detected, so there is nothing to summarize. Transcript file: ${r.transcriptPath}` };
+      }
+      const warn = r.failedSegments ? ` (${r.failedSegments} part(s) could not be transcribed)` : '';
+      return {
+        reply: `Recording stopped (${mins} min). The transcript is saved on this computer${warn}:\n${r.transcriptPath}`,
+        followUp: 'Summarize the meeting I just recorded: key points, decisions, and action items with owners.',
+      };
+    } finally {
+      this.deps.progress(null);
+    }
+  }
+
+  /* ---------- badges ---------- */
+
+  private showRecBadge() {
+    const update = () =>
+      this.badge('rec', {
+        mode: 'rec',
+        state: 'recording',
+        label: 'REC',
+        seconds: this.recorder.elapsedSeconds,
+        sub: this.recSystemAudio ? 'Mic + computer sound · tell others' : 'Microphone · tell others',
+        action: 'Stop',
+      });
+    update();
+    this.recTimer = setInterval(update, 1000);
+  }
+
+  private pttIndicate(state: PttState | 'error' | 'nothing', message?: string) {
+    if (state === 'listening') this.badge('ptt', { mode: 'ptt', state: 'listening', label: 'Listening', level: 0, action: 'Done' });
+    else if (state === 'transcribing') this.badge('ptt', { mode: 'ptt', state: 'transcribing', label: 'Got it', sub: 'Turning speech into text…', action: null });
+    else if (state === 'idle') this.hideBadge('ptt');
+    else {
+      this.badge('ptt', { mode: 'ptt', state: 'message', label: state === 'error' ? 'Voice' : 'Hmm', sub: message, action: null });
+      setTimeout(() => this.hideBadge('ptt'), 3000);
+    }
+  }
+
+  private badge(which: Badge, state: Record<string, unknown>) {
+    let w = this.badges.get(which);
+    if (!w || w.isDestroyed()) {
+      const area = screen.getPrimaryDisplay().workArea;
+      const width = which === 'rec' ? 420 : 340;
+      w = new BrowserWindow({
+        width,
+        height: 56,
+        x: Math.round(area.x + (area.width - width) / 2),
+        y: which === 'rec' ? area.y + 10 : area.y + area.height - 80,
+        frame: false,
+        transparent: true,
+        resizable: false,
+        focusable: false,
+        skipTaskbar: true,
+        alwaysOnTop: true,
+        show: false,
+        webPreferences: { preload: this.deps.preloadPath, contextIsolation: true, sandbox: true },
+      });
+      w.setAlwaysOnTop(true, 'screen-saver');
+      w.setContentProtection(true); // never appears in Jarvis's own screenshots
+      this.badges.set(which, w);
+      const win = w;
+      void win.loadFile(path.join(this.deps.rendererDir, 'indicator.html'), { query: { mode: which } }).then(() => {
+        win.webContents.send('indicator', state);
+        win.showInactive();
+      });
+      return;
+    }
+    if (!w.webContents.isLoading()) {
+      w.webContents.send('indicator', state);
+      if (!w.isVisible()) w.showInactive();
+    }
+  }
+
+  private hideBadge(which: Badge) {
+    const w = this.badges.get(which);
+    if (w && !w.isDestroyed()) w.close();
+    this.badges.delete(which);
+  }
+
+  dispose(): void {
+    if (this.hotkey) globalShortcut.unregister(this.hotkey);
+    for (const w of this.badges.values()) if (!w.isDestroyed()) w.close();
+  }
+}
