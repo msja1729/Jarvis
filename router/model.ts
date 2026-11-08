@@ -5,7 +5,7 @@
 import type { ModelChoice } from '../brain/brain.js';
 
 const LARGE = [
-  /\b(draft|write|compose|reply|respond|rewrite|summari[sz]e|summary|explain|why|how does|teach)\b/,
+  /\b(draft|write|compose|reply|respond|rewrite|summari[sz]e|summary|explain|why|how does|how do|teach|lesson|learn|understand)\b/,
   /\b(screen|screenshot|whiteboard|draw|diagram|sketch)\b/,
   /\b(schedule|book|arrange|plan|organi[sz]e)\b/,
 ];

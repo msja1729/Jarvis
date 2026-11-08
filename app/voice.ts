@@ -29,6 +29,8 @@ export interface VoiceDeps {
   deliver(text: string, target: WebContents | null): Promise<void>;
   notify(text: string): void;
   progress(label: string | null): void;
+  /** Stop any reply being spoken (you are about to talk). */
+  stopSpeaking(): void;
 }
 
 export interface LocalReply {
@@ -70,6 +72,7 @@ export class VoiceController {
           throw new Error('the speech engine is still being set up. Open Settings → Voice.');
         }
         this.pttBuf = [];
+        this.deps.stopSpeaking(); // interrupt Jarvis when you start talking
         await this.startCapture('ptt');
       },
       stopCapture: async () => {

@@ -1,5 +1,5 @@
 /** Electron main process. */
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeTheme, screen, shell } from 'electron';
+import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, screen, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -10,7 +10,7 @@ import { connectMcp, discoverApp } from '../gateway/mcp-proxy.js';
 import { JarvisMcpAuth } from '../gateway/mcp-auth.js';
 import { SUGGESTED_APPS } from '../gateway/suggested.js';
 import { SettingsStore, defaultSetting, groupOf } from '../gateway/settings.js';
-import type { AbilitySetting, ConfirmRequest } from '../gateway/types.js';
+import type { AbilitySetting, ConfirmRequest, ExplainLevel } from '../gateway/types.js';
 import { ClaudeCLIBrain } from '../brain/claude-cli.js';
 import { SessionManager } from '../brain/session.js';
 import { UsageLog } from '../brain/usage.js';
@@ -25,7 +25,14 @@ import { WhiteboardExecutor } from '../tools/whiteboard/executor.js';
 import { jpegToPdf } from '../tools/whiteboard/pdf.js';
 import type { Element } from '../tools/whiteboard/scene.js';
 import { TranscriptExecutor } from '../tools/recorder/executor.js';
+import { LessonExecutor } from '../tools/lesson/executor.js';
+import { DocumentsExecutor } from '../tools/documents/executor.js';
+import { pdfPages } from '../tools/documents/pdf-text.js';
+import type { Lesson } from '../tools/lesson/spec.js';
+import { bgraToGray, chooseSide, SIDE_FRACTION, Side } from '../tools/lesson/placement.js';
 import { AppCatalog } from './apps.js';
+import { KokoroEngine } from '../speech/kokoro.js';
+import { DEFAULT_VOICE, isVoice, MAX_SPEED, MIN_SPEED, VOICES } from '../speech/kokoro-files.js';
 import { glassOptions, mainChromeOptions } from './glass.js';
 import { DEFAULT_PTT_HOTKEY, VoiceController } from './voice.js';
 import { Orchestrator } from './orchestrator.js';
@@ -56,7 +63,17 @@ let signInAbort: AbortController | null = null;
 const pendingConfirms = new Map<string, (yes: boolean) => void>();
 let requestSeq = 0;
 let whiteboard: WhiteboardExecutor;
+let lessons: LessonExecutor;
+let lessonWindow: BrowserWindow | null = null;
+let lessonSide: Side = 'right';
 let voice: VoiceController;
+let kokoro: KokoroEngine;
+
+/** Stops any reply being spoken, in every window (e.g. when push-to-talk starts). */
+function stopAllSpeech() {
+  kokoro?.cancel();
+  send('tts:stop-all');
+}
 
 /** Make sure the main window exists, is loaded, and is in front. */
 async function readyMainWindow(show = true): Promise<BrowserWindow> {
@@ -114,7 +131,11 @@ async function withRoom<T>(w: BrowserWindow, size: { width: number; height: numb
   try {
     return await fn();
   } finally {
-    if (!w.isDestroyed()) w.setBounds(before);
+    if (!w.isDestroyed()) {
+      w.setBounds(before);
+      // A popup had to show the hidden voice card; hide it again (speech carries on).
+      if (w === voiceWindow && !voiceCardShown) w.hide();
+    }
   }
 }
 
@@ -204,11 +225,43 @@ async function deliverSpeech(text: string, target: Electron.WebContents | null):
   }
   const w = await readyVoiceWindow();
   placeVoiceWindow(w, w.getBounds().height);
-  w.showInactive();
+  // The card stays hidden (Jarvis still speaks) unless the user showed it with the card shortcut.
+  if (voiceCardShown) w.showInactive();
   w.webContents.send('voice:ask', text);
 }
 
 const VOICE_WIDTH = 480;
+const DEFAULT_CARD_HOTKEY = 'Control+Alt+J';
+/** Whether the user asked to see the voice card (card shortcut). Hidden by default. */
+let voiceCardShown = false;
+let cardHotkey: string | null = null;
+
+/** Card shortcut: shows the voice card, or hides it. Hiding never stops the speech. */
+async function toggleVoiceCard(): Promise<void> {
+  const w = await readyVoiceWindow();
+  if (w.isVisible()) {
+    voiceCardShown = false;
+    w.hide();
+  } else {
+    voiceCardShown = true;
+    placeVoiceWindow(w, w.getBounds().height);
+    w.showInactive();
+  }
+}
+
+/** Registers the show/hide-card shortcut. Returns false if another app already uses it. */
+function setCardHotkey(accelerator: string): boolean {
+  if (cardHotkey) globalShortcut.unregister(cardHotkey);
+  cardHotkey = null;
+  let ok = false;
+  try {
+    ok = globalShortcut.register(accelerator, () => void toggleVoiceCard());
+  } catch {
+    ok = false;
+  }
+  if (ok) cardHotkey = accelerator;
+  return ok;
+}
 
 function placeVoiceWindow(w: BrowserWindow, height: number) {
   const area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
@@ -235,6 +288,116 @@ async function readyVoiceWindow(): Promise<BrowserWindow> {
     await voiceWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), { query: { mode: 'voice' } });
   }
   return voiceWindow;
+}
+
+/* ---------- lesson window ---------- */
+
+/** Looks at a tiny grey picture of the screen (on this computer) to find an empty side. */
+async function emptySide(display: Electron.Display): Promise<Side> {
+  try {
+    const list = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 256, height: 160 } });
+    const src = list.find((s) => s.display_id === String(display.id)) ?? list[0];
+    if (!src || src.thumbnail.isEmpty()) return 'full';
+    const { width, height } = src.thumbnail.getSize();
+    const gray = bgraToGray(src.thumbnail.toBitmap(), width, height);
+    // An all-black picture means screen capture is not allowed (macOS): use the side anyway.
+    if (gray.every((v) => v < 4)) return 'right';
+    return chooseSide(gray, width, height).choice;
+  } catch {
+    return 'full';
+  }
+}
+
+function placeLesson(w: BrowserWindow, side: Side, display: Electron.Display) {
+  const a = display.workArea;
+  lessonSide = side;
+  if (side === 'full') {
+    w.setAlwaysOnTop(false);
+    w.setBounds(a);
+  } else {
+    // At the side it floats above what the user is watching, so it stays visible.
+    const width = Math.max(440, Math.round(a.width * SIDE_FRACTION));
+    w.setBounds({ x: side === 'left' ? a.x : a.x + a.width - width, y: a.y, width, height: a.height });
+    w.setAlwaysOnTop(true, 'floating');
+  }
+  if (!w.webContents.isLoading()) w.webContents.send('lesson:placed', side);
+}
+
+async function readyLessonWindow(): Promise<BrowserWindow> {
+  if (!lessonWindow || lessonWindow.isDestroyed()) {
+    lessonWindow = new BrowserWindow({
+      width: 800,
+      height: 700,
+      minWidth: 420,
+      minHeight: 420,
+      frame: false,
+      ...glassOptions(),
+      show: false,
+      title: 'Jarvis lesson',
+      webPreferences: { preload: preloadPath(), contextIsolation: true, sandbox: true, nodeIntegration: false, backgroundThrottling: false },
+    });
+    lessonWindow.on('closed', () => (lessonWindow = null));
+    await lessonWindow.loadFile(path.join(__dirname, '..', 'renderer', 'lesson.html'));
+  }
+  return lessonWindow;
+}
+
+/** Cuts the asked-for part (plus some context around it) out of the last screenshot, for a lesson. */
+function snipScreen(shot: { jpegBase64: string; width: number; height: number } | null, r: { x: number; y: number; w: number; h: number }) {
+  if (!shot) return null;
+  const x = Math.max(0, Math.min(shot.width - 1, r.x));
+  const y = Math.max(0, Math.min(shot.height - 1, r.y));
+  const w = Math.max(1, Math.min(shot.width - x, r.w));
+  const h = Math.max(1, Math.min(shot.height - y, r.h));
+  const padX = Math.round(Math.max(24, w * 0.25));
+  const padY = Math.round(Math.max(24, h * 0.35));
+  const cx = Math.max(0, x - padX);
+  const cy = Math.max(0, y - padY);
+  const cw = Math.min(shot.width - cx, w + 2 * padX);
+  const ch = Math.min(shot.height - cy, h + 2 * padY);
+  const img = nativeImage.createFromBuffer(Buffer.from(shot.jpegBase64, 'base64')).crop({ x: Math.round(cx), y: Math.round(cy), width: Math.round(cw), height: Math.round(ch) });
+  return {
+    image: `data:image/jpeg;base64,${img.toJPEG(88).toString('base64')}`,
+    hl: { x: (x - cx) / cw, y: (y - cy) / ch, w: w / cw, h: h / ch },
+  };
+}
+
+/** File or folder picker for the Documents app. The user's choice is the permission to read it. */
+async function pick(kind: 'openFile' | 'openDirectory', reason: string): Promise<string | null> {
+  const w = await originWindow();
+  const res = await dialog.showOpenDialog(w, {
+    title: reason || (kind === 'openFile' ? 'Choose a file for Jarvis to read' : 'Choose a folder for Jarvis to read'),
+    buttonLabel: 'Let Jarvis read this',
+    properties: [kind],
+    filters:
+      kind === 'openFile'
+        ? [
+            { name: 'Documents and code', extensions: ['pdf', 'txt', 'md', 'markdown', 'rst', 'csv', 'json', 'yaml', 'yml', 'xml', 'html', 'css', 'js', 'jsx', 'ts', 'tsx', 'mjs', 'cjs', 'py', 'java', 'kt', 'c', 'h', 'cpp', 'hpp', 'cs', 'go', 'rs', 'rb', 'php', 'swift', 'sql', 'sh', 'ps1', 'r', 'm', 'scala', 'dart', 'lua', 'toml', 'ini', 'tex', 'ipynb'] },
+            { name: 'All files', extensions: ['*'] },
+          ]
+        : undefined,
+  });
+  // the voice card may have been shown just to hold the picker: hide it again
+  if (w === voiceWindow && !voiceCardShown && !w.isDestroyed()) w.hide();
+  return res.canceled || !res.filePaths[0] ? null : res.filePaths[0];
+}
+
+/** Opens a lesson beside what the user is looking at (an empty side), or full screen. */
+async function showLesson(lesson: Lesson): Promise<Side> {
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  const open = lessonWindow && !lessonWindow.isDestroyed() && lessonWindow.isVisible();
+  let side: Side;
+  if (lesson.placement === 'full' || lesson.placement === 'left' || lesson.placement === 'right') side = lesson.placement;
+  else if (open) side = lessonSide; // keep the window where it is
+  else side = await emptySide(display); // look before our window covers anything
+  const w = await readyLessonWindow();
+  if (!open || lesson.placement !== 'auto') placeLesson(w, side, display);
+  w.webContents.send('lesson:show', { lesson, side });
+  if (side === 'full') {
+    w.show();
+    w.focus();
+  } else w.showInactive();
+  return side;
 }
 
 function send(channel: string, payload?: unknown) {
@@ -369,6 +532,10 @@ function buildBrain(command: string) {
     sessions,
     usage,
     modelOverride: () => store.snapshot().modelOverride,
+    level: () => {
+      const l = store.snapshot().explainLevel;
+      return l && l !== 'auto' ? l : null;
+    },
     runLocal,
     onProgress: (label) => send('progress', label),
     onRequestStart: () => {
@@ -423,7 +590,10 @@ function registerIpc() {
   ipcMain.handle('ask', async (e, text: string) => {
     requestSender = e.sender;
     if (!orchestrator) return { kind: 'local', reply: 'Finish setup first.', isError: true };
-    return orchestrator.handle(String(text));
+    const before = lessons?.shown ?? 0;
+    const res = await orchestrator.handle(String(text));
+    // A lesson narrates itself, so the window that asked should not read the reply aloud too.
+    return { ...res, lessonShown: (lessons?.shown ?? 0) > before };
   });
   ipcMain.on('confirm:answer', (_e, id: string, yes: boolean) => pendingConfirms.get(id)?.(yes === true));
   ipcMain.handle('hub:list', hubList);
@@ -515,18 +685,59 @@ function registerIpc() {
   ipcMain.handle('usage:summary', () => usage.summary());
   ipcMain.handle('activity:list', () => activity.list());
   ipcMain.handle('settings:get', () => store.snapshot());
-  ipcMain.handle('settings:set', (_e, patch: { modelOverride?: 'haiku' | 'sonnet' | null; voiceOutput?: boolean }) => {
+  ipcMain.handle('settings:set', (_e, patch: { modelOverride?: 'haiku' | 'sonnet' | null; voiceOutput?: boolean; ttsVoice?: string; ttsSpeed?: number; explainLevel?: ExplainLevel }) => {
     if (patch.modelOverride !== undefined) store.setModelOverride(patch.modelOverride);
     if (patch.voiceOutput !== undefined) store.setVoiceOutput(patch.voiceOutput);
+    if (patch.explainLevel !== undefined) store.setExplainLevel(patch.explainLevel);
+    if (patch.ttsVoice !== undefined || patch.ttsSpeed !== undefined) {
+      const v = isVoice(patch.ttsVoice) ? patch.ttsVoice : undefined;
+      const sp = typeof patch.ttsSpeed === 'number' && Number.isFinite(patch.ttsSpeed) ? Math.min(MAX_SPEED, Math.max(MIN_SPEED, patch.ttsSpeed)) : undefined;
+      store.setTts(v, sp);
+    }
     return store.snapshot();
   });
   ipcMain.on('box:toggle', toggleBox);
+  ipcMain.handle('tts:status', () => {
+    const snap = store.snapshot();
+    return { ...kokoro.status(), voice: isVoice(snap.ttsVoice) ? snap.ttsVoice : DEFAULT_VOICE, speed: snap.ttsSpeed ?? 1, voices: VOICES };
+  });
+  ipcMain.handle('tts:install', async (e) => {
+    await kokoro.install((label, fraction) => !e.sender.isDestroyed() && e.sender.send('tts:progress', { label, fraction }));
+    kokoro.warmUp();
+    return kokoro.status();
+  });
+  ipcMain.handle('tts:speak', (e, text: string, opts: { voice?: string }) => {
+    if (!kokoro.status().installed) return null; // the window falls back to the OS voice
+    const snap = store.snapshot();
+    const v = isVoice(opts?.voice) ? opts.voice : isVoice(snap.ttsVoice) ? snap.ttsVoice : DEFAULT_VOICE;
+    const speed = Math.min(MAX_SPEED, Math.max(MIN_SPEED, snap.ttsSpeed ?? 1));
+    const target = e.sender;
+    const { id, done } = kokoro.speak(String(text), v, speed, (c) => {
+      if (!target.isDestroyed()) target.send('tts:chunk', { id: c.id, rate: c.rate, audio: c.audio });
+    });
+    void done.then((r) => !target.isDestroyed() && target.send('tts:done', { id, error: r.error, cancelled: r.cancelled }));
+    return id;
+  });
+  ipcMain.on('tts:stop', (_e, id?: number) => kokoro.cancel(typeof id === 'number' ? id : undefined));
   ipcMain.on('voice:resize', (e, height: number) => {
     const w = BrowserWindow.fromWebContents(e.sender);
     // Only the voice card sizes itself, and not while a popup has enlarged it.
     if (w && w === voiceWindow && !w.isDestroyed() && w.getBounds().width === VOICE_WIDTH) placeVoiceWindow(w, Number(height) || 160);
   });
-  ipcMain.on('voice:hide', () => voiceWindow?.hide());
+  ipcMain.on('voice:hide', () => {
+    voiceCardShown = false; // next spoken request starts hidden again
+    voiceWindow?.hide();
+  });
+  ipcMain.handle('voice:cardHotkey', () => cardHotkey);
+  ipcMain.handle('voice:setCardHotkey', (_e, accelerator: string | null) => {
+    const wanted = accelerator?.trim() || DEFAULT_CARD_HOTKEY;
+    if (!setCardHotkey(wanted)) {
+      setCardHotkey(store.snapshot().voiceCardHotkey || DEFAULT_CARD_HOTKEY);
+      throw new Error(`"${wanted}" is already used by another app or is not a valid shortcut.`);
+    }
+    store.setVoiceCardHotkey(accelerator?.trim() || null);
+    return wanted;
+  });
   ipcMain.on('main:show', () => void readyMainWindow(true));
   ipcMain.handle('voice:setHotkey', (_e, accelerator: string | null) => {
     const wanted = accelerator?.trim() || DEFAULT_PTT_HOTKEY;
@@ -536,6 +747,19 @@ function registerIpc() {
     }
     store.setPttHotkey(accelerator?.trim() || null);
     return wanted;
+  });
+  ipcMain.on('lesson:close', () => lessonWindow?.close());
+  ipcMain.on('lesson:layout', async (_e, want: 'full' | 'side') => {
+    const w = lessonWindow;
+    if (!w || w.isDestroyed()) return;
+    const display = screen.getDisplayMatching(w.getBounds());
+    if (want === 'full') placeLesson(w, 'full', display);
+    else {
+      w.hide(); // look at the screen without our own window in the way
+      const side = await emptySide(display);
+      placeLesson(w, side === 'full' ? 'right' : side, display);
+      w.show();
+    }
   });
   ipcMain.on('wb:cleared', () => whiteboard.reset());
   ipcMain.handle('wb:export', async (_e, format: 'png' | 'pdf', dataUrl: string) => {
@@ -572,6 +796,8 @@ app.whenReady().then(async () => {
     },
   });
   const screenExec = new ScreenExecutor(new ElectronScreenBackend(), screenUI, () => requestSeq);
+  kokoro = new KokoroEngine(path.join(app.getPath('userData'), 'speech', 'kokoro'), path.join(__dirname, '..', 'speech', 'kokoro-worker.mjs'));
+  setTimeout(() => kokoro.warmUp(), 4000); // load the voice in the background so the first reply speaks quickly
   voice = new VoiceController({
     dataDir: app.getPath('userData'),
     preloadPath: preloadPath(),
@@ -580,9 +806,16 @@ app.whenReady().then(async () => {
     deliver: deliverSpeech,
     notify: (text) => send('notice', text),
     progress: (label) => send('progress', label),
+    stopSpeaking: stopAllSpeech,
+  });
+  lessons = new LessonExecutor({ show: showLesson, snip: (r) => snipScreen(screenExec.lastShot, r) });
+  const documents = new DocumentsExecutor({
+    pickFile: (reason) => pick('openFile', reason),
+    pickFolder: (reason) => pick('openDirectory', reason),
+    pdfPages,
   });
   const transcripts = new TranscriptExecutor(path.join(app.getPath('userData'), 'transcripts'));
-  catalog = new AppCatalog(store, secrets, accounts, { screen: screenExec, whiteboard, recorder: transcripts });
+  catalog = new AppCatalog(store, secrets, accounts, { screen: screenExec, whiteboard, recorder: transcripts, lesson: lessons, documents });
   core = new GatewayCore({
     apps: () => catalog.all(),
     settings: store,
@@ -605,6 +838,10 @@ app.whenReady().then(async () => {
   if (!voice.setHotkey(hotkey)) {
     setTimeout(() => send('notice', `The push-to-talk shortcut ${hotkey} is used by another app. Pick another one in Settings → Voice.`), 3000);
   }
+  const cardKey = store.snapshot().voiceCardHotkey || DEFAULT_CARD_HOTKEY;
+  if (!setCardHotkey(cardKey)) {
+    setTimeout(() => send('notice', `The voice card shortcut ${cardKey} is used by another app. Pick another one in Settings → Voice.`), 3500);
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
@@ -613,6 +850,7 @@ app.whenReady().then(async () => {
 
 app.on('will-quit', () => {
   voice?.dispose();
+  kokoro?.dispose();
   globalShortcut.unregisterAll();
   void control?.close();
 });

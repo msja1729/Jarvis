@@ -10,6 +10,8 @@ import {
   AbilitySetting,
   AppDef,
   AppSettings,
+  EXPLAIN_LEVELS,
+  ExplainLevel,
   GROUP_DEFAULTS,
   JarvisSettings,
 } from './types.js';
@@ -105,6 +107,22 @@ export class SettingsStore {
 
   setPttHotkey(accelerator: string | null): void {
     this.data.pttHotkey = accelerator;
+    this.save();
+  }
+
+  setVoiceCardHotkey(accelerator: string | null): void {
+    this.data.voiceCardHotkey = accelerator;
+    this.save();
+  }
+
+  setTts(voice: string | undefined, speed: number | undefined): void {
+    if (voice !== undefined) this.data.ttsVoice = voice;
+    if (speed !== undefined) this.data.ttsSpeed = speed;
+    this.save();
+  }
+
+  setExplainLevel(level: ExplainLevel): void {
+    this.data.explainLevel = (EXPLAIN_LEVELS as readonly string[]).includes(level) ? level : 'auto';
     this.save();
   }
 

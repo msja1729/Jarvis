@@ -40,6 +40,8 @@ export interface OrchestratorDeps {
   onProgress?: (label: string) => void;
   /** Called before each Claude request (used to allow one screen capture per request). */
   onRequestStart?: () => void;
+  /** Explanation level chosen in Settings (eli5, student, professional); null = let Claude infer it. */
+  level?: () => string | null;
   now?: () => Date;
 }
 
@@ -67,7 +69,9 @@ export class Orchestrator {
     this.busy = true;
     this.deps.onRequestStart?.();
     try {
-      const res = await this.deps.brain.ask(`${timePrefix(now)} ${text}`, decision.sessionId, model, {
+      const level = this.deps.level?.();
+      const prefix = level ? `${timePrefix(now)} [level: ${level}]` : timePrefix(now);
+      const res = await this.deps.brain.ask(`${prefix} ${text}`, decision.sessionId, model, {
         onProgress: this.deps.onProgress,
       });
       if (!res.is_error || res.session_id) this.deps.sessions.record(res.session_id);

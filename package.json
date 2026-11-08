@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "dist": "npm run build && electron-builder",
-    "measure": "esbuild scripts/measure-baseline.ts --bundle --platform=node --format=esm --target=node22 --packages=external --outfile=dist/measure.mjs && node dist/measure.mjs"
+    "measure": "esbuild scripts/measure-baseline.ts --bundle --platform=node --format=esm --target=node22 --packages=external --outfile=dist/measure.mjs && node dist/measure.mjs",
+    "docs:pdf": "node scripts/docs-pdf.mjs"
   },
   "build": {
     "appId": "dev.jarvis.desktop",
@@ -44,8 +45,13 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
     "@napi-rs/keyring": "^2.1.2",
-    "fflate": "^0.8.2",
-    "zod": "^4.1.12"
+    "fflate": "0.8.3",
+    "highlight.js": "11.12.0",
+    "katex": "0.19.0",
+    "kokoro-js": "^1.2.1",
+    "mermaid": "12.1.0",
+    "pdfjs-dist": "6.4.299",
+    "zod": "4.6.6"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
@@ -59,5 +65,11 @@
     "esbuild@0.28.2": true,
     "electron-winstaller@5.4.0": true
   },
-  "type": "module"
+  "type": "module",
+  "overrides": {
+    "mermaid": {
+      "katex": "$katex"
+    },
+    "sharp": "0.35.5"
+  }
 }

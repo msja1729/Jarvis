@@ -1,5 +1,5 @@
 /** Renderer UI. All untrusted text is inserted with textContent, never innerHTML. */
-import { speak, stopSpeaking } from '../../speech/tts.js';
+import { initTts, speak, stopSpeaking } from '../../speech/tts.js';
 import type { Element } from '../../tools/whiteboard/scene.js';
 import { initWhiteboard } from './whiteboard.js';
 import { startWorldMap } from './worldmap.js';
@@ -63,7 +63,17 @@ declare global {
       speechInstall(): Promise<unknown>;
       onSpeechProgress(cb: (p: { label: string; fraction: number }) => void): void;
       setHotkey(accelerator: string | null): Promise<string>;
+      cardHotkey(): Promise<string | null>;
+      setCardHotkey(accelerator: string | null): Promise<string>;
       voiceResize(height: number): void;
+      ttsStatus(): Promise<{ installed: boolean; ready: boolean; downloadBytes: number; voice: string; speed: number; voices: { id: string; name: string; accent: string; gender: string; grade: string }[] }>;
+      ttsInstall(): Promise<unknown>;
+      onTtsProgress(cb: (p: { label: string; fraction: number }) => void): void;
+      ttsSpeak(text: string, opts?: { voice?: string }): Promise<number | null>;
+      ttsStop(id?: number): void;
+      onTtsChunk(cb: (c: { id: number; rate: number; audio: Float32Array }) => void): void;
+      onTtsDone(cb: (d: { id: number; error?: string }) => void): void;
+      onTtsStopAll(cb: () => void): void;
       voiceHide(): void;
       showMain(): void;
     };
@@ -71,6 +81,7 @@ declare global {
 }
 
 const j = window.jarvis;
+initTts(j);
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, unknown> = {}, ...kids: (Node | string)[]): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
@@ -168,6 +179,7 @@ function show(view: string) {
   if (view === 'activity') void renderActivity();
   if (view === 'settings') {
     void renderSettings();
+    void renderTts();
     void renderVoice();
   }
 }
@@ -250,7 +262,7 @@ $('composer').addEventListener('submit', async (e) => {
     else meta = 'handled locally · 0 tokens';
     addMsg('jarvis', r.reply, meta, Boolean(r.isError));
     if (r.limitReached) showNotice('Usage limit reached on your Claude plan. Jarvis will work again when the limit resets.');
-    if (voiceOn && !r.isError) speak(r.reply);
+    if (voiceOn && !r.isError && !r.lessonShown) speak(r.reply);
     setStatus(r.isError ? 'err' : 'ok', r.isError ? 'Problem' : 'Ready');
     if (r.followUp) pendingFollowUp = r.followUp;
   } catch (err) {
@@ -338,7 +350,7 @@ async function voiceAsk(text: string): Promise<void> {
     voiceBusy = false;
     setVoiceStatus(null);
     // Spoken requests are always answered out loud.
-    if (!r.isError && !followUp) speak(r.reply, () => hideVoiceSoon(6000));
+    if (!r.isError && !followUp && !r.lessonShown) speak(r.reply, () => hideVoiceSoon(6000)); // a lesson narrates itself
     else if (!followUp) hideVoiceSoon(12000);
   } catch (err) {
     voiceBusy = false;
@@ -786,6 +798,61 @@ async function renderActivity() {
 }
 
 /* ---------- settings ---------- */
+/* ---------- natural voice settings ---------- */
+const SAMPLE = "Hello, I'm Jarvis. This is how I'll sound when I read your messages and answers aloud.";
+async function renderTts() {
+  const st = await j.ttsStatus();
+  const pill = $('tts-pill');
+  pill.textContent = st.installed ? 'Ready' : 'Not installed';
+  pill.className = `pill${st.installed ? ' ok' : ''}`;
+  $('tts-install').classList.toggle('hidden', st.installed);
+  const sel = $<HTMLSelectElement>('tts-voice');
+  if (!sel.options.length) {
+    const groups = new Map<string, HTMLOptGroupElement>();
+    for (const v of st.voices) {
+      const key = `${v.accent} ${v.gender.toLowerCase()}`;
+      if (!groups.has(key)) groups.set(key, el('optgroup', { label: key }));
+      groups.get(key)!.append(el('option', { value: v.id }, `${v.name}  ·  grade ${v.grade}`));
+    }
+    sel.append(...groups.values());
+  }
+  sel.value = st.voice;
+  const speed = $<HTMLInputElement>('tts-speed');
+  speed.value = String(st.speed);
+  $('tts-speed-label').textContent = `${Number(st.speed).toFixed(2)}×`;
+}
+$('tts-install').addEventListener('click', async () => {
+  const btn = $<HTMLButtonElement>('tts-install');
+  btn.disabled = true;
+  $('tts-error').textContent = '';
+  $('tts-progress').classList.remove('hidden');
+  try {
+    await j.ttsInstall();
+  } catch (err) {
+    $('tts-error').textContent = cleanError(err);
+  } finally {
+    btn.disabled = false;
+    $('tts-progress').classList.add('hidden');
+    void renderTts();
+  }
+});
+j.onTtsProgress(({ label, fraction }) => {
+  const bar = $('tts-progress');
+  (bar.querySelector('i') as HTMLElement).style.width = `${Math.round(fraction * 100)}%`;
+  bar.querySelector('span')!.textContent = `${label} ${Math.round(fraction * 100)}%`;
+});
+$('tts-voice').addEventListener('change', async () => {
+  await j.settingsSet({ ttsVoice: $<HTMLSelectElement>('tts-voice').value });
+  void speak(SAMPLE);
+});
+$('tts-speed').addEventListener('input', () => {
+  $('tts-speed-label').textContent = `${Number($<HTMLInputElement>('tts-speed').value).toFixed(2)}×`;
+});
+$('tts-speed').addEventListener('change', async () => {
+  await j.settingsSet({ ttsSpeed: Number($<HTMLInputElement>('tts-speed').value) });
+});
+$('tts-sample').addEventListener('click', () => void speak(SAMPLE));
+
 async function renderVoice() {
   const st = await j.speechStatus();
   const pill = $('speech-pill');
@@ -796,7 +863,17 @@ async function renderVoice() {
   $('speech-help').classList.toggle('hidden', !st.help);
   const hk = $<HTMLInputElement>('ptt-hotkey');
   if (document.activeElement !== hk) hk.value = st.hotkey ?? '';
+  const ck = $<HTMLInputElement>('card-hotkey');
+  if (document.activeElement !== ck) ck.value = (await j.cardHotkey()) ?? '';
 }
+$('card-save').addEventListener('click', async () => {
+  $('ptt-error').textContent = '';
+  try {
+    $<HTMLInputElement>('card-hotkey').value = await j.setCardHotkey($<HTMLInputElement>('card-hotkey').value || null);
+  } catch (err) {
+    $('ptt-error').textContent = cleanError(err);
+  }
+});
 $('speech-check').addEventListener('click', () => void renderVoice());
 $('speech-install').addEventListener('click', async () => {
   const btn = $<HTMLButtonElement>('speech-install');
@@ -830,6 +907,7 @@ async function renderSettings(s?: any) {
   const snap = s ?? (await j.settingsGet());
   $<HTMLSelectElement>('model-override').value = snap.modelOverride ?? '';
   $<HTMLInputElement>('voice-output').checked = snap.voiceOutput;
+  $<HTMLSelectElement>('explain-level').value = snap.explainLevel ?? 'auto';
   voiceOn = snap.voiceOutput;
 }
 $('model-override').addEventListener('change', async (e) => {
@@ -838,6 +916,9 @@ $('model-override').addEventListener('change', async (e) => {
 });
 $('voice-output').addEventListener('change', async (e) => {
   renderSettings(await j.settingsSet({ voiceOutput: (e.target as HTMLInputElement).checked }));
+});
+$('explain-level').addEventListener('change', async (e) => {
+  renderSettings(await j.settingsSet({ explainLevel: (e.target as HTMLSelectElement).value }));
 });
 j.onSettings((s) => renderSettings(s));
 

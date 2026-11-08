@@ -59,16 +59,26 @@ export interface AppSettings {
   abilities: Record<string, AbilitySetting>;
 }
 
+export const EXPLAIN_LEVELS = ['auto', 'eli5', 'student', 'professional'] as const;
+export type ExplainLevel = (typeof EXPLAIN_LEVELS)[number];
+
 export interface JarvisSettings {
   apps: Record<string, AppSettings>;
   /** User-added apps (definitions are stored, credentials are not). */
   customApps: AppDef[];
   modelOverride: 'haiku' | 'sonnet' | null;
+  /** Natural voice (Kokoro voice id) and speaking speed. */
+  ttsVoice?: string;
+  ttsSpeed?: number;
   /** Push-to-talk hotkey (Electron accelerator); null = platform default. */
   pttHotkey?: string | null;
+  /** Shortcut that shows/hides the voice card while Jarvis answers; null = default. */
+  voiceCardHotkey?: string | null;
   /** OAuth client IDs for Google / Microsoft sign-in (not secret). */
   oauthClients: Record<string, { clientId: string }>;
   voiceOutput: boolean;
+  /** How Jarvis pitches explanations: auto (guess from the question), eli5, student or professional. */
+  explainLevel?: ExplainLevel;
 }
 
 export interface ToolDef {

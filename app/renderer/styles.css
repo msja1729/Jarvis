@@ -351,3 +351,6 @@ body:not(.voice) .voice-card { display: none !important; }
   .brand-orb, .brand-orb::after { animation: none; }
   .orb::before, .dot.busy, .mini-orb, .dots i { animation: none; }
 }
+
+/* range sliders match the design (no default blue) */
+input[type=range] { accent-color: var(--light); padding: 0; border: none; background: none; height: 22px; }

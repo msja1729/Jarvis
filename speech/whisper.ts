@@ -13,6 +13,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { downloadVerified } from './download.js';
 
 export const WHISPER_WIN = {
   url: 'https://github.com/ggml-org/whisper.cpp/releases/download/b5130/whisper-bin-x64.zip',
@@ -101,36 +102,8 @@ export class WhisperEngine {
   }
 
   /** Streams to a temp file, checks SHA-256, then moves into place. */
-  async download(url: string, dest: string, sha256: string, onProgress: (fraction: number) => void): Promise<void> {
-    const res = await (this.opts.fetchImpl ?? fetch)(url);
-    if (!res.ok || !res.body) throw new Error(`Download failed (${res.status}) for ${url}`);
-    const total = Number(res.headers.get('content-length')) || 0;
-    const tmp = `${dest}.part`;
-    const out = fs.createWriteStream(tmp);
-    const hash = crypto.createHash('sha256');
-    let got = 0;
-    try {
-      const reader = res.body.getReader();
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        hash.update(value);
-        got += value.length;
-        if (!out.write(value)) await new Promise<void>((r) => out.once('drain', () => r()));
-        if (total) onProgress(got / total);
-      }
-      await new Promise<void>((resolve, reject) => out.end((err?: Error | null) => (err ? reject(err) : resolve())));
-    } catch (err) {
-      out.destroy();
-      fs.rmSync(tmp, { force: true });
-      throw err;
-    }
-    const digest = hash.digest('hex');
-    if (digest !== sha256) {
-      fs.rmSync(tmp, { force: true });
-      throw new Error(`Download check failed for ${path.basename(dest)} (unexpected checksum). Nothing was installed.`);
-    }
-    fs.renameSync(tmp, dest);
+  download(url: string, dest: string, sha256: string, onProgress: (fraction: number) => void): Promise<void> {
+    return downloadVerified(this.opts.fetchImpl ?? fetch, url, dest, sha256, onProgress);
   }
 
   /** Transcribes a 16 kHz mono WAV file to plain text. */
