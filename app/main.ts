@@ -26,6 +26,7 @@ import { jpegToPdf } from '../tools/whiteboard/pdf.js';
 import type { Element } from '../tools/whiteboard/scene.js';
 import { TranscriptExecutor } from '../tools/recorder/executor.js';
 import { AppCatalog } from './apps.js';
+import { glassOptions, mainChromeOptions } from './glass.js';
 import { DEFAULT_PTT_HOTKEY, VoiceController } from './voice.js';
 import { Orchestrator } from './orchestrator.js';
 
@@ -144,20 +145,20 @@ function showIndicator(text: string, ms = 3500) {
     x: area.x + area.width - 356,
     y: area.y + area.height - 66,
     frame: false,
-    transparent: true,
     resizable: false,
     focusable: false,
     skipTaskbar: true,
     alwaysOnTop: true,
     show: false,
+    ...glassOptions(),
     webPreferences: { sandbox: true, contextIsolation: true },
   });
   w.setContentProtection(true);
   w.setIgnoreMouseEvents(true);
   const html =
-    `<body style="margin:0;font:14px system-ui,'Segoe UI',sans-serif">` +
-    `<div style="margin:3px;padding:10px 14px;border-radius:20px;background:#1d2026;color:#fff;display:flex;gap:8px;align-items:center;box-shadow:0 2px 8px #0006">` +
-    `<span style="width:10px;height:10px;border-radius:50%;background:#ff4d4d;display:inline-block"></span>${text}</div></body>`;
+    `<html style="background:transparent"><body style="margin:0;height:100vh;display:flex;gap:10px;align-items:center;padding:0 16px;box-sizing:border-box;` +
+    `font:600 13px 'Segoe UI Variable Display','Segoe UI',system-ui,sans-serif;color:#fff;background:linear-gradient(155deg,#2a2a2a,#1b1b1b)">` +
+    `<span style="width:9px;height:9px;border-radius:50%;background:#ff8fa3;flex:none"></span>${text}</body></html>`;
   void w.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`).then(() => w.showInactive());
   setTimeout(() => !w.isDestroyed() && w.close(), ms);
 }
@@ -211,7 +212,7 @@ const VOICE_WIDTH = 480;
 
 function placeVoiceWindow(w: BrowserWindow, height: number) {
   const area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
-  const h = Math.max(120, Math.min(Math.round(height), Math.round(area.height * 0.6)));
+  const h = Math.max(80, Math.min(Math.round(height), Math.round(area.height * 0.6)));
   w.setBounds({ x: Math.round(area.x + (area.width - VOICE_WIDTH) / 2), y: area.y + area.height - h - 12, width: VOICE_WIDTH, height: h });
 }
 
@@ -219,9 +220,9 @@ async function readyVoiceWindow(): Promise<BrowserWindow> {
   if (!voiceWindow || voiceWindow.isDestroyed()) {
     voiceWindow = new BrowserWindow({
       width: VOICE_WIDTH,
-      height: 180,
+      height: 160,
       frame: false,
-      transparent: true,
+      ...glassOptions(),
       resizable: false,
       skipTaskbar: true,
       alwaysOnTop: true,
@@ -252,11 +253,12 @@ function createMainWindow(show = true) {
     minHeight: 520,
     title: 'Jarvis',
     show,
-    backgroundColor: '#05061a',
+    ...glassOptions(),
+    ...mainChromeOptions(),
     // Keep audio capture running while the window is hidden (push-to-talk, recording).
     webPreferences: { preload: preloadPath(), contextIsolation: true, sandbox: true, nodeIntegration: false, backgroundThrottling: false },
   });
-  mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), { query: { mode: 'main' } });
   mainWindow.on('closed', () => (mainWindow = null));
 }
 
@@ -277,7 +279,7 @@ function toggleBox() {
     resizable: true,
     skipTaskbar: true,
     title: 'Jarvis',
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#14161a' : '#f6f7f9',
+    ...glassOptions(),
     webPreferences: { preload: preloadPath(), contextIsolation: true, sandbox: true, nodeIntegration: false },
   });
   boxWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), { query: { mode: 'box' } });
@@ -593,6 +595,7 @@ app.whenReady().then(async () => {
   control = await startControlServer(() => core);
 
   Menu.setApplicationMenu(null);
+  nativeTheme.themeSource = 'dark'; // dark-tinted glass
   voice.setupSession();
   voice.registerIpc();
   registerIpc();

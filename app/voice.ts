@@ -12,6 +12,7 @@ import { wavHeader } from '../speech/pcm.js';
 import { PushToTalk, PttState } from '../speech/ptt.js';
 import { WhisperEngine } from '../speech/whisper.js';
 import { MeetingRecorder } from '../tools/recorder/recorder.js';
+import { glassOptions } from './glass.js';
 
 export const DEFAULT_PTT_HOTKEY = process.platform === 'darwin' ? 'Alt+Space' : 'Control+Alt+Space';
 
@@ -268,16 +269,16 @@ export class VoiceController {
       const width = which === 'rec' ? 420 : 340;
       w = new BrowserWindow({
         width,
-        height: 56,
+        height: 48,
         x: Math.round(area.x + (area.width - width) / 2),
         y: which === 'rec' ? area.y + 10 : area.y + area.height - 80,
         frame: false,
-        transparent: true,
         resizable: false,
         focusable: false,
         skipTaskbar: true,
         alwaysOnTop: true,
         show: false,
+        ...glassOptions(),
         webPreferences: { preload: this.deps.preloadPath, contextIsolation: true, sandbox: true },
       });
       w.setAlwaysOnTop(true, 'screen-saver');

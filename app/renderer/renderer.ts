@@ -2,6 +2,7 @@
 import { speak, stopSpeaking } from '../../speech/tts.js';
 import type { Element } from '../../tools/whiteboard/scene.js';
 import { initWhiteboard } from './whiteboard.js';
+import { startWorldMap } from './worldmap.js';
 import { startCapture, stopCapture, CaptureKind } from './audio.js';
 
 interface Ability { name: string; title: string; description: string; group: string; setting: string; options: string[] }
@@ -82,10 +83,68 @@ const SETTING_LABEL: Record<string, string> = { off: 'Off', ask: 'Ask me first',
 let voiceOn = false;
 
 const MODE = new URLSearchParams(location.search).get('mode') ?? 'main';
-if (MODE === 'box') document.body.classList.add('box');
-if (MODE === 'voice') document.body.classList.add('voice');
+document.body.classList.add(MODE);
+if (MODE === 'main') startWorldMap(document.getElementById('worldmap') as HTMLCanvasElement);
+
+/* Soft fade at the top/bottom of scrolling areas, only where there is more to scroll. */
+function trackFade(node: HTMLElement) {
+  const update = () => {
+    const more = node.scrollHeight - node.clientHeight - node.scrollTop;
+    node.style.setProperty('--fto', node.scrollTop > 2 ? '1' : '0');
+    node.style.setProperty('--fbo', more > 2 ? '1' : '0');
+  };
+  node.classList.add('fade-scroll');
+  node.addEventListener('scroll', update, { passive: true });
+  new ResizeObserver(update).observe(node);
+  new MutationObserver(update).observe(node, { childList: true, subtree: true });
+  update();
+}
+document.querySelectorAll<HTMLElement>('.view:not(#view-chat), #messages, .vc-answer').forEach(trackFade);
+
+/* ---------- menu: one glass pill slides to the tab under the mouse ---------- */
+const navPill = document.querySelector<HTMLElement>('.nav-pill');
+function movePill(target: HTMLElement | null, instant = false) {
+  if (!navPill || !target) return;
+  const nav = target.parentElement!.getBoundingClientRect();
+  const r = target.getBoundingClientRect();
+  if (instant) navPill.style.transition = 'none';
+  navPill.style.width = `${r.width}px`;
+  navPill.style.height = `${r.height}px`;
+  navPill.style.transform = `translate(${r.left - nav.left}px, ${r.top - nav.top}px)`;
+  navPill.style.opacity = '1';
+  if (instant) {
+    void navPill.offsetWidth;
+    navPill.style.transition = '';
+  }
+}
+const activeTab = () => document.querySelector<HTMLElement>('#nav button[data-view].active');
+document.querySelectorAll<HTMLElement>('#nav button[data-view]').forEach((b) => b.addEventListener('pointerenter', () => movePill(b)));
+let pillReturn: number | null = null;
+document.querySelectorAll<HTMLElement>('#nav button[data-view]').forEach((b) =>
+  b.addEventListener('pointerenter', () => {
+    if (pillReturn !== null) window.clearTimeout(pillReturn);
+    pillReturn = null;
+  }),
+);
+$('nav').addEventListener('pointerleave', () => {
+  if (pillReturn !== null) window.clearTimeout(pillReturn);
+  pillReturn = window.setTimeout(() => {
+    pillReturn = null;
+    movePill(activeTab());
+  }, 220);
+});
+window.addEventListener('resize', () => movePill(activeTab(), true));
+requestAnimationFrame(() => movePill(activeTab(), true));
 
 /* ---------- navigation ---------- */
+const SUBS: Record<string, string> = {
+  chat: 'Ask anything, by typing or with your voice',
+  hub: 'Your apps and what Jarvis may do in each  ·  changes apply on the next request',
+  whiteboard: 'Draw together  ·  ask “what did I draw?”',
+  usage: 'Tokens used on your Claude plan  ·  updated after every request',
+  activity: 'Everything Jarvis did or was stopped from doing',
+  settings: 'Model, voice and shortcuts',
+};
 const TITLES: Record<string, string> = {
   chat: 'Chat',
   hub: 'Tool Hub',
@@ -98,6 +157,8 @@ function show(view: string) {
   document.querySelectorAll<HTMLButtonElement>('#nav button[data-view]').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${view}`));
   $('page-title').textContent = TITLES[view] ?? view;
+  $('page-sub').textContent = SUBS[view] ?? '';
+  movePill(activeTab());
   if (view === 'hub') {
     void renderAccounts();
     void renderHub();
@@ -119,6 +180,7 @@ function setStatus(state: 'ok' | 'busy' | 'err', text: string) {
   $('status-dot').className = `dot ${state}`;
   $('status-text').textContent = text;
   $('orb').classList.toggle('thinking', state === 'busy');
+  document.body.classList.toggle('busy', state === 'busy');
 }
 async function refreshChips() {
   try {
@@ -241,7 +303,7 @@ let voiceBusy = false;
 let voiceHideTimer: number | null = null;
 const card = $('voice-card');
 function fitVoice() {
-  requestAnimationFrame(() => j.voiceResize(Math.ceil(card.getBoundingClientRect().height) + 16));
+  requestAnimationFrame(() => j.voiceResize(Math.ceil(card.getBoundingClientRect().height)));
 }
 function setVoiceStatus(text: string | null) {
   $('vc-status-text').textContent = text ?? '';
@@ -672,8 +734,8 @@ function renderRings(today: UsageEntry[]) {
   const cached = today.reduce((a, e) => a + (e.usage?.cacheRead ?? 0), 0);
   const normal = today.filter((e) => !e.expensive).length;
   const rings: [number | null, string, string, string][] = [
-    [total ? cached / total : null, '#ffffff', 'Reused from cache', 'Share of today’s tokens Claude reused from memory (cheaper).'],
-    [today.length ? normal / today.length : null, '#ffc876', 'Normal-cost requests', 'Requests today that stayed under 3× your baseline.'],
+    [total ? cached / total : null, '#e6e6e6', 'Reused from cache', 'Share of today’s tokens Claude reused from memory (cheaper).'],
+    [today.length ? normal / today.length : null, '#5a8fd0', 'Normal-cost requests', 'Requests today that stayed under 3× your baseline.'],
   ];
   const NS = 'http://www.w3.org/2000/svg';
   $('usage-rings').replaceChildren(

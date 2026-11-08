@@ -7,12 +7,11 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div class="nebula" aria-hidden="true">
-      <i class="f1"></i><i class="f2"></i><i class="f3"></i><i class="f4"></i><i class="f5"></i><i class="f6"></i><i class="f7"></i>
-      <i class="grain-bg"></i>
-    </div>
+    <div class="titlebar" aria-hidden="true"></div>
+    <div class="nebula" aria-hidden="true"><canvas id="worldmap"></canvas><i class="glow"></i><i class="glow g2"></i><i class="glow g3"></i></div>
     <div id="app">
       <nav id="nav" class="glass">
+        <span class="nav-pill" aria-hidden="true"></span>
         <div class="brand">
           <span class="brand-orb" aria-hidden="true"></span>
           <span>JARVIS</span>
@@ -43,7 +42,7 @@
 
       <div id="frame">
         <header id="topbar" class="glass">
-          <h1 id="page-title">Chat</h1>
+          <div class="hero"><h1 id="page-title">Chat</h1><p id="page-sub">Ask anything, by typing or with your voice</p></div>
           <div class="spacer"></div>
           <div class="chip" title="Jarvis status"><span id="status-dot" class="dot ok"></span><span id="status-text">Ready</span></div>
           <div class="chip" title="Tokens used today"><span class="chip-label">Today</span><b id="chip-tokens">–</b></div>
