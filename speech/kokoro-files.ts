@@ -9,12 +9,13 @@ export const KOKORO_FILES: { path: string; bytes: number; sha256: string }[] = [
   { path: 'config.json', bytes: 44, sha256: 'df34b4f930b23447cd4dc410fabfb42eb3f24e803e6c3f97d618fb359380a36f' },
   { path: 'tokenizer.json', bytes: 3497, sha256: '77a02c8e164413299b4b4c403b14f8e0e1c1b727db4d46a09d6327b861060a34' },
   { path: 'tokenizer_config.json', bytes: 113, sha256: 'be1cb066d6ef6b074b3f15e6a6dd21ac88ff3cdaedf325f0aaed686c70f75d20' },
-  // fp16: about 5x faster than the 8-bit model on x86 CPUs, at half the size of full precision.
-  { path: 'onnx/model_fp16.onnx', bytes: 163234740, sha256: 'ba4527a874b42b21e35f468c10d326fdff3c7fc8cac1f85e9eb6c0dfc35c334a' },
+  // Full precision. The 8-bit model is ~5x slower on x86 CPUs, and the fp16 model produces broken
+  // (NaN) audio for some voices, which sounded like speech cutting off. fp32 is clean and as fast.
+  { path: 'onnx/model.onnx', bytes: 325532232, sha256: '8fbea51ea711f2af382e88c833d9e288c6dc82ce5e98421ea61c058ce21a34cb' },
 ];
 
 /** Which of the model files above the engine loads. */
-export const KOKORO_DTYPE = 'fp16';
+export const KOKORO_DTYPE = 'fp32';
 
 export const kokoroUrl = (file: string) => `https://huggingface.co/${KOKORO_REPO}/resolve/${KOKORO_REVISION}/${file}`;
 

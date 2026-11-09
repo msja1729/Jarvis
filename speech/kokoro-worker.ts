@@ -7,7 +7,7 @@ import os from 'node:os';
 import { parentPort } from 'node:worker_threads';
 import { KokoroTTS } from 'kokoro-js';
 import { AutoTokenizer, env, StyleTextToSpeech2Model } from '@huggingface/transformers';
-import { speechChunks } from './chunks.js';
+import { pauseAfter, speechChunks, tidyPiece } from './chunks.js';
 import { KOKORO_DTYPE } from './kokoro-files.js';
 
 type In =
@@ -74,8 +74,12 @@ async function speak(msg: Extract<In, { type: 'speak' }>): Promise<void> {
         if (cancelled.has(id)) break;
         const audio = await engine.generate(piece, { voice: msg.voice as never, speed: msg.speed });
         if (cancelled.has(id)) break;
-        const copy = new Float32Array(audio.audio as Float32Array); // own buffer so it can be transferred
-        parentPort!.postMessage({ type: 'chunk', id, index: index++, rate: audio.sampling_rate, audio: copy }, [copy.buffer]);
+        const raw = audio.audio as Float32Array;
+        // safety net: a broken (NaN/Infinity) sample would make the rest of the piece silent
+        for (let i = 0; i < raw.length; i++) if (!Number.isFinite(raw[i])) raw[i] = 0;
+        // trim the model's padding and add a natural pause for how the piece ends (own buffer, so it can be transferred)
+        const copy = tidyPiece(raw, audio.sampling_rate, pauseAfter(piece));
+        parentPort!.postMessage({ type: 'chunk', id, index: index++, rate: audio.sampling_rate, audio: copy }, [copy.buffer as ArrayBuffer]);
       }
       parentPort!.postMessage({ type: 'done', id, cancelled: cancelled.has(id) });
     } catch (err) {

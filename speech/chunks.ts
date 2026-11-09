@@ -50,17 +50,62 @@ function cut(sentence: string, limit: number): string[] {
   return out;
 }
 
+/** The second piece is kept medium-sized so it is ready before the first one finishes playing. */
+export const SECOND_CHUNK_CHARS = 140;
+/** Pieces shorter than this are joined with the next (a lone "Sure!" plays too fast to cover the next piece). */
+export const MIN_CHUNK_CHARS = 28;
+
 export function speechChunks(text: string): string[] {
-  const out: string[] = [];
+  // tiny sentences ride along with the next one
+  const merged: string[] = [];
   for (const s of sentences(text)) {
-    if (out.length === 0) {
-      const [first, ...rest] = cut(s, FIRST_CHUNK_CHARS);
-      out.push(first);
-      // the remainder of the first sentence can use the normal size
-      if (rest.length) out.push(...cut(rest.join(' '), CHUNK_CHARS));
-    } else {
-      out.push(...cut(s, CHUNK_CHARS));
-    }
+    const prev = merged[merged.length - 1];
+    if (prev !== undefined && prev.length < MIN_CHUNK_CHARS && prev.length + 1 + s.length <= CHUNK_CHARS) merged[merged.length - 1] = `${prev} ${s}`;
+    else merged.push(s);
+  }
+  const out: string[] = [];
+  for (const s of merged) {
+    // growing sizes: start fast, then keep ahead of playback
+    const limit = out.length === 0 ? FIRST_CHUNK_CHARS : out.length === 1 ? SECOND_CHUNK_CHARS : CHUNK_CHARS;
+    const [first, ...rest] = cut(s, limit);
+    out.push(first);
+    if (rest.length) out.push(...cut(rest.join(' '), out.length === 1 ? SECOND_CHUNK_CHARS : CHUNK_CHARS));
+  }
+  return out;
+}
+
+/** Pause after a piece, by how it ends: a full stop is a breath, a comma is a beat, a cut mid-phrase is none. */
+export function pauseAfter(piece: string): number {
+  const end = piece.trim().slice(-1);
+  if ('.!?…'.includes(end)) return 0.28;
+  if (':;'.includes(end)) return 0.18;
+  if (',—–-'.includes(end)) return 0.09;
+  return 0.02;
+}
+
+/**
+ * The voice model pads every piece with 0.2-0.8 s of silence at both ends, which sounded like the
+ * voice breaking mid-sentence. Trim it (keeping a few ms so nothing clicks) and add the right pause.
+ */
+export function tidyPiece(audio: Float32Array, rate: number, pause: number): Float32Array {
+  let peak = 0;
+  for (const v of audio) peak = Math.max(peak, Math.abs(v));
+  if (peak === 0) return new Float32Array(Math.round(rate * pause));
+  const th = peak * 0.015;
+  let first = 0;
+  while (first < audio.length && Math.abs(audio[first]) < th) first++;
+  let last = audio.length - 1;
+  while (last > first && Math.abs(audio[last]) < th) last--;
+  const keep = Math.round(rate * 0.025); // keep 25 ms of the natural attack and release
+  const from = Math.max(0, first - keep);
+  const to = Math.min(audio.length, last + 1 + keep * 2);
+  const out = new Float32Array(to - from + Math.round(rate * pause));
+  out.set(audio.subarray(from, to));
+  // short fades so cut edges never click
+  const fade = Math.min(Math.round(rate * 0.006), (to - from) >> 2);
+  for (let i = 0; i < fade; i++) {
+    out[i] *= i / fade;
+    out[to - from - 1 - i] *= i / fade;
   }
   return out;
 }

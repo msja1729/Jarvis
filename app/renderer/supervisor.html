@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
+    <title>Jarvis coding supervisor</title>
+    <link rel="stylesheet" href="supervisor.css" />
+  </head>
+  <body>
+    <div id="card" class="card">
+      <header class="head">
+        <span class="orb" aria-hidden="true"></span>
+        <div class="titles">
+          <div class="kicker">Project Manager · coding</div>
+          <div id="task" class="task">No task yet</div>
+        </div>
+        <span id="state" class="pill">Idle</span>
+        <button id="hide" class="x" title="Hide (Claude keeps working)" aria-label="Hide">
+          <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+      </header>
+
+      <section id="ask" class="ask hidden">
+        <div id="ask-label" class="label">Claude is asking</div>
+        <div id="ask-text" class="question"></div>
+        <pre id="ask-detail" class="detail hidden"></pre>
+        <div id="advice" class="advice hidden"><span class="who">PM</span><span id="advice-text"></span></div>
+        <div id="choices" class="choices"></div>
+        <form id="reply" class="reply">
+          <input id="reply-text" autocomplete="off" placeholder="Or tell Claude something else…" />
+          <button type="submit">Send</button>
+        </form>
+      </section>
+
+      <section id="changes" class="changes hidden">
+        <div class="changes-head"><span>What changed</span><span id="tests" class="tests hidden"></span></div>
+        <div id="files-list" class="files-list"></div>
+      </section>
+
+      <section id="feed" class="feed"></section>
+
+      <footer class="foot">
+        <span id="files" class="files"></span>
+        <button id="open" class="chip" title="Open the project in VS Code">Open in VS Code</button>
+        <button id="stop" class="chip danger">Stop</button>
+      </footer>
+    </div>
+    <script src="supervisor.js"></script>
+  </body>
+</html>

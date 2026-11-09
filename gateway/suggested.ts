@@ -8,11 +8,19 @@ export interface SuggestedApp {
   name: string;
   description: string;
   url: string;
-  auth: 'oauth' | 'key';
+  /** none: works without an account (no sign-in, no key). */
+  auth: 'oauth' | 'key' | 'none';
   keyHelp?: string;
 }
 
 export const SUGGESTED_APPS: SuggestedApp[] = [
+  {
+    id: 'web',
+    name: 'Web search (Exa)',
+    description: 'Search the web and read pages, for current facts and news. No account needed. Your search questions are sent to Exa.',
+    url: 'https://mcp.exa.ai/mcp',
+    auth: 'none',
+  },
   { id: 'notion', name: 'Notion', description: 'Search, read, and edit your Notion pages.', url: 'https://mcp.notion.com/mcp', auth: 'oauth' },
   { id: 'linear', name: 'Linear', description: 'Find, create, and update Linear issues.', url: 'https://mcp.linear.app/mcp', auth: 'oauth' },
   { id: 'atlassian', name: 'Jira & Confluence', description: 'Work with Jira issues and Confluence pages.', url: 'https://mcp.atlassian.com/v1/mcp', auth: 'oauth' },

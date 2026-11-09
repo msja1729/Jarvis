@@ -16,11 +16,51 @@
   "build": {
     "appId": "dev.jarvis.desktop",
     "productName": "Jarvis",
+    "asar": false,
+    "npmRebuild": false,
     "files": [
       "dist/**",
       "docs/**",
-      "package.json"
+      "package.json",
+      "!dist/**/*.map",
+      "!**/node_modules/**/{test,tests,__tests__,example,examples}/**",
+      "!**/node_modules/**/*.{md,map,ts,tsx}",
+      "!**/node_modules/onnxruntime-web/**",
+      "!**/node_modules/onnxruntime-node/bin/napi-v3/linux/**",
+      "!**/node_modules/@napi-rs/canvas*/**"
     ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "files": [
+        "dist/**",
+        "docs/**",
+        "package.json",
+        "!dist/**/*.map",
+        "!**/node_modules/**/{test,tests,__tests__,example,examples}/**",
+        "!**/node_modules/**/*.{md,map,ts,tsx}",
+        "!**/node_modules/onnxruntime-web/**",
+        "!**/node_modules/onnxruntime-node/bin/napi-v3/linux/**",
+        "!**/node_modules/onnxruntime-node/bin/napi-v3/darwin/**",
+        "!**/node_modules/@napi-rs/canvas*/**",
+        "!**/node_modules/onnxruntime-node/bin/napi-v3/win32/arm64/**"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Jarvis",
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "Jarvis-Setup-${version}.${ext}"
+    },
     "mac": {
       "target": [
         {
@@ -30,36 +70,47 @@
           ]
         }
       ],
-      "minimumSystemVersion": "13.0"
+      "minimumSystemVersion": "13.0",
+      "category": "public.app-category.productivity",
+      "files": [
+        "dist/**",
+        "docs/**",
+        "package.json",
+        "!dist/**/*.map",
+        "!**/node_modules/**/{test,tests,__tests__,example,examples}/**",
+        "!**/node_modules/**/*.{md,map,ts,tsx}",
+        "!**/node_modules/onnxruntime-web/**",
+        "!**/node_modules/onnxruntime-node/bin/napi-v3/linux/**",
+        "!**/node_modules/onnxruntime-node/bin/napi-v3/win32/**",
+        "!**/node_modules/@napi-rs/canvas*/**"
+      ],
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Jarvis listens when you press the push-to-talk shortcut, and records meetings when you ask it to.",
+        "NSAudioCaptureUsageDescription": "Jarvis records meeting audio when you ask it to."
+      }
     },
-    "win": {
-      "target": "nsis"
-    },
-    "asarUnpack": [
-      "dist/gateway/**"
-    ],
     "directories": {
       "output": "release"
     }
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.32.2",
     "@napi-rs/keyring": "^2.1.2",
-    "fflate": "0.8.3",
-    "highlight.js": "11.12.0",
-    "katex": "0.19.0",
     "kokoro-js": "^1.2.1",
-    "mermaid": "12.1.0",
-    "pdfjs-dist": "6.4.299",
-    "zod": "4.6.6"
+    "pdfjs-dist": "6.4.299"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@types/node": "^24.19.2",
     "electron": "^45.2.3",
     "electron-builder": "^26.18.0",
     "esbuild": "^0.28.2",
+    "fflate": "0.8.3",
+    "highlight.js": "11.12.0",
+    "katex": "0.19.0",
+    "mermaid": "12.1.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.10"
+    "vitest": "^4.0.10",
+    "zod": "4.6.6"
   },
   "allowScripts": {
     "esbuild@0.28.2": true,

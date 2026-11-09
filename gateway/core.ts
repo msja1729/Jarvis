@@ -46,9 +46,11 @@ export class GatewayCore {
   }
 
   /** T4 + T10: only usable tools, in a stable order with fixed text. */
-  listTools(): ToolDef[] {
+  /** @param allow only these apps (a team role's apps); all when not given. */
+  listTools(allow?: (app: AppDef) => boolean): ToolDef[] {
     const out: ToolDef[] = [];
     for (const app of this.sortedApps()) {
+      if (allow && !allow(app)) continue;
       for (const ability of app.abilities) {
         if (this.deps.settings.effective(app, ability) === 'off') continue;
         if (this.deps.available && !this.deps.available(app)) continue;
@@ -62,12 +64,16 @@ export class GatewayCore {
     return out;
   }
 
-  async callTool(name: string, input: Record<string, unknown> = {}): Promise<ToolResult> {
+  async callTool(name: string, input: Record<string, unknown> = {}, allow?: (app: AppDef) => boolean): Promise<ToolResult> {
     const parsed = parseToolName(name);
     const app = parsed && this.deps.apps().find((a) => a.id === parsed.appId);
     const ability = app?.abilities.find((a) => a.name === parsed!.ability);
     if (!parsed || !app || !ability) {
       return { text: `unknown tool: ${name}`, isError: true };
+    }
+    if (allow && !allow(app)) {
+      // a team role may only use its own apps; another role can be asked through the team tool
+      return { text: `blocked: ${app.name} belongs to another member of the team. Ask them with the team tool instead.`, isError: true };
     }
 
     const setting = this.deps.settings.effective(app, ability);

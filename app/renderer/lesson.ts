@@ -9,6 +9,7 @@ import mermaid from 'mermaid';
 import katex from 'katex';
 import hljs from 'highlight.js/lib/common';
 import { Narrator, NarratorApi } from './narrator.js';
+import { StageView } from './stage.js';
 import { compile, Fn } from '../../tools/lesson/expr.js';
 import type { Block, Change, Lesson, Part, Shape } from '../../tools/lesson/spec.js';
 
@@ -94,6 +95,8 @@ mermaid.initialize({
 
 /* ---------- state ---------- */
 let lesson: Lesson | null = null;
+/** Set when a step's animation already scrolled the page to an earlier stage. */
+let scrolledByPlay = false;
 /** Each distinct source gets a number, in the order it first appears: [1], [2]... */
 let sources = new Map<string, number>();
 function numberSources() {
@@ -107,6 +110,24 @@ let token = 0; // bumps whenever playback jumps, so stale callbacks do nothing
 let mermaidSeq = 0;
 const loops = new Set<number>(); // running animation frames (plots, scenes)
 const scenes = new Map<string, SceneState>();
+const stages = new Map<string, StageView>();
+
+/** Renders inline LaTeX; anything KaTeX cannot handle is shown as plain text instead of breaking the picture. */
+function texSafe(src: string, into: HTMLElement) {
+  try {
+    katex.render(src, into, katexOpts(false));
+  } catch {
+    into.textContent = src;
+  }
+}
+
+/** KaTeX settings: never trusted, plus colour commands so a symbol can share its picture's colour, e.g. \blue{x}. */
+function katexOpts(displayMode: boolean) {
+  const macros: Record<string, string> = {};
+  // hex without '#': inside a macro, '#3' would mean "argument 3"
+  for (const [name, hex] of Object.entries(NAMED)) macros[`\\${name}`] = `\\textcolor{${hex.slice(1)}}{#1}`;
+  return { displayMode, throwOnError: false, trust: false, strict: 'ignore' as const, macros };
+}
 const page = $('page');
 const board = $('board');
 
@@ -114,6 +135,7 @@ function stopLoops() {
   for (const id of loops) cancelAnimationFrame(id);
   loops.clear();
   for (const s of scenes.values()) s.stopAll();
+  stages.clear();
 }
 
 /* ---------- inline text: **bold**, *italic*, `code`, $math$ ---------- */
@@ -126,7 +148,7 @@ function inline(text: string, into: HTMLElement) {
     else if (part.startsWith('$') && part.endsWith('$') && part.length > 2) {
       const span = el('span', '', into);
       try {
-        katex.render(part.slice(1, -1), span, { throwOnError: false, trust: false, strict: 'ignore' });
+        katex.render(part.slice(1, -1), span, katexOpts(false));
       } catch {
         span.textContent = part;
       }
@@ -612,6 +634,17 @@ function diagramSvg(code: string): Promise<string> {
 /* ---------- blocks ---------- */
 async function renderBlock(b: Block, animate: boolean, sayMs: number, alive: () => boolean): Promise<void> {
   if (b.type === 'animate') return runAnimate(b, animate, alive);
+  if (b.type === 'play') {
+    // more animation on a stage shown earlier (e.g. now slide the parameter, now bend the plane)
+    const view = stages.get(b.target ?? 'stage') ?? [...stages.values()].at(-1);
+    void view?.play(b.actions ?? [], animate, sayMs);
+    if (animate && view) {
+      // bring that stage back into view so the student sees it move
+      view.root.closest('.blk')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      scrolledByPlay = true;
+    }
+    return;
+  }
   const box = el('section', 'blk', page);
   if (b.id) box.dataset.id = b.id;
   if (animate) box.classList.add('in');
@@ -655,11 +688,46 @@ async function renderBlock(b: Block, animate: boolean, sayMs: number, alive: () 
     }
     case 'math': {
       const m = el('div', 'math', titled());
-      try {
-        katex.render(b.tex ?? '', m, { displayMode: true, throwOnError: false, trust: false, strict: 'ignore' });
-      } catch {
-        m.textContent = b.tex ?? '';
+      const steps = animate && b.texSteps ? b.texSteps : [b.tex ?? ''];
+      const show = (tex: string, into: HTMLElement) => {
+        try {
+          katex.render(tex, into, katexOpts(true));
+        } catch {
+          into.textContent = tex;
+        }
+      };
+      if (steps.length === 1) {
+        show(steps[0], m);
+        break;
       }
+      // the equation changes step by step across the narration
+      m.classList.add('morph');
+      const layers = steps.map((tex) => {
+        const layer = el('div', 'eq', m);
+        show(tex, layer);
+        return layer;
+      });
+      layers[0].classList.add('on');
+      const gap = Math.max(1100, (sayMs * 0.85) / steps.length);
+      layers.slice(1).forEach((layer, i) =>
+        setTimeout(() => {
+          if (!alive()) return;
+          layers[i].classList.replace('on', 'off');
+          layer.classList.add('on');
+        }, gap * (i + 1)),
+      );
+      break;
+    }
+    case 'stage': {
+      const card = titled('card viz stagecard');
+      // objects that a later step creates start hidden
+      const hidden = new Set<string>();
+      const creates = (acts: Block['actions']) => (acts ?? []).filter((a) => a.do === 'create').forEach((a) => a.ids?.forEach((id) => hidden.add(id)));
+      creates(b.stage!.actions);
+      for (const st of lesson?.steps ?? []) for (const x of st.show) if (x.type === 'play' && x.target === b.id) creates(x.actions);
+      const view = new StageView(card, b.stage!, { color: (name, i) => col(name, PALETTE[i % PALETTE.length]), tex: (src, into) => texSafe(src, into), alive }, hidden);
+      stages.set(b.id ?? 'stage', view);
+      void view.play(b.stage!.actions, animate, sayMs);
       break;
     }
     case 'diagram': {
@@ -934,7 +1002,8 @@ async function goTo(i: number, play: boolean) {
   await showStep(i, true, my, voiceMs);
   if (my !== token) return;
   const last = page.lastElementChild as HTMLElement | null;
-  if (last && !st.focus) board.scrollTo({ top: Math.max(0, last.offsetTop + last.offsetHeight - board.clientHeight + 120), behavior: 'smooth' });
+  if (scrolledByPlay) scrolledByPlay = false;
+  else if (last && !st.focus) board.scrollTo({ top: Math.max(0, last.offsetTop + last.offsetHeight - board.clientHeight + 120), behavior: 'smooth' });
   if (play) speakStep(my);
 }
 

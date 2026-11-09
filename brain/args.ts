@@ -21,6 +21,10 @@ export interface RunArgs {
   sessionId: string | null;
   gateway: GatewayLaunch | null;
   maxTurns?: number;
+  /** A team role's fixed system prompt; Jarvis's own when not given. */
+  systemPrompt?: string;
+  /** Stream the reply as it is written (for speaking early). */
+  partial?: boolean;
 }
 
 export function mcpConfigJson(gateway: GatewayLaunch | null): string {
@@ -44,7 +48,7 @@ export function buildArgs(r: RunArgs): string[] {
     '--tools',
     '',
     '--system-prompt',
-    JARVIS_SYSTEM_PROMPT,
+    r.systemPrompt ?? JARVIS_SYSTEM_PROMPT,
     '--mcp-config',
     mcpConfigJson(r.gateway),
     '--strict-mcp-config',
@@ -58,6 +62,7 @@ export function buildArgs(r: RunArgs): string[] {
     '',
     '--disable-slash-commands',
   ];
+  if (r.partial) args.push('--include-partial-messages');
   if (r.sessionId) args.push('--resume', r.sessionId);
   return args;
 }

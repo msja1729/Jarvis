@@ -136,3 +136,54 @@ describe('the Lessons app', () => {
     expect(pickModel('help me understand derivatives')).toBe('sonnet');
   });
 });
+
+describe('visual maths stages', () => {
+  it('expressions can use slider parameters, including multi-letter names', () => {
+    expect(compile('a*x^2 + k', ['a', 'k'])(2, 0, { a: 3, k: 1 })).toBe(13);
+    expect(compile('ax', ['a'])(2, 0, { a: 5 })).toBe(10); // a·x
+    expect(compile('cos(theta)', ['theta'])(0, 0, { theta: Math.PI })).toBeCloseTo(-1);
+    expect(() => compile('b*x', ['a'])).toThrow(/unknown name/); // undeclared names are refused
+    expect(compile('constructor + 1', ['constructor'])(0, 0, {})).toBe(1); // reads only slider values, never built-in properties
+  });
+
+  it('keeps a valid stage: sliders, draggable point, tangent, matrix and parameter animations', () => {
+    const { lesson, warnings } = normalizeLesson({
+      title: 'What a derivative is',
+      steps: [
+        {
+          say: 'Watch the tangent line as the point slides along the curve.',
+          show: [
+            {
+              type: 'stage',
+              id: 'plane',
+              x: [-4, 4],
+              y: [-1, 9],
+              params: [{ name: 'a', min: -3, max: 3, value: -2, label: 'a' }, { name: 'bad name!' }],
+              objects: [
+                { id: 'f', kind: 'function', expr: 'x^2', color: 'blue', tex: 'f(x)=x^2' },
+                { id: 'p', kind: 'point', at: ['a', 'a^2'], drag: { x: 'a' } },
+                { id: 'tan', kind: 'tangent', of: 'f', a: 'a', color: 'yellow' },
+                { id: 'oops', kind: 'tangent', of: 'nothing', a: 1 },
+                { id: 'g', kind: 'function', expr: 'evil()' },
+              ],
+              actions: [{ do: 'create', ids: ['f'] }, { do: 'create', ids: ['p', 'tan'] }, { do: 'set', param: 'a', to: 2, seconds: 3 }, { do: 'explode' }],
+            },
+          ],
+        },
+        { say: 'Now bend the whole plane.', show: [{ type: 'play', target: 'plane', actions: [{ do: 'matrix', m: [[1, 1], [0, 1]] }] }] },
+        { say: 'Expand it.', show: [{ type: 'math', tex: ['(x+1)^2', 'x^2+2x+1'] }] },
+      ],
+    });
+    const stage = lesson.steps[0].show[0].stage!;
+    expect(stage.params.map((p) => p.name)).toEqual(['a']);
+    expect(stage.objects.map((o) => o.id)).toEqual(['f', 'p', 'tan']);
+    expect(stage.objects[1].drag).toEqual({ x: 'a', y: undefined });
+    expect(stage.actions.map((a) => a.do)).toEqual(['create', 'create', 'set']);
+    expect(lesson.steps[1].show[0].actions![0].m).toEqual([[1, 1], [0, 1]]);
+    expect(lesson.steps[2].show[0].texSteps).toEqual(['(x+1)^2', 'x^2+2x+1']);
+    const w = warnings.join(' | ');
+    expect(w).toMatch(/must be the id of a function/);
+    expect(w).toMatch(/evil/);
+    expect(w).toMatch(/explode/);
+  });
+});

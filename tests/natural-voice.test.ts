@@ -40,7 +40,7 @@ describe('voice model files', () => {
       expect(f.sha256).toMatch(/^[0-9a-f]{64}$/);
       expect(kokoroUrl(f.path)).toContain(`/resolve/${KOKORO_REVISION}/`);
     }
-    expect(KOKORO_FILES.find((f) => f.path === 'onnx/model_fp16.onnx')?.bytes).toBe(163234740);
+    expect(KOKORO_FILES.find((f) => f.path === 'onnx/model.onnx')?.bytes).toBe(325532232);
   });
 
   it('every voice in the picker ships with kokoro-js', () => {
@@ -90,7 +90,7 @@ describe.skipIf(!realDir)('natural voice engine (real)', () => {
     const engine = new KokoroEngine(realDir!, path.join(ROOT, 'dist', 'speech', 'kokoro-worker.mjs'));
     expect(engine.status().installed).toBe(true);
     const chunks: number[] = [];
-    const a = engine.speak('Hello there. This is Jarvis speaking.', 'bm_george', 1, (c) => chunks.push(c.audio.length));
+    const a = engine.speak('Your calendar is clear this morning. The design review starts at four.', 'bm_george', 1, (c) => chunks.push(c.audio.length));
     expect(await a.done).toEqual({ cancelled: false });
     expect(chunks.length).toBe(2);
     let got = 0;
@@ -114,6 +114,48 @@ describe('speech pieces', () => {
     for (const p of pieces) expect(p.length).toBeLessThanOrEqual(CHUNK_CHARS);
     expect(pieces.join(' ').replace(/\s+/g, ' ')).toBe(story.trim());
     expect(pieces).toContain('Mr. Rabbit was afraid.'); // "Mr." does not end a sentence
-    expect(speechChunks('Hello there. This is Jarvis speaking.')).toEqual(['Hello there.', 'This is Jarvis speaking.']);
+    // a tiny opening ("Hello there.") rides along with the next sentence, so there is no gap after it
+    expect(speechChunks('Hello there. This is Jarvis speaking.')).toEqual(['Hello there. This is Jarvis speaking.']);
+    expect(speechChunks('Your calendar is clear this morning. The design review starts at four.')).toEqual(['Your calendar is clear this morning.', 'The design review starts at four.']);
+  });
+});
+
+describe.skipIf(!realDir)('natural voice quality (real)', () => {
+  it('no voice produces broken audio (which sounded like speech cutting off)', async () => {
+    const { ROLES } = await import('../roles/roles.js');
+    const engine = new KokoroEngine(realDir!, path.join(ROOT, 'dist', 'speech', 'kokoro-worker.mjs'));
+    for (const voice of new Set(ROLES.map((r) => r.defaultVoice))) {
+      let broken = 0;
+      let pieces = 0;
+      await engine.speak('Since you are vegetarian, add paneer or tofu for protein, and eat at least two hours before bed.', voice, 1, (c) => {
+        pieces++;
+        if (c.audio.some((v) => !Number.isFinite(v)) || c.audio.every((v) => v === 0)) broken++;
+      }).done;
+      expect(pieces, voice).toBeGreaterThan(0);
+      expect(broken, voice).toBe(0);
+    }
+    engine.dispose();
+  }, 180_000);
+});
+
+describe('smooth speech', () => {
+  it('trims the padding the voice model adds and puts a natural pause after each piece', async () => {
+    const { tidyPiece, pauseAfter } = await import('../speech/chunks.js');
+    const rate = 1000;
+    const audio = new Float32Array(1000); // 1 s: 300 ms silence, 300 ms sound, 400 ms silence
+    for (let i = 300; i < 600; i++) audio[i] = Math.sin(i);
+    const out = tidyPiece(audio, rate, pauseAfter('and a big salad,'));
+    expect(out.length).toBeLessThan(500); // ~300 ms of sound + a short beat, not 1 s
+    expect(pauseAfter('the end.')).toBeGreaterThan(pauseAfter('a list,'));
+    expect(tidyPiece(new Float32Array(10), rate, 0.1).length).toBe(100);
+  });
+
+  it('cuts a reply into sentences as it is being written, waiting for more on short ones', async () => {
+    const { takeSentences } = await import('../speech/tts.js');
+    expect(takeSentences('Sure! Today you have three meet', false)).toEqual({ ready: [], rest: 'Sure! Today you have three meet' });
+    expect(takeSentences('Sure! Today you have three meetings. The first', false)).toEqual({ ready: ['Sure! Today you have three meetings.'], rest: 'The first' });
+    expect(takeSentences('- Calendar: check your day\n- Email', false).ready).toEqual(['- Calendar: check your day']);
+    expect(takeSentences('The first is at ten', true)).toEqual({ ready: ['The first is at ten'], rest: '' });
+    expect(takeSentences('It costs 3.5 dollars and more text here', false).ready).toEqual([]); // no split inside numbers
   });
 });

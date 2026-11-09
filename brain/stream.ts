@@ -46,8 +46,8 @@ export function looksLikeLimit(text: string): boolean {
   return LIMIT_PATTERN.test(text);
 }
 
-/** Apply one line; returns progress labels for any tool calls it contains. */
-export function applyLine(state: StreamState, line: string): string[] {
+/** Apply one line; returns progress labels for any tool calls it contains. `onText` gets the reply as it is written. */
+export function applyLine(state: StreamState, line: string, onText?: (delta: string) => void): string[] {
   const trimmed = line.trim();
   if (!trimmed.startsWith('{')) return [];
   let ev: any;
@@ -61,6 +61,11 @@ export function applyLine(state: StreamState, line: string): string[] {
   switch (ev.type) {
     case 'system':
       if (ev.subtype === 'init' && ev.model) state.model = ev.model;
+      break;
+    case 'stream_event':
+      if (onText && ev.event?.type === 'content_block_delta' && ev.event.delta?.type === 'text_delta' && typeof ev.event.delta.text === 'string') onText(ev.event.delta.text);
+      // a new block after a tool call starts a new paragraph
+      if (onText && ev.event?.type === 'content_block_start' && ev.event.content_block?.type === 'text' && ev.event.index > 0) onText('\n');
       break;
     case 'rate_limit_event':
       if (ev.rate_limit_info?.status === 'rejected') state.rateLimited = true;

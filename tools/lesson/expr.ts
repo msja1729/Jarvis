@@ -1,9 +1,11 @@
 /**
- * A small, safe maths expression reader for lesson graphs, e.g. "sin(x - t)" or
- * "2x^2 + 3x - 1". It only understands numbers, x, t, pi, e, + - * / ^, brackets
- * and a fixed list of functions, so text from Claude is never run as code.
+ * A small, safe maths expression reader for lesson graphs, e.g. "sin(x - t)",
+ * "2x^2 + 3x - 1", or "a*cos(k*x)" where a and k are sliders. It only understands
+ * numbers, x, t, declared parameter names, pi, e, + - * / ^, brackets and a fixed
+ * list of functions, so text from Claude is never run as code.
  */
-export type Fn = (x: number, t: number) => number;
+export type Vars = Record<string, number>;
+export type Fn = (x: number, t: number, v?: Vars) => number;
 
 const FUNCS: Record<string, (...a: number[]) => number> = {
   sin: Math.sin,
@@ -12,6 +14,7 @@ const FUNCS: Record<string, (...a: number[]) => number> = {
   asin: Math.asin,
   acos: Math.acos,
   atan: Math.atan,
+  atan2: Math.atan2,
   sinh: Math.sinh,
   cosh: Math.cosh,
   tanh: Math.tanh,
@@ -29,13 +32,18 @@ const FUNCS: Record<string, (...a: number[]) => number> = {
   max: Math.max,
   pow: Math.pow,
 };
-const CONSTS: Record<string, number> = { pi: Math.PI, e: Math.E };
+const CONSTS: Record<string, number> = { pi: Math.PI, e: Math.E, tau: 2 * Math.PI };
 const VARS = new Set(['x', 't']);
 export const MAX_EXPR_CHARS = 200;
+/** Parameter names: a letter, then letters or digits (e.g. a, k, n, theta, w0). */
+export const PARAM_NAME = /^[a-z][a-z0-9]{0,11}$/;
 
 type Tok = { k: 'num'; v: number } | { k: 'id'; v: string } | { k: 'op'; v: string };
 
-function tokenize(src: string): Tok[] {
+function tokenize(src: string, params: ReadonlySet<string>): Tok[] {
+  const known = (w: string) => Object.hasOwn(FUNCS, w) || Object.hasOwn(CONSTS, w) || VARS.has(w) || params.has(w);
+  // longest names first, so "ax" splits as a·x but "theta" stays whole
+  const prefixes = ['pi', 'tau', 'x', 't', 'e', ...params].sort((a, b) => b.length - a.length);
   const out: Tok[] = [];
   let i = 0;
   while (i < src.length) {
@@ -50,11 +58,11 @@ function tokenize(src: string): Tok[] {
     } else if (/[a-z]/i.test(c)) {
       const m = /^[a-z][a-z0-9]*/i.exec(src.slice(i))!;
       let word = m[0].toLowerCase();
-      // "xt" or "pix" style run-ons are split only when the whole word is unknown
-      if (!Object.hasOwn(FUNCS, word) && !Object.hasOwn(CONSTS, word) && !VARS.has(word)) {
-        const known = ['pi', 'x', 't', 'e'].find((p) => word.startsWith(p));
-        if (!known) throw new Error(`unknown name "${m[0]}"`);
-        word = known;
+      // run-ons like "xt" or "ax" are split only when the whole word is unknown
+      if (!known(word)) {
+        const p = prefixes.find((q) => word.startsWith(q));
+        if (!p) throw new Error(`unknown name "${m[0]}"`);
+        word = p;
       }
       out.push({ k: 'id', v: word });
       i += word.length;
@@ -71,13 +79,17 @@ function tokenize(src: string): Tok[] {
   return out;
 }
 
-/** Turns an expression into a function of x and t. Throws a readable error if it is not valid. */
-export function compile(src: string): Fn {
+/**
+ * Turns an expression into a function of x, t and the named parameters.
+ * Throws a readable error if it is not valid.
+ */
+export function compile(src: string, paramNames: readonly string[] = []): Fn {
   if (typeof src !== 'string' || !src.trim()) throw new Error('empty expression');
   if (src.length > MAX_EXPR_CHARS) throw new Error('expression too long');
+  const params = new Set(paramNames.map((n) => n.toLowerCase()).filter((n) => PARAM_NAME.test(n) && !Object.hasOwn(FUNCS, n) && !Object.hasOwn(CONSTS, n) && !VARS.has(n)));
   // allow "y = ..." / "f(x) = ..."
   const body = src.replace(/^\s*(y|f\s*\(\s*x\s*\))\s*=/i, '');
-  const toks = tokenize(body);
+  const toks = tokenize(body, params);
   let p = 0;
   const peek = () => toks[p];
   const isOp = (v: string) => peek()?.k === 'op' && peek().v === v;
@@ -94,7 +106,7 @@ export function compile(src: string): Fn {
       const op = toks[p++].v;
       const a = left;
       const b = term();
-      left = op === '+' ? (x, t) => a(x, t) + b(x, t) : (x, t) => a(x, t) - b(x, t);
+      left = op === '+' ? (x, t, v) => a(x, t, v) + b(x, t, v) : (x, t, v) => a(x, t, v) - b(x, t, v);
     }
     return left;
   }
@@ -105,11 +117,11 @@ export function compile(src: string): Fn {
         const op = toks[p++].v;
         const a = left;
         const b = unary();
-        left = op === '*' ? (x, t) => a(x, t) * b(x, t) : (x, t) => a(x, t) / b(x, t);
+        left = op === '*' ? (x, t, v) => a(x, t, v) * b(x, t, v) : (x, t, v) => a(x, t, v) / b(x, t, v);
       } else if (startsFactor()) {
         const a = left;
         const b = power();
-        left = (x, t) => a(x, t) * b(x, t);
+        left = (x, t, v) => a(x, t, v) * b(x, t, v);
       } else return left;
     }
   }
@@ -117,7 +129,7 @@ export function compile(src: string): Fn {
     if (isOp('-')) {
       p++;
       const a = unary();
-      return (x, t) => -a(x, t);
+      return (x, t, v) => -a(x, t, v);
     }
     if (isOp('+')) {
       p++;
@@ -130,7 +142,7 @@ export function compile(src: string): Fn {
     if (isOp('^')) {
       p++;
       const ex = unary(); // right-associative, allows 2^-x
-      return (x, t) => Math.pow(base(x, t), ex(x, t));
+      return (x, t, v) => Math.pow(base(x, t, v), ex(x, t, v));
     }
     return base;
   }
@@ -146,9 +158,14 @@ export function compile(src: string): Fn {
     if (tok.k === 'id') {
       if (tok.v === 'x') return (x) => x;
       if (tok.v === 't') return (_x, t) => t;
+      if (params.has(tok.v)) {
+        const name = tok.v;
+        // own values only: never a built-in property like "constructor"
+        return (_x, _t, v) => (v && Object.hasOwn(v, name) ? v[name] : 0);
+      }
       if (Object.hasOwn(CONSTS, tok.v)) {
-        const v = CONSTS[tok.v];
-        return () => v;
+        const c = CONSTS[tok.v];
+        return () => c;
       }
       const f = Object.hasOwn(FUNCS, tok.v) ? FUNCS[tok.v] : undefined;
       if (f) {
@@ -159,7 +176,7 @@ export function compile(src: string): Fn {
           args.push(expr());
         }
         expect(')');
-        return (x, t) => f(...args.map((a) => a(x, t)));
+        return (x, t, v) => f(...args.map((a) => a(x, t, v)));
       }
     }
     throw new Error(`unexpected "${tok.v}"`);

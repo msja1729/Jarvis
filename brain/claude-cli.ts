@@ -17,8 +17,10 @@ export interface ClaudeCLIBrainOptions {
   prefixArgs?: string[];
   /** Working directory owned by Jarvis, so no project CLAUDE.md is loaded. */
   cwd: string;
-  /** Returns how to start the Gateway shim for this run (fresh settings each run). */
-  gateway: () => GatewayLaunch | null;
+  /** Returns how to start the Gateway shim for this run (fresh settings each run), for a team role. */
+  gateway: (role?: string, consult?: boolean) => GatewayLaunch | null;
+  /** The fixed system prompt for a team role. */
+  systemPrompt?: (role?: string) => string;
   /** Tool name (without mcp__jarvis__) → progress label. */
   progressFor?: (tool: string) => string | undefined;
   maxTurns?: number;
@@ -37,7 +39,15 @@ export class ClaudeCLIBrain implements Brain {
   async ask(text: string, session_id: string | null, model: ModelChoice, ask: AskOptions = {}): Promise<BrainResult> {
     const args = [
       ...(this.opts.prefixArgs ?? []),
-      ...buildArgs({ prompt: text, model, sessionId: session_id, gateway: this.opts.gateway(), maxTurns: this.opts.maxTurns }),
+      ...buildArgs({
+        prompt: text,
+        model,
+        sessionId: session_id,
+        gateway: this.opts.gateway(ask.role, ask.consult),
+        maxTurns: this.opts.maxTurns,
+        systemPrompt: this.opts.systemPrompt?.(ask.role),
+        partial: Boolean(ask.onText),
+      }),
     ];
     const { env, removed } = sanitizeEnv(this.opts.baseEnv ?? process.env, { MCP_TOOL_TIMEOUT: '300000' });
     if (removed.length && !this.warned) {
@@ -64,7 +74,7 @@ export class ClaudeCLIBrain implements Brain {
 
     const lines = createInterface({ input: child.stdout });
     lines.on('line', (line) => {
-      for (const tool of applyLine(state, line)) {
+      for (const tool of applyLine(state, line, ask.onText)) {
         ask.onProgress?.(progressLabel(tool, this.opts.progressFor ?? (() => undefined)));
       }
     });

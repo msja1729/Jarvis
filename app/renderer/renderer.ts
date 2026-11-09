@@ -1,5 +1,5 @@
 /** Renderer UI. All untrusted text is inserted with textContent, never innerHTML. */
-import { initTts, speak, stopSpeaking } from '../../speech/tts.js';
+import { initTts, speak, speakStream, stopSpeaking } from '../../speech/tts.js';
 import type { Element } from '../../tools/whiteboard/scene.js';
 import { initWhiteboard } from './whiteboard.js';
 import { startWorldMap } from './worldmap.js';
@@ -8,7 +8,7 @@ import { startCapture, stopCapture, CaptureKind } from './audio.js';
 interface Ability { name: string; title: string; description: string; group: string; setting: string; options: string[] }
 interface HubApp { id: string; name: string; description: string; kind: string; enabled: boolean; connected: boolean; account: string | null; auth: string | null; abilities: Ability[] }
 interface Account { id: string; name: string; configured: boolean; connected: boolean; email: string | null; needsSecret: boolean }
-interface Suggested { id: string; name: string; description: string; url: string; auth: 'oauth' | 'key'; keyHelp?: string; added: boolean }
+interface Suggested { id: string; name: string; description: string; url: string; auth: 'oauth' | 'key' | 'none'; keyHelp?: string; added: boolean }
 interface ConfirmReq { id: string; appName: string; abilityTitle: string; group: string; summary: string }
 
 declare global {
@@ -16,7 +16,20 @@ declare global {
     jarvis: {
       setupCheck(): Promise<any>;
       setupBaseline(): Promise<any>;
-      ask(text: string): Promise<any>;
+      ask(text: string, role?: string | null, opts?: { stream?: boolean }): Promise<any>;
+      onAskStart(cb: (s: { roleName: string; roleColor: string; voice: string }) => void): void;
+      onAskPartial(cb: (d: string) => void): void;
+      historyGet(): Promise<HistoryItem[]>;
+      historySet(keep: boolean): Promise<boolean>;
+      historyClear(): Promise<boolean>;
+      onHistoryAdd(cb: (items: HistoryItem[]) => void): void;
+      onHistoryCleared(cb: () => void): void;
+      teamList(): Promise<{ roles: TeamRole[]; voices: { id: string; name: string; accent: string; gender: string; grade: string }[] }>;
+      teamSetVoice(role: string, voice: string): Promise<string>;
+      teamSetName(role: string, name: string): Promise<string>;
+      teamSaveNotes(role: string, text: string): Promise<string>;
+      teamForget(role: string): Promise<string>;
+      teamRefresh(role: string): Promise<string>;
       answerConfirm(id: string, yes: boolean): void;
       hubList(): Promise<HubApp[]>;
       hubSetEnabled(appId: string, on: boolean): Promise<HubApp[]>;
@@ -64,6 +77,17 @@ declare global {
       onSpeechProgress(cb: (p: { label: string; fraction: number }) => void): void;
       setHotkey(accelerator: string | null): Promise<string>;
       cardHotkey(): Promise<string | null>;
+      supSettings(patch?: unknown): Promise<{ autonomy: string; updateEvery: number; speak: boolean; watchOwn: boolean; claudeSettings: string }>;
+      supWatchOwn(on: boolean): Promise<boolean>;
+      paGet(): Promise<{ planAt: string | null; reminders: { id: string; text: string; at: string }[] }>;
+      paSetPlan(at: string | null): Promise<string | null>;
+      remindersCancel(id: string): Promise<unknown>;
+      boardList(): Promise<BoardTask[]>;
+      boardAdd(t: { title: string; project?: string; due?: string }): Promise<BoardTask[]>;
+      boardUpdate(id: string, patch: { status?: string; due?: string | null }): Promise<BoardTask[]>;
+      boardRemove(id: string): Promise<BoardTask[]>;
+      onPlannerChanged(cb: () => void): void;
+      onAnnounce(cb: (a: { name: string; color: string; voice: string; title: string; text: string }) => void): void;
       setCardHotkey(accelerator: string | null): Promise<string>;
       voiceResize(height: number): void;
       ttsStatus(): Promise<{ installed: boolean; ready: boolean; downloadBytes: number; voice: string; speed: number; voices: { id: string; name: string; accent: string; gender: string; grade: string }[] }>;
@@ -150,6 +174,7 @@ requestAnimationFrame(() => movePill(activeTab(), true));
 /* ---------- navigation ---------- */
 const SUBS: Record<string, string> = {
   chat: 'Ask anything, by typing or with your voice',
+  team: 'Your experts, their voices and what they remember',
   hub: 'Your apps and what Jarvis may do in each  ·  changes apply on the next request',
   whiteboard: 'Draw together  ·  ask “what did I draw?”',
   usage: 'Tokens used on your Claude plan  ·  updated after every request',
@@ -158,6 +183,7 @@ const SUBS: Record<string, string> = {
 };
 const TITLES: Record<string, string> = {
   chat: 'Chat',
+  team: 'Team',
   hub: 'Tool Hub',
   whiteboard: 'Whiteboard',
   usage: 'Usage',
@@ -175,6 +201,7 @@ function show(view: string) {
     void renderHub();
     void renderSuggested();
   }
+  if (view === 'team') void renderTeam();
   if (view === 'usage') void renderUsage();
   if (view === 'activity') void renderActivity();
   if (view === 'settings') {
@@ -207,15 +234,356 @@ function compact(n: number): string {
   return n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 10_000 ? `${Math.round(n / 1000)}k` : n.toLocaleString();
 }
 
+/* ---------- live replies: speak while Claude is still writing ---------- */
+let liveSpeech: ReturnType<typeof speakStream> | null = null;
+let liveText = '';
+/** True while this window waits for a streamed reply it asked for. */
+let awaitingLive = false;
+j.onAskStart((s: { roleName: string; roleColor: string; voice: string }) => {
+  if (!awaitingLive) return;
+  liveText = '';
+  // the voice card always speaks; the main chat only when "Speak replies aloud" is on
+  liveSpeech = MODE === 'voice' || voiceOn ? speakStream({ voice: s.voice }) : null;
+  if (MODE === 'voice') {
+    $('vc-name').textContent = s.roleName;
+    ($('vc-orb') as HTMLElement).style.setProperty('--c', s.roleColor);
+  }
+});
+j.onAskPartial((d: string) => {
+  if (!awaitingLive) return;
+  liveText += d;
+  liveSpeech?.push(d);
+  if (MODE === 'voice' && liveText.trim()) {
+    setVoiceStatus(null);
+    $('vc-answer').textContent = liveText.trim();
+    fitVoice();
+  }
+});
+/** After the full reply: let the live speech finish, or fall back to speaking the reply. */
+function finishLive(r: { reply: string; isError?: boolean; lessonShown?: boolean; voice?: string }, speakIfNone: boolean, onEnd?: () => void): void {
+  const ls = liveSpeech;
+  liveSpeech = null;
+  awaitingLive = false;
+  if (ls && liveText.trim() && !r.isError) {
+    ls.end(onEnd);
+    return;
+  }
+  ls?.cancel();
+  if (speakIfNone && !r.isError && !r.lessonShown) speak(r.reply, onEnd, { voice: r.voice });
+  else onEnd?.();
+}
+
+/* ---------- team ---------- */
+interface TeamRole {
+  id: string;
+  name: string;
+  person: string;
+  title: string;
+  blurb: string;
+  color: string;
+  examples: string[];
+  voice: string;
+  apps: string[];
+  notes: string | null;
+  pending: number;
+}
+let teamCache: { roles: TeamRole[]; voices: { id: string; name: string; accent: string; gender: string; grade: string }[] } | null = null;
+/** Who the chat talks to; null = Auto (Jarvis picks the right expert). */
+let pickedRole: string | null = null;
+
+async function loadTeam() {
+  teamCache = await j.teamList();
+  renderRoleChips();
+  renderSuggestions();
+  return teamCache;
+}
+
+function roleChip(label: string, color: string, on: boolean, title: string) {
+  const b = el('button', { type: 'button', className: `role-chip${on ? ' on' : ''}`, title }, el('i', {}), label);
+  b.style.setProperty('--c', color);
+  b.setAttribute('role', 'radio');
+  b.setAttribute('aria-checked', String(on));
+  return b;
+}
+
+function pickRole(id: string | null) {
+  pickedRole = id;
+  const r = teamCache?.roles.find((x) => x.id === id);
+  $<HTMLInputElement>('input').placeholder = r ? `Ask ${r.id === 'jarvis' ? 'Jarvis' : `${r.person} (${r.name})`}…` : 'Ask anything… Jarvis passes it to the right expert';
+  renderRoleChips();
+}
+
+function renderRoleChips() {
+  const box = $('role-chips');
+  if (!box || !teamCache) return;
+  box.replaceChildren();
+  const auto = roleChip('Auto', '#f0efec', pickedRole === null, 'Jarvis picks the right expert');
+  auto.addEventListener('click', () => pickRole(null));
+  box.append(auto);
+  for (const r of teamCache.roles) {
+    const c = roleChip(r.id === 'jarvis' ? 'Jarvis' : r.person, r.color, pickedRole === r.id, `${r.name}: ${r.blurb}`);
+    c.addEventListener('click', () => pickRole(r.id));
+    box.append(c);
+  }
+}
+
+function renderSuggestions() {
+  const box = $('suggestions');
+  if (!box || !teamCache) return;
+  box.replaceChildren();
+  for (const r of teamCache.roles.filter((x) => x.id !== 'jarvis')) {
+    const text = r.examples[0];
+    const b = el('button', { className: 'suggest', type: 'button' }, el('span', { className: 'role-tag' }, el('i', {}), `${r.person} · ${r.name}`), text);
+    (b.firstChild as HTMLElement).style.setProperty('--c', r.color);
+    b.addEventListener('click', () => {
+      pickRole(r.id);
+      submitText(text);
+    });
+    box.append(b);
+  }
+}
+
+const ROLE_SAMPLE: Record<string, string> = {
+  jarvis: "Hello, I'm Jarvis. Ask me anything and I'll bring in the right expert.",
+  pa: "Hi, I'm {name}, your personal assistant. You have a light morning, so let's put the report first.",
+  educator: "Hello! I'm {name}, your teacher. Let's start with a picture, and the formula will make sense.",
+  pm: "Hey, I'm {name}, your project manager. The login page is done and the tests are green.",
+  doctor: "Hello, I'm {name}, your doctor. Let's talk about what you're eating and how you're sleeping.",
+  finance: "Hi, I'm {name}. Let's look at where your money goes each month.",
+};
+const sampleFor = (r: TeamRole) => (ROLE_SAMPLE[r.id] ?? 'Hello.').replace('{name}', r.person);
+
+const PLAN_TEXT = "Plan my day: check today's calendar (and any important unread email), then give me a short, friendly plan with times and priorities, and add a reminder 10 minutes before each meeting today.";
+
+async function paPanel(r: TeamRole): Promise<HTMLElement> {
+  const pa = await j.paGet();
+  const box = el('div', { className: 'pa-panel' });
+  const on = el('input', { type: 'checkbox', className: 'switch', checked: Boolean(pa.planAt) });
+  const time = el('input', { type: 'time', value: pa.planAt ?? '08:30', className: 'pa-time' });
+  const save = async () => void (await j.paSetPlan(on.checked ? time.value : null));
+  on.addEventListener('change', save);
+  time.addEventListener('change', () => {
+    if (on.checked) void save();
+  });
+  const now = el('button', { type: 'button', className: 'chip' }, 'Plan my day now');
+  now.addEventListener('click', () => {
+    pickRole('pa');
+    show('chat');
+    submitText(PLAN_TEXT);
+  });
+  box.append(el('label', { className: 'team-row pa-row' }, el('span', {}, `Morning plan from ${r.person}`), time, on), el('div', { className: 'team-row' }, el('span', { className: 'spacer' }), now));
+  const list = el('div', { className: 'pa-reminders' });
+  if (!pa.reminders.length) list.append(el('div', { className: 'muted small' }, 'No upcoming reminders. Try "Maya, remind me to call Mom at 6 pm".'));
+  for (const rem of pa.reminders.slice(0, 6)) {
+    const x = el('button', { type: 'button', className: 'x', title: 'Cancel this reminder' }, '×');
+    x.addEventListener('click', async () => {
+      await j.remindersCancel(rem.id);
+      void renderTeam();
+    });
+    const when = new Date(rem.at).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+    list.append(el('div', { className: 'pa-reminder' }, el('span', { className: 'when' }, when), el('span', {}, rem.text), x));
+  }
+  box.append(el('details', { className: 'team-memory', open: pa.reminders.length > 0 }, el('summary', {}, `Upcoming reminders (${pa.reminders.length})`), list));
+  return box;
+}
+
+/* ---------- project board ---------- */
+interface BoardTask {
+  id: string;
+  title: string;
+  project?: string;
+  status: 'todo' | 'doing' | 'done';
+  due?: string;
+}
+const COLUMNS: [BoardTask['status'], string][] = [
+  ['todo', 'To do'],
+  ['doing', 'Doing'],
+  ['done', 'Done'],
+];
+async function renderBoard(list?: BoardTask[]) {
+  const tasks = list ?? (await j.boardList());
+  const root = $('task-board');
+  if (!root) return;
+  root.replaceChildren();
+  const today = new Date().toISOString().slice(0, 10);
+  for (const [status, label] of COLUMNS) {
+    const col = el('div', { className: `board-col ${status}` }, el('div', { className: 'board-head' }, label, el('span', { className: 'muted' }, String(tasks.filter((t) => t.status === status).length))));
+    for (const t of tasks.filter((x) => x.status === status)) {
+      const sel = el('select', { className: 'board-status' });
+      for (const [s, l] of COLUMNS) sel.append(el('option', { value: s, selected: s === t.status }, l));
+      sel.addEventListener('change', async () => renderBoard(await j.boardUpdate(t.id, { status: sel.value })));
+      const del = el('button', { type: 'button', className: 'x', title: 'Remove' }, '×');
+      del.addEventListener('click', async () => renderBoard(await j.boardRemove(t.id)));
+      const overdue = t.due && t.status !== 'done' && t.due < today;
+      col.append(
+        el(
+          'div',
+          { className: 'board-task' },
+          el('div', { className: 'board-title' }, t.title, del),
+          el('div', { className: 'board-meta' }, t.project ? el('span', { className: 'pill' }, t.project) : '', t.due ? el('span', { className: `due${overdue ? ' late' : ''}` }, `due ${t.due}`) : '', sel),
+        ),
+      );
+    }
+    root.append(col);
+  }
+}
+$('board-add')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const title = $<HTMLInputElement>('board-title').value.trim();
+  if (!title) return;
+  const list = await j.boardAdd({ title, project: $<HTMLInputElement>('board-project').value.trim() || undefined, due: $<HTMLInputElement>('board-due').value || undefined });
+  $<HTMLInputElement>('board-title').value = '';
+  void renderBoard(list);
+});
+j.onPlannerChanged(() => {
+  if ($('view-team')?.classList.contains('active')) void renderBoard();
+});
+
+async function renderTeam() {
+  const team = await loadTeam();
+  const grid = $('team-grid');
+  grid.replaceChildren();
+  for (const r of team.roles) {
+    const card = el('div', { className: 'card team-card' });
+    card.style.setProperty('--c', r.color);
+    const title = el('h3', {}, r.id === 'jarvis' ? 'Jarvis' : r.person);
+    const sub = el('div', { className: 'muted' }, r.id === 'jarvis' ? r.title : `${r.name} · ${r.title}`);
+    const head = el('div', { className: 'team-head' }, el('span', { className: 'team-orb' }), el('div', {}, title, sub));
+    if (r.id !== 'jarvis') {
+      const rename = el('button', { type: 'button', className: 'chip team-rename', title: 'Rename' }, 'Rename');
+      rename.addEventListener('click', () => {
+        const input = el('input', { className: 'team-name-input', value: r.person, maxLength: 20 });
+        const err = el('div', { className: 'error small' });
+        const save = async () => {
+          try {
+            r.person = await j.teamSetName(r.id, input.value);
+            void renderTeam();
+          } catch (e) {
+            err.textContent = cleanError(e);
+          }
+        };
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') void save();
+          if (e.key === 'Escape') void renderTeam();
+        });
+        title.replaceWith(el('div', {}, input, err));
+        rename.textContent = 'Save';
+        rename.onclick = () => void save();
+        input.focus();
+        input.select();
+      });
+      head.append(el('span', { className: 'spacer' }), rename);
+    }
+    card.append(head, el('p', { className: 'team-blurb' }, r.blurb));
+    const apps = el('div', { className: 'team-apps' });
+    for (const a of r.id === 'jarvis' ? ['Every app'] : r.apps) apps.append(el('span', { className: 'pill' }, a));
+    card.append(apps);
+
+    // voice (natural voices only)
+    const select = el('select', { className: 'team-voice' });
+    for (const v of team.voices) select.append(el('option', { value: v.id, selected: v.id === r.voice }, `${v.name} · ${v.accent} ${v.gender.toLowerCase()}`));
+    select.addEventListener('change', async () => {
+      await j.teamSetVoice(r.id, select.value);
+      void speak(sampleFor(r), undefined, { voice: select.value });
+    });
+    const play = el('button', { type: 'button', className: 'chip' }, 'Play sample');
+    play.addEventListener('click', () => void speak(sampleFor(r), undefined, { voice: select.value }));
+    card.append(el('label', { className: 'team-row' }, el('span', { className: 'muted' }, 'Voice'), select, play));
+
+    // memory
+    if (r.notes !== null) {
+      const area = el('textarea', { className: 'team-notes', rows: 5, placeholder: `Nothing yet. ${r.person} will note useful things as you talk, or you can write here.` });
+      area.value = r.notes;
+      const status = el('span', { className: 'muted small' }, r.pending ? `${r.pending} recent conversation${r.pending > 1 ? 's' : ''} not summarised yet` : '');
+      const save = el('button', { type: 'button', className: 'chip' }, 'Save');
+      save.addEventListener('click', async () => {
+        area.value = await j.teamSaveNotes(r.id, area.value);
+        status.textContent = 'Saved';
+      });
+      const refresh = el('button', { type: 'button', className: 'chip' }, 'Summarise now');
+      refresh.disabled = !r.pending;
+      refresh.addEventListener('click', async () => {
+        status.textContent = 'Summarising…';
+        area.value = await j.teamRefresh(r.id);
+        status.textContent = 'Up to date';
+        refresh.disabled = true;
+      });
+      const forget = el('button', { type: 'button', className: 'chip danger' }, 'Forget everything');
+      forget.addEventListener('click', async () => {
+        if (!forget.dataset.sure) {
+          forget.dataset.sure = '1';
+          forget.textContent = 'Click again to forget';
+          return;
+        }
+        area.value = await j.teamForget(r.id);
+        status.textContent = 'Forgotten';
+        forget.textContent = 'Forget everything';
+        delete forget.dataset.sure;
+      });
+      card.append(
+        el('details', { className: 'team-memory' }, el('summary', {}, `What ${r.person} remembers`), area, el('div', { className: 'team-row' }, status, el('span', { className: 'spacer' }), refresh, forget, save)),
+      );
+    }
+    if (r.id === 'pa') card.append(await paPanel(r));
+    const talk = el('button', { type: 'button', className: 'primary team-talk' }, `Talk to ${r.id === 'jarvis' ? 'Jarvis' : r.person}`);
+    talk.addEventListener('click', () => {
+      pickRole(r.id);
+      show('chat');
+      $<HTMLInputElement>('input').focus();
+    });
+    card.append(talk);
+    grid.append(card);
+  }
+  void renderBoard();
+}
+
 /* ---------- chat ---------- */
 const messages = $('messages');
-function addMsg(who: 'user' | 'jarvis', text: string, meta?: string, isError = false) {
+function addMsg(who: 'user' | 'jarvis', text: string, meta?: string, isError = false, from?: { name: string; color: string }) {
   $('empty').classList.add('hidden');
   const m = el('div', { className: `msg ${who}${isError ? ' error' : ''}` }, text);
+  if (from) {
+    const badge = el('span', { className: 'who' }, el('i', {}), from.name);
+    badge.style.setProperty('--c', from.color);
+    m.prepend(badge);
+  }
   if (meta) m.append(el('span', { className: 'meta' }, meta));
   messages.append(m);
   messages.scrollTop = messages.scrollHeight;
 }
+interface HistoryItem {
+  at: string;
+  who: 'user' | 'assistant';
+  text: string;
+  roleName?: string;
+  color?: string;
+  via: 'chat' | 'voice' | 'box';
+  meta?: string;
+  error?: boolean;
+}
+const VIA: Record<string, string> = { voice: ' · by voice', box: ' · floating box', chat: '' };
+function showHistoryItem(i: HistoryItem) {
+  if (i.who === 'user') addMsg('user', i.text, i.via !== 'chat' ? VIA[i.via].replace(' · ', '') : undefined);
+  else addMsg('jarvis', i.text, `${i.meta ?? ''}${VIA[i.via] ?? ''}`, Boolean(i.error), i.roleName ? { name: i.roleName, color: i.color ?? '#9a9a96' } : undefined);
+}
+/** Earlier conversations, shown when Jarvis opens. */
+async function loadHistory() {
+  const items = await j.historyGet();
+  if (!items.length) return;
+  addNote('Earlier conversations');
+  items.forEach(showHistoryItem);
+  addNote('Today');
+}
+if (MODE === 'main') {
+  void loadHistory();
+  // what was said by voice or in the floating box appears here too
+  j.onHistoryAdd((items) => items.forEach(showHistoryItem));
+  j.onHistoryCleared(() => {
+    messages.querySelectorAll('.msg, .note').forEach((n) => n.remove());
+    $('empty').classList.remove('hidden');
+  });
+}
+
 function addNote(text: string) {
   messages.append(el('div', { className: 'note' }, text));
 }
@@ -255,17 +623,19 @@ $('composer').addEventListener('submit', async (e) => {
   send.disabled = true;
   setProgress('Thinking…');
   try {
-    const r = await j.ask(text);
+    awaitingLive = voiceOn;
+    const r = await j.ask(text, pickedRole, { stream: voiceOn });
     if (r.newConversation && r.kind === 'brain') addNote('New conversation started');
     let meta: string | undefined;
-    if (r.kind === 'brain') meta = `${r.model} · ${r.tokens?.toLocaleString() ?? 0} tokens${r.expensive ? ' · ▲ above 3× baseline' : ''}`;
+    if (r.kind === 'brain') meta = `${r.model} · ${r.tokens?.toLocaleString() ?? 0} tokens${r.expensive ? ' · ▲ 3× more than usual' : ''}`;
     else meta = 'handled locally · 0 tokens';
-    addMsg('jarvis', r.reply, meta, Boolean(r.isError));
+    addMsg('jarvis', r.reply, meta, Boolean(r.isError), r.roleName ? { name: r.roleName, color: r.roleColor } : undefined);
     if (r.limitReached) showNotice('Usage limit reached on your Claude plan. Jarvis will work again when the limit resets.');
-    if (voiceOn && !r.isError && !r.lessonShown) speak(r.reply);
+    if (voiceOn) finishLive(r, true);
     setStatus(r.isError ? 'err' : 'ok', r.isError ? 'Problem' : 'Ready');
     if (r.followUp) pendingFollowUp = r.followUp;
   } catch (err) {
+    finishLive({ reply: '', isError: true }, false);
     addMsg('jarvis', String(err), undefined, true);
     setStatus('err', 'Problem');
   } finally {
@@ -333,26 +703,47 @@ function hideVoiceSoon(ms: number) {
     j.voiceHide();
   }, ms);
 }
+j.onAnnounce((a) => {
+  if (MODE !== 'voice' || voiceBusy) return;
+  if (voiceHideTimer) window.clearTimeout(voiceHideTimer);
+  card.classList.remove('hidden', 'error');
+  $('vc-name').textContent = a.name;
+  ($('vc-orb') as HTMLElement).style.setProperty('--c', a.color);
+  (document.querySelector('.vc-you .muted') as HTMLElement).textContent = a.title;
+  $('vc-you').textContent = '';
+  $('vc-answer').textContent = a.text;
+  setVoiceStatus(null);
+  speak(a.text, () => hideVoiceSoon(10_000), { voice: a.voice });
+});
+
 async function voiceAsk(text: string): Promise<void> {
   if (voiceHideTimer) window.clearTimeout(voiceHideTimer);
   stopSpeaking();
   voiceBusy = true;
   card.classList.remove('hidden', 'error');
+  (document.querySelector('.vc-you .muted') as HTMLElement).textContent = 'You said';
   $('vc-you').textContent = text;
   $('vc-answer').textContent = '';
   setVoiceStatus('Thinking…');
   let followUp: string | undefined;
   try {
-    const r = await j.ask(text);
+    awaitingLive = true;
+    const r = await j.ask(text, null, { stream: true });
     $('vc-answer').textContent = r.reply;
+    $('vc-name').textContent = r.roleName ?? 'Jarvis';
+    ($('vc-orb') as HTMLElement).style.setProperty('--c', r.roleColor ?? '');
     card.classList.toggle('error', Boolean(r.isError));
     followUp = r.followUp;
     voiceBusy = false;
     setVoiceStatus(null);
-    // Spoken requests are always answered out loud.
-    if (!r.isError && !followUp && !r.lessonShown) speak(r.reply, () => hideVoiceSoon(6000)); // a lesson narrates itself
-    else if (!followUp) hideVoiceSoon(12000);
+    // Spoken requests are always answered out loud (usually already speaking while the reply was written).
+    if (!r.isError && !followUp) finishLive(r, !r.lessonShown, () => hideVoiceSoon(6000)); // a lesson narrates itself
+    else {
+      finishLive({ ...r, isError: true }, false);
+      if (!followUp) hideVoiceSoon(12000);
+    }
   } catch (err) {
+    finishLive({ reply: '', isError: true }, false);
     voiceBusy = false;
     card.classList.add('error');
     $('vc-answer').textContent = cleanError(err);
@@ -557,7 +948,14 @@ async function renderHub(list?: HubApp[]) {
       );
     }
     const details = el('details', {}, el('summary', {}, `What Jarvis may do (${a.abilities.length})`), table);
-    root.append(el('div', { className: 'card' }, head, el('div', { className: 'muted' }, a.description), details));
+    const users = (teamCache?.roles ?? []).filter((r) => r.id !== 'jarvis' && r.apps.includes(a.name));
+    const usedBy = el('div', { className: 'used-by' }, users.length ? 'Used by ' : 'Used by Jarvis');
+    for (const u of users) {
+      const chip = el('span', { className: 'role-tag' }, el('i', {}), u.name);
+      chip.style.setProperty('--c', u.color);
+      usedBy.append(chip);
+    }
+    root.append(el('div', { className: 'card' }, head, el('div', { className: 'muted' }, a.description), usedBy, details));
   }
 }
 
@@ -592,7 +990,7 @@ async function renderSuggested() {
       });
       card.append(el('div', { className: 'help' }, s.keyHelp ?? ''), key, el('div', { className: 'row-buttons' }, add));
     } else {
-      const add = el('button', { className: 'primary' }, 'Add and sign in');
+      const add = el('button', { className: 'primary' }, s.auth === 'none' ? 'Add' : 'Add and sign in');
       add.addEventListener('click', async () => {
         const res = await duringSignIn(() => j.hubAddMcp({ id: s.id, name: s.name, url: s.url }));
         if (res) {
@@ -624,7 +1022,7 @@ $('add-app').addEventListener('submit', async (e) => {
 });
 
 /* ---------- usage ---------- */
-interface UsageEntry { ts: string; request: string; model: string; tokens: number; expensive: boolean; usage?: { cacheRead: number } }
+interface UsageEntry { ts: string; request: string; model: string; tokens: number; expensive: boolean; usage?: { input: number; output: number; cacheCreation: number; cacheRead: number } }
 
 async function renderUsage() {
   const s = await j.usageSummary();
@@ -633,8 +1031,8 @@ async function renderUsage() {
   $('usage-stats').replaceChildren(
     stat('Tokens today', s.todayTotal.toLocaleString()),
     stat('Requests today', String(today.length)),
-    stat('Baseline per request', s.baseline ? s.baseline.toLocaleString() : 'not set'),
-    stat('Above 3× baseline', String(today.filter((e) => e.expensive).length)),
+    stat('Reused from cache today', s.todayReused ? `${s.todayReused.toLocaleString()}` : '0'),
+    stat('Unusually large today', String(today.filter((e) => e.expensive).length)),
   );
   renderUsageChart(s.entries.slice(-30), s.baseline);
   renderRings(today);
@@ -647,7 +1045,7 @@ async function renderUsage() {
       el('td', {}, new Date(e.ts).toLocaleTimeString()),
       el('td', {}, flag && e.expensive ? `▲ ${e.request}` : e.request),
       el('td', {}, e.model),
-      el('td', { className: 'num' }, e.tokens.toLocaleString()),
+      el('td', { className: 'num', title: e.usage ? `${(e.usage.cacheRead ?? 0).toLocaleString()} reused from cache (cheaper), ${(e.usage.input + e.usage.output + e.usage.cacheCreation).toLocaleString()} new` : '' }, e.tokens.toLocaleString()),
     );
   $('usage-top').replaceChildren(head(), ...s.topExpensive.map((e: UsageEntry) => row(e, false)));
   $('usage-table').replaceChildren(head(), ...[...s.entries].reverse().map((e: UsageEntry) => row(e, true)));
@@ -907,6 +1305,7 @@ async function renderSettings(s?: any) {
   const snap = s ?? (await j.settingsGet());
   $<HTMLSelectElement>('model-override').value = snap.modelOverride ?? '';
   $<HTMLInputElement>('voice-output').checked = snap.voiceOutput;
+  $<HTMLInputElement>('keep-history').checked = snap.keepHistory !== false;
   $<HTMLSelectElement>('explain-level').value = snap.explainLevel ?? 'auto';
   voiceOn = snap.voiceOutput;
 }
@@ -916,6 +1315,37 @@ $('model-override').addEventListener('change', async (e) => {
 });
 $('voice-output').addEventListener('change', async (e) => {
   renderSettings(await j.settingsSet({ voiceOutput: (e.target as HTMLInputElement).checked }));
+});
+async function renderSupervisor(patch?: Record<string, unknown>) {
+  const s = await j.supSettings(patch);
+  $<HTMLSelectElement>('sup-autonomy').value = s.autonomy;
+  $<HTMLSelectElement>('sup-updates').value = String(s.updateEvery);
+  $<HTMLInputElement>('sup-speak').checked = s.speak;
+  $<HTMLInputElement>('sup-watch').checked = s.watchOwn;
+  $('sup-watch-help').textContent = `This adds two small entries (marked "jarvis-claude-hook") to ${s.claudeSettings}; turning it off removes exactly those. A copy of the original file is kept next to it.`;
+}
+$('sup-watch').addEventListener('change', async (e) => {
+  $('sup-watch-error').textContent = '';
+  try {
+    await j.supWatchOwn((e.target as HTMLInputElement).checked);
+  } catch (err) {
+    $('sup-watch-error').textContent = cleanError(err);
+  }
+  void renderSupervisor();
+});
+if (MODE === 'main') void renderSupervisor();
+if (MODE === 'main') void loadTeam();
+$('sup-autonomy').addEventListener('change', (e) => void renderSupervisor({ autonomy: (e.target as HTMLSelectElement).value }));
+$('sup-updates').addEventListener('change', (e) => void renderSupervisor({ updateEvery: Number((e.target as HTMLSelectElement).value) }));
+$('sup-speak').addEventListener('change', (e) => void renderSupervisor({ speak: (e.target as HTMLInputElement).checked }));
+$('keep-history').addEventListener('change', async (e) => {
+  const keep = (e.target as HTMLInputElement).checked;
+  await j.historySet(keep);
+  $('history-status').textContent = keep ? 'History is kept on this computer.' : 'History is off and was cleared.';
+});
+$('clear-history').addEventListener('click', async () => {
+  await j.historyClear();
+  $('history-status').textContent = 'Cleared.';
 });
 $('explain-level').addEventListener('change', async (e) => {
   renderSettings(await j.settingsSet({ explainLevel: (e.target as HTMLSelectElement).value }));

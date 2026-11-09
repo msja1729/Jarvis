@@ -27,6 +27,21 @@ import type { Element } from '../tools/whiteboard/scene.js';
 import { TranscriptExecutor } from '../tools/recorder/executor.js';
 import { LessonExecutor } from '../tools/lesson/executor.js';
 import { DocumentsExecutor } from '../tools/documents/executor.js';
+import { Coder } from '../brain/coder.js';
+import { Supervisor } from '../supervisor/supervisor.js';
+import { CodingExecutor } from '../tools/coding/executor.js';
+import { TeamExecutor } from '../tools/team/executor.js';
+import { BoardExecutor, RemindersExecutor } from '../tools/planner/executor.js';
+import { BoardStore, ReminderStore } from '../supervisor/reminders.js';
+import { ChatHistory } from './history.js';
+import { hookCommand, hooksInstalled, installHooks, removeHooks } from '../supervisor/hooks.js';
+import { shortTask } from '../supervisor/supervisor.js';
+import os from 'node:os';
+import { fullName, isRole, peopleNames, PERSON_NAME, roleById, RoleId, ROLES, roleUsesApp } from '../roles/roles.js';
+import { rolePrompt } from '../roles/prompts.js';
+import { RoleMemory } from '../roles/memory.js';
+import { timePrefix } from '../brain/system-prompt.js';
+import { pickModel } from '../router/model.js';
 import { pdfPages } from '../tools/documents/pdf-text.js';
 import type { Lesson } from '../tools/lesson/spec.js';
 import { bgraToGray, chooseSide, SIDE_FRACTION, Side } from '../tools/lesson/placement.js';
@@ -64,6 +79,65 @@ const pendingConfirms = new Map<string, (yes: boolean) => void>();
 let requestSeq = 0;
 let whiteboard: WhiteboardExecutor;
 let lessons: LessonExecutor;
+let coder: Coder | null = null;
+let roleMemory: RoleMemory;
+let history: ChatHistory;
+let reminders: ReminderStore;
+let board: BoardStore;
+/** The board task for the coding job the supervisor is running. */
+let codingTaskId: string | null = null;
+
+const CLAUDE_SETTINGS = () => path.join(process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude'), 'settings.json');
+const HOOK_SCRIPT = () => path.join(__dirname, '..', 'supervisor', 'jarvis-claude-hook.mjs');
+
+/** A team member says something out loud on the voice card (reminders, morning plan, sessions finished). */
+async function announce(role: RoleId, title: string, text: string) {
+  const w = await readyVoiceWindow();
+  placeVoiceWindow(w, w.getBounds().height);
+  w.showInactive();
+  w.webContents.send('voice:announce', { name: role === 'jarvis' ? 'Jarvis' : `${people()[role]} · ${roleById(role).name}`, color: roleById(role).color, voice: roleVoice(role), title, text });
+}
+
+const PLAN_PROMPT = "Plan my day: check today's calendar (and any important unread email), then give me a short, friendly plan with times and priorities, and add a reminder 10 minutes before each meeting today.";
+
+/** The PA's clock: due reminders, and the morning plan once a day. Free; Claude is only used for the plan. */
+function plannerTick() {
+  for (const r of reminders.takeDue()) {
+    const late = Date.now() - Date.parse(r.at) > 120_000 ? ' (while Jarvis was closed)' : '';
+    void announce('pa', `Reminder${late}`, r.text);
+  }
+  const pa = store.snapshot().pa ?? {};
+  if (!pa.planAt || !orchestrator || orchestrator.isBusy) return;
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const [h, m] = pa.planAt.split(':').map(Number);
+  const due = new Date(now);
+  due.setHours(h, m, 0, 0);
+  if (pa.lastPlan === today || now < due || now.getTime() - due.getTime() > 3 * 3600_000) return;
+  store.setPa({ lastPlan: today });
+  void (async () => {
+    const w = await readyVoiceWindow();
+    requestSender = w.webContents; // any popup appears on the voice card, not the main window
+    const res = await orchestrator!.handle(PLAN_PROMPT, 'pa');
+    void announce('pa', 'Your plan for today', res.reply);
+  })();
+}
+
+/** The natural voice of a team member (Jarvis itself keeps the voice from Settings → Natural voice). */
+/** The team members' names (the user's choices, else Maya, Alan, Ryan, Sara, Victor). */
+const people = () => peopleNames(store.snapshot().roleNames ?? {});
+
+function roleVoice(role: RoleId): string {
+  const snap = store.snapshot();
+  if (role === 'jarvis') return isVoice(snap.ttsVoice) ? snap.ttsVoice : DEFAULT_VOICE;
+  const chosen = snap.roleVoices?.[role];
+  return isVoice(chosen) ? chosen : roleById(role).defaultVoice;
+}
+let supervisor: Supervisor;
+let supWindow: BrowserWindow | null = null;
+const supUpdates: { kind: string; text: string; at: number }[] = [];
+let supHideTimer: NodeJS.Timeout | null = null;
+const SUP_WIDTH = 440;
 let lessonWindow: BrowserWindow | null = null;
 let lessonSide: Side = 'right';
 let voice: VoiceController;
@@ -219,6 +293,12 @@ async function withSignIn<T>(fn: (signal: AbortSignal) => Promise<T>): Promise<T
  * hotkey it goes to the small voice card above the taskbar (no chat window opens).
  */
 async function deliverSpeech(text: string, target: Electron.WebContents | null): Promise<void> {
+  // "the second one" / "yes, allow it" / "go with yours" while Claude is waiting for the user
+  const supReply = supervisor?.answerFromText(text);
+  if (supReply) {
+    void pushSup(supReply, true, 6000);
+    return;
+  }
   if (target && !target.isDestroyed()) {
     target.send('voice:ask', text);
     return;
@@ -288,6 +368,110 @@ async function readyVoiceWindow(): Promise<BrowserWindow> {
     await voiceWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), { query: { mode: 'voice' } });
   }
   return voiceWindow;
+}
+
+/* ---------- coding supervisor card ---------- */
+
+function supSettings() {
+  const s = store.snapshot().supervisor ?? {};
+  return { autonomy: s.autonomy ?? 'balanced', updateEvery: s.updateEvery ?? 5, speak: s.speak ?? true } as const;
+}
+
+function placeSup(w: BrowserWindow, height: number) {
+  const a = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+  const h = Math.max(120, Math.min(Math.round(height), Math.round(a.height * 0.8)));
+  w.setBounds({ x: a.x + a.width - SUP_WIDTH - 16, y: a.y + a.height - h - 16, width: SUP_WIDTH, height: h });
+}
+
+async function readySupWindow(): Promise<BrowserWindow> {
+  if (!supWindow || supWindow.isDestroyed()) {
+    supWindow = new BrowserWindow({
+      width: SUP_WIDTH,
+      height: 220,
+      frame: false,
+      ...glassOptions(),
+      resizable: false,
+      skipTaskbar: true,
+      alwaysOnTop: true,
+      show: false,
+      title: 'Jarvis coding supervisor',
+      webPreferences: { preload: preloadPath(), contextIsolation: true, sandbox: true, nodeIntegration: false, backgroundThrottling: false },
+    });
+    supWindow.setAlwaysOnTop(true, 'floating');
+    supWindow.on('closed', () => (supWindow = null));
+    await supWindow.loadFile(path.join(__dirname, '..', 'renderer', 'supervisor.html'));
+  }
+  return supWindow;
+}
+
+/** Refreshes the card; optionally speaks `say`, shows the card without taking focus, and hides it after a while. */
+async function pushSup(say?: string, show = true, autoHideMs = 0) {
+  const w = await readySupWindow();
+  w.webContents.send('sup:state', { view: supervisor.view(), updates: supUpdates, say: supSettings().speak ? say : undefined, pm: people().pm });
+  if (show && !w.isVisible()) {
+    placeSup(w, w.getBounds().height);
+    w.showInactive();
+  }
+  if (supHideTimer) clearTimeout(supHideTimer);
+  supHideTimer = null;
+  if (autoHideMs && !supervisor.view()?.pending.length) {
+    supHideTimer = setTimeout(() => {
+      if (!supervisor.view()?.pending.length) supWindow?.hide();
+    }, autoHideMs);
+  }
+}
+
+/** Project folder picker for a coding task. The user's choice is the go-ahead. */
+async function pickProject(task: string): Promise<string | null> {
+  const w = await originWindow();
+  const res = await dialog.showOpenDialog(w, {
+    title: `Choose the project folder for: ${task.slice(0, 80)}`,
+    buttonLabel: 'Let Claude work here',
+    defaultPath: store.snapshot().supervisor?.lastFolder,
+    properties: ['openDirectory'],
+  });
+  if (w === voiceWindow && !voiceCardShown && !w.isDestroyed()) w.hide();
+  const folder = res.canceled ? null : (res.filePaths[0] ?? null);
+  if (folder) store.setSupervisor({ lastFolder: folder });
+  return folder;
+}
+
+function makeSupervisor() {
+  supervisor = new Supervisor({
+    run: (args, cwd, onEvent, runId) => {
+      if (!coder || !control) throw new Error('Claude Code is not set up yet. Finish setup first.');
+      const shim = {
+        command: process.execPath,
+        args: [path.join(__dirname, '..', 'gateway', 'shim.mjs')],
+        // the limited token: it can only send permission prompts to the supervisor
+        env: { ELECTRON_RUN_AS_NODE: '1', JARVIS_CONTROL_URL: control.url, JARVIS_CONTROL_TOKEN: control.supToken, JARVIS_SHIM_MODE: 'supervisor', JARVIS_RUN_ID: runId },
+      };
+      return coder.run({ ...args, shim }, cwd, onEvent);
+    },
+    // the advisor runs in Jarvis's own folder, not the project, so no project files steer it
+    advise: (prompt, system) => (coder ? coder.advise(prompt, system, data('brain-cwd')) : Promise.resolve(null)),
+    ui: {
+      ask: (p) => void pushSup(supervisor.describe(p), true),
+      settled: () => void pushSup(undefined, false),
+      update: (u) => {
+        // the coding job is on the project board: doing while it runs, done when it finishes
+        const v = supervisor.view();
+        try {
+          if (u.kind === 'started' && v) codingTaskId = board.add({ title: shortTask(v.task, 80), project: v.folder, status: 'doing', notes: 'Started by the coding supervisor' }).id;
+          if (u.kind === 'done' && codingTaskId) board.update(codingTaskId, { status: 'done' });
+          if ((u.kind === 'error' || u.kind === 'stopped') && codingTaskId) board.update(codingTaskId, { notes: u.kind === 'error' ? 'Claude ran into a problem' : 'Stopped' });
+          send('planner:changed');
+        } catch {
+          /* the board is a convenience; never let it break the supervisor */
+        }
+        supUpdates.push({ ...u, at: Date.now() });
+        if (supUpdates.length > 40) supUpdates.shift();
+        // the start is already announced in the chat/voice reply, so it is not spoken twice
+        void pushSup(u.kind === 'started' ? undefined : u.text, true, u.kind === 'progress' || u.kind === 'started' ? 12_000 : 0);
+      },
+    },
+    settings: () => supSettings(),
+  });
 }
 
 /* ---------- lesson window ---------- */
@@ -511,16 +695,30 @@ async function runLocal(cmd: LocalCommand): Promise<string | { reply: string; fo
   }
 }
 
+/**
+ * Checks Claude Code and starts Jarvis's brain. Runs at start-up by itself (the voice card
+ * must not depend on the main window), and again whenever a request finds it missing.
+ */
+async function ensureBrain(): Promise<void> {
+  setupState = await checkSetup();
+  if (setupState.step === 'ready' && (!brain || brainCommand !== setupState.command)) buildBrain(setupState.command);
+}
+let brainCommand: string | null = null;
+
 function buildBrain(command: string) {
+  brainCommand = command;
+  coder = new Coder({ command });
   brain = new ClaudeCLIBrain({
     command,
     cwd: data('brain-cwd'),
-    gateway: () =>
+    gateway: (role, consult) =>
       control && {
         command: process.execPath,
         args: [path.join(__dirname, '..', 'gateway', 'shim.mjs')],
-        env: { ELECTRON_RUN_AS_NODE: '1', JARVIS_CONTROL_URL: control.url, JARVIS_CONTROL_TOKEN: control.token },
+        // the role decides which apps' tools this run sees (see the control server scope)
+        env: { ELECTRON_RUN_AS_NODE: '1', JARVIS_CONTROL_URL: control.url, JARVIS_CONTROL_TOKEN: control.token, JARVIS_ROLE: role ?? '', JARVIS_CONSULT: consult ? '1' : '0' },
       },
+    systemPrompt: (role) => rolePrompt(isRole(role) ? role : 'jarvis', people()),
     progressFor: (tool) => catalog.progressFor(tool),
     onEnvScrubbed: (removed) => {
       envNotice = `${removed.join(', ')} was set on this computer. Jarvis removed it for Claude so requests use your Claude plan, not API billing.`;
@@ -532,6 +730,8 @@ function buildBrain(command: string) {
     sessions,
     usage,
     modelOverride: () => store.snapshot().modelOverride,
+    memory: { prefix: (r) => roleMemory.prefix(r), remember: (r, u, a) => roleMemory.remember(r, u, a) },
+    people,
     level: () => {
       const l = store.snapshot().explainLevel;
       return l && l !== 'auto' ? l : null;
@@ -576,9 +776,8 @@ async function hubList() {
 
 function registerIpc() {
   ipcMain.handle('setup:check', async () => {
-    setupState = await checkSetup();
-    if (setupState.step === 'ready') buildBrain(setupState.command);
-    return { ...setupState, baseline: usage.baseline, envNotice };
+    await ensureBrain();
+    return { ...setupState!, baseline: usage.baseline, envNotice };
   });
   ipcMain.handle('setup:baseline', async () => {
     if (!brain) return { ok: false, reply: 'Claude Code is not ready.' };
@@ -587,13 +786,98 @@ function registerIpc() {
     usage.add({ request: '(setup test request)', model: res.model ?? 'haiku', tokens: res.tokens_used, usage: res.usage, isError: res.is_error });
     return { ok: !res.is_error, reply: res.reply, tokens: res.tokens_used, limitReached: res.limit_reached };
   });
-  ipcMain.handle('ask', async (e, text: string) => {
+  ipcMain.handle('ask', async (e, text: string, picked?: string, opts?: { stream?: boolean }) => {
     requestSender = e.sender;
-    if (!orchestrator) return { kind: 'local', reply: 'Finish setup first.', isError: true };
+    // not started yet (or Claude Code was just installed / logged in): check again now
+    if (!orchestrator) await ensureBrain();
+    if (!orchestrator) return { kind: 'local', reply: setupState && 'instructions' in setupState ? setupState.instructions : 'Claude Code is not ready yet.', isError: true };
     const before = lessons?.shown ?? 0;
-    const res = await orchestrator.handle(String(text));
+    const target = e.sender;
+    const fromVoice = BrowserWindow.fromWebContents(target) === voiceWindow;
+    const stream = opts?.stream === true;
+    const res = await orchestrator.handle(String(text), isRole(picked) ? picked : null, {
+      spoken: fromVoice,
+      // who answers, so the window can show their name and use their voice right away
+      onRole: stream
+        ? (r) => !target.isDestroyed() && target.send('ask:start', { role: r, roleName: r === 'jarvis' ? 'Jarvis' : `${people()[r]} · ${roleById(r).name}`, roleColor: roleById(r).color, voice: roleVoice(r) })
+        : undefined,
+      // the reply as it is written; stops once a lesson opens (the lesson narrates itself)
+      onText: stream ? (d) => !target.isDestroyed() && (lessons?.shown ?? 0) === before && target.send('ask:partial', d) : undefined,
+    });
+    const role = res.role ?? 'jarvis';
     // A lesson narrates itself, so the window that asked should not read the reply aloud too.
-    return { ...res, lessonShown: (lessons?.shown ?? 0) > before };
+    const who = people()[role];
+    const roleName = role === 'jarvis' ? 'Jarvis' : `${who} · ${roleById(role).name}`;
+    // one shared history: what was said in the voice card or the box also shows in the main chat
+    const win = BrowserWindow.fromWebContents(target);
+    const via = win === voiceWindow ? 'voice' : win === boxWindow ? 'box' : 'chat';
+    const meta = res.kind === 'brain' ? `${res.model} · ${res.tokens?.toLocaleString() ?? 0} tokens` : 'handled locally · 0 tokens';
+    const items = history.add([
+      { who: 'user', text: String(text), via },
+      { who: 'assistant', text: res.reply, via, roleName, color: roleById(role).color, meta, error: Boolean(res.isError) },
+    ]);
+    if (win !== mainWindow && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('history:add', items);
+    return { ...res, role, roleName, person: who, roleColor: roleById(role).color, voice: roleVoice(role), lessonShown: (lessons?.shown ?? 0) > before };
+  });
+  ipcMain.handle('history:get', () => history.recent(80));
+  ipcMain.handle('history:set', (_e, keep: boolean) => {
+    store.setKeepHistory(Boolean(keep));
+    if (!keep) history.clear();
+    return Boolean(keep);
+  });
+  ipcMain.handle('history:clear', () => {
+    history.clear();
+    send('history:cleared');
+    return true;
+  });
+  ipcMain.handle('team:list', () => ({
+    roles: ROLES.map((r) => ({
+      id: r.id,
+      name: r.name,
+      person: people()[r.id],
+      title: r.title,
+      blurb: r.blurb,
+      color: r.color,
+      examples: r.examples,
+      voice: roleVoice(r.id),
+      apps: catalog
+        .all()
+        .filter((a) => a.id !== 'team' && roleUsesApp(r, a.id, a.kind === 'mcp'))
+        .map((a) => a.name),
+      notes: r.id === 'jarvis' ? null : roleMemory.notes(r.id),
+      pending: r.id === 'jarvis' ? 0 : roleMemory.pendingCount(r.id),
+    })),
+    voices: VOICES,
+  }));
+  ipcMain.handle('team:setName', (_e, role: string, name: string) => {
+    if (!isRole(role) || role === 'jarvis') throw new Error('unknown role');
+    const clean = String(name ?? '').trim().replace(/\s+/g, ' ');
+    if (clean && !PERSON_NAME.test(clean)) throw new Error('Use 2 to 20 letters (spaces, apostrophes and hyphens are fine).');
+    const taken = Object.entries(people()).find(([id, n]) => id !== role && n.toLowerCase() === clean.toLowerCase());
+    if (taken) throw new Error(`${clean} is already on the team.`);
+    store.setRoleName(role, clean || null);
+    return people()[role];
+  });
+  ipcMain.handle('team:setVoice', (_e, role: string, voice: string) => {
+    if (!isRole(role) || !isVoice(voice)) throw new Error('unknown role or voice');
+    if (role === 'jarvis') store.setTts(voice, undefined);
+    else store.setRoleVoice(role, voice);
+    return roleVoice(role);
+  });
+  ipcMain.handle('team:saveNotes', (_e, role: string, text: string) => {
+    if (!isRole(role) || role === 'jarvis') throw new Error('unknown role');
+    roleMemory.setNotes(role, String(text ?? ''));
+    return roleMemory.notes(role);
+  });
+  ipcMain.handle('team:forget', (_e, role: string) => {
+    if (!isRole(role) || role === 'jarvis') throw new Error('unknown role');
+    roleMemory.clear(role);
+    return '';
+  });
+  ipcMain.handle('team:refresh', async (_e, role: string) => {
+    if (!isRole(role) || role === 'jarvis') throw new Error('unknown role');
+    await roleMemory.fold(role);
+    return roleMemory.notes(role);
   });
   ipcMain.on('confirm:answer', (_e, id: string, yes: boolean) => pendingConfirms.get(id)?.(yes === true));
   ipcMain.handle('hub:list', hubList);
@@ -709,7 +993,9 @@ function registerIpc() {
   ipcMain.handle('tts:speak', (e, text: string, opts: { voice?: string }) => {
     if (!kokoro.status().installed) return null; // the window falls back to the OS voice
     const snap = store.snapshot();
-    const v = isVoice(opts?.voice) ? opts.voice : isVoice(snap.ttsVoice) ? snap.ttsVoice : DEFAULT_VOICE;
+    const fromWin = BrowserWindow.fromWebContents(e.sender);
+    const own = fromWin && fromWin === lessonWindow ? roleVoice('educator') : fromWin && fromWin === supWindow ? roleVoice('pm') : null;
+    const v = isVoice(opts?.voice) ? opts.voice : (own ?? (isVoice(snap.ttsVoice) ? snap.ttsVoice : DEFAULT_VOICE));
     const speed = Math.min(MAX_SPEED, Math.max(MIN_SPEED, snap.ttsSpeed ?? 1));
     const target = e.sender;
     const { id, done } = kokoro.speak(String(text), v, speed, (c) => {
@@ -749,6 +1035,66 @@ function registerIpc() {
     return wanted;
   });
   ipcMain.on('lesson:close', () => lessonWindow?.close());
+  ipcMain.on('sup:answer', (_e, id: string, a: { choose?: string[]; allow?: boolean; text?: string }) => {
+    const reply = supervisor.answer(String(id), {
+      choose: Array.isArray(a?.choose) ? a.choose.map(String).slice(0, 6) : undefined,
+      allow: typeof a?.allow === 'boolean' ? a.allow : undefined,
+      text: typeof a?.text === 'string' ? a.text.slice(0, 2000) : undefined,
+    });
+    void pushSup(reply, true, 5000);
+  });
+  ipcMain.on('sup:stop', () => void pushSup(supervisor.stop(), true, 8000));
+  ipcMain.on('sup:hide', () => supWindow?.hide());
+  ipcMain.on('sup:openCode', () => {
+    const root = supervisor.view()?.root;
+    if (root) void shell.openExternal(`vscode://file/${root.replace(/\\/g, '/')}`);
+  });
+  ipcMain.on('sup:openFile', (_e, rel: string) => {
+    const root = supervisor.view()?.root;
+    if (!root || typeof rel !== 'string') return;
+    const file = path.resolve(root, rel);
+    // only files inside the project folder
+    if (file !== root && !file.startsWith(root + path.sep)) return;
+    void shell.openExternal(`vscode://file/${file.replace(/\\/g, '/')}`);
+  });
+  ipcMain.on('sup:resize', (e, height: number) => {
+    const w = BrowserWindow.fromWebContents(e.sender);
+    if (w && w === supWindow && !w.isDestroyed()) placeSup(w, Number(height) || 200);
+  });
+  ipcMain.handle('sup:settings', (_e, patch: { autonomy?: 'careful' | 'balanced' | 'handsoff'; updateEvery?: number; speak?: boolean }) => {
+    if (patch) store.setSupervisor({ autonomy: patch.autonomy, updateEvery: patch.updateEvery, speak: patch.speak });
+    return { ...supSettings(), watchOwn: hooksInstalled(CLAUDE_SETTINGS()), claudeSettings: CLAUDE_SETTINGS() };
+  });
+  // the user's own Claude Code sessions: add / remove Jarvis's two hooks in their Claude Code settings
+  ipcMain.handle('sup:watchOwn', (_e, on: boolean) => {
+    if (on) installHooks(CLAUDE_SETTINGS(), hookCommand(process.execPath, HOOK_SCRIPT(), data('hook-endpoint.json')));
+    else removeHooks(CLAUDE_SETTINGS());
+    store.setSupervisor({ watchOwn: Boolean(on) });
+    return hooksInstalled(CLAUDE_SETTINGS());
+  });
+  // PA: morning plan and reminders; the shared project board
+  ipcMain.handle('pa:get', () => ({ planAt: store.snapshot().pa?.planAt ?? null, reminders: reminders.upcoming() }));
+  ipcMain.handle('pa:setPlan', (_e, at: string | null) => {
+    store.setPa({ planAt: at || null });
+    return store.snapshot().pa?.planAt ?? null;
+  });
+  ipcMain.handle('reminders:cancel', (_e, id: string) => {
+    reminders.cancel(String(id));
+    return reminders.upcoming();
+  });
+  ipcMain.handle('board:list', () => board.all());
+  ipcMain.handle('board:add', (_e, t: { title: string; project?: string; due?: string }) => {
+    board.add({ title: String(t?.title ?? ''), project: t?.project, due: t?.due });
+    return board.all();
+  });
+  ipcMain.handle('board:update', (_e, id: string, patch: { status?: string; due?: string | null; title?: string }) => {
+    board.update(String(id), patch ?? {});
+    return board.all();
+  });
+  ipcMain.handle('board:remove', (_e, id: string) => {
+    board.remove(String(id));
+    return board.all();
+  });
   ipcMain.on('lesson:layout', async (_e, want: 'full' | 'side') => {
     const w = lessonWindow;
     if (!w || w.isDestroyed()) return;
@@ -798,6 +1144,19 @@ app.whenReady().then(async () => {
   const screenExec = new ScreenExecutor(new ElectronScreenBackend(), screenUI, () => requestSeq);
   kokoro = new KokoroEngine(path.join(app.getPath('userData'), 'speech', 'kokoro'), path.join(__dirname, '..', 'speech', 'kokoro-worker.mjs'));
   setTimeout(() => kokoro.warmUp(), 4000); // load the voice in the background so the first reply speaks quickly
+  // The user already chose the natural voice: if an update replaced its model, fetch the new one quietly.
+  if (!kokoro.status().installed && kokoro.hasOlderModel()) {
+    setTimeout(() => {
+      send('notice', 'Updating the natural voice (one-time download, about 326 MB). This fixes speech that cut off. The standard voice is used until it finishes.');
+      void kokoro
+        .install()
+        .then(() => {
+          send('notice', 'The natural voice is updated.');
+          kokoro.warmUp();
+        })
+        .catch((err) => send('notice', `The natural voice update failed: ${String(err).slice(0, 160)}. You can retry in Settings → Natural voice.`));
+    }, 6000);
+  }
   voice = new VoiceController({
     dataDir: app.getPath('userData'),
     preloadPath: preloadPath(),
@@ -808,6 +1167,23 @@ app.whenReady().then(async () => {
     progress: (label) => send('progress', label),
     stopSpeaking: stopAllSpeech,
   });
+  makeSupervisor();
+  history = new ChatHistory(data('history.jsonl'), () => store.snapshot().keepHistory !== false);
+  reminders = new ReminderStore(data('reminders.json'));
+  board = new BoardStore(data('board.json'));
+  setInterval(plannerTick, 15_000);
+  setTimeout(plannerTick, 5_000);
+  roleMemory = new RoleMemory(data('roles'), (prompt, system) => (coder ? coder.advise(prompt, system, data('brain-cwd')) : Promise.resolve(null)));
+  const team = new TeamExecutor({
+    consult: async (role, question) => {
+      if (!brain) return { reply: 'Jarvis is not set up yet.', isError: true };
+      const notes = roleMemory.prefix(role);
+      const res = await brain.ask(`${notes ? `${notes}\n` : ''}${timePrefix()} (A teammate asks you.) ${question}`, null, pickModel(question), { role, consult: true });
+      return { reply: res.reply, isError: res.is_error, name: fullName(role, people()) };
+    },
+    onAsk: (role) => send('progress', `Asking ${fullName(role, people())}…`),
+  });
+  const coding = new CodingExecutor({ supervisor, pickFolder: pickProject });
   lessons = new LessonExecutor({ show: showLesson, snip: (r) => snipScreen(screenExec.lastShot, r) });
   const documents = new DocumentsExecutor({
     pickFile: (reason) => pick('openFile', reason),
@@ -815,7 +1191,7 @@ app.whenReady().then(async () => {
     pdfPages,
   });
   const transcripts = new TranscriptExecutor(path.join(app.getPath('userData'), 'transcripts'));
-  catalog = new AppCatalog(store, secrets, accounts, { screen: screenExec, whiteboard, recorder: transcripts, lesson: lessons, documents });
+  catalog = new AppCatalog(store, secrets, accounts, { screen: screenExec, whiteboard, recorder: transcripts, lesson: lessons, documents, coding, team, reminders: new RemindersExecutor(reminders, () => send('planner:changed')), board: new BoardExecutor(board, () => send('planner:changed')) });
   core = new GatewayCore({
     apps: () => catalog.all(),
     settings: store,
@@ -825,14 +1201,38 @@ app.whenReady().then(async () => {
     log: activity,
     onProgress: (label) => send('progress', `${label}…`),
   });
-  control = await startControlServer(() => core);
+  control = await startControlServer(() => core, {
+    approve: (runId, req) => supervisor.onPermission(runId, req),
+    // each team member sees only its own apps; a consulted member cannot consult others (one hop)
+    hook: (p) => {
+      const folder = typeof p.cwd === 'string' ? path.basename(p.cwd) : 'your project';
+      const first = (s: unknown) => (typeof s === 'string' ? (s.replace(/\s+/g, ' ').trim().match(/^.{0,220}?[.!?](\s|$)/)?.[0] ?? s.slice(0, 220)).trim() : '');
+      const text =
+        p.event === 'Stop'
+          ? `Claude finished in ${folder}.${first(p.last) ? ` It says: ${first(p.last)}` : ''}`
+          : p.event === 'Notification'
+            ? `Your Claude session in ${folder} needs you${first(p.message) ? `: ${first(p.message)}` : '.'}`
+            : '';
+      if (!text) return;
+      supUpdates.push({ kind: p.event === 'Stop' ? 'done' : 'progress', text, at: Date.now() });
+      void pushSup(text, true, 15_000);
+    },
+    scope: (role, consult) => {
+      if (!isRole(role)) return undefined;
+      const r = roleById(role);
+      return (app) => (app.id === 'team' ? !consult : roleUsesApp(r, app.id, app.kind === 'mcp'));
+    },
+  });
 
+  // where the Claude Code hook script finds Jarvis this time (the token only opens /hook)
+  fs.writeFileSync(data('hook-endpoint.json'), JSON.stringify({ url: control.url, token: control.hookToken }), { mode: 0o600 });
   Menu.setApplicationMenu(null);
   nativeTheme.themeSource = 'dark'; // dark-tinted glass
   voice.setupSession();
   voice.registerIpc();
   registerIpc();
   createMainWindow();
+  void ensureBrain().catch(() => undefined);
   globalShortcut.register(HOTKEY_BOX, toggleBox);
   const hotkey = store.snapshot().pttHotkey || DEFAULT_PTT_HOTKEY;
   if (!voice.setHotkey(hotkey)) {

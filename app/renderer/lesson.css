@@ -191,3 +191,30 @@ body.done .play .i-replay { display: block; }
 @keyframes hlin { from { opacity: 0; transform: scale(1.25); } }
 @keyframes hlpulse { 50% { box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.35), 0 0 40px rgb(201 133 0 / 0.95); } }
 .snipcap { margin-top: 10px; font-size: 14.5px; color: #dcdbd6; }
+
+/* ---------- maths stage: animated, interactive coordinate plane ---------- */
+.stagecard { padding: 14px 14px 12px; }
+.stage-frame { position: relative; border-radius: 14px; overflow: hidden; background: radial-gradient(120% 120% at 50% 0%, #1d1f24, #141518); border: 1px solid var(--line); touch-action: none; }
+.stage.active .stage-frame { border-color: rgb(57 135 229 / 0.5); }
+.stage svg { width: 100%; height: auto; display: block; cursor: grab; }
+.stage.dragging svg, .stage svg:active { cursor: grabbing; }
+.st-bg path { stroke: rgb(255 255 255 / 0.06); stroke-width: 1; fill: none; }
+.st-grid .minor { stroke: rgb(57 135 229 / 0.10); stroke-width: 1; fill: none; }
+.st-grid .major { stroke: rgb(57 135 229 / 0.38); stroke-width: 1.2; fill: none; }
+.st-axis path { stroke: rgb(240 239 236 / 0.8); stroke-width: 1.8; fill: none; }
+.st-ticks text { fill: rgb(240 239 236 / 0.55); font: 12px "Segoe UI", system-ui, sans-serif; }
+.st-hit { fill: transparent; stroke: rgb(255 255 255 / 0.0); cursor: grab; transition: stroke .2s; }
+.st-hit:hover { stroke: rgb(255 255 255 / 0.5); stroke-width: 2; }
+.stage-labels { position: absolute; inset: 0; pointer-events: none; }
+.st-label { position: absolute; transform: translate(8px, -110%); font-size: 17px; white-space: nowrap; text-shadow: 0 0 6px #000, 0 0 12px #000; transition: opacity .2s; }
+.stage-controls { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 12px; }
+.st-slider { display: flex; align-items: center; gap: 10px; flex: 1 1 220px; min-width: 200px; font-size: 15px; }
+.st-slider .st-name { min-width: 26px; text-align: right; font-size: 17px; }
+.st-slider input[type=range] { flex: 1; accent-color: var(--blue); }
+.st-slider output { min-width: 44px; font: 13px Consolas, monospace; color: var(--muted); }
+.st-tools { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.st-hint { flex: 1; font-size: 12px; color: var(--faint); }
+.math.morph { display: grid; }
+.math.morph .eq { grid-area: 1 / 1; opacity: 0; transform: translateY(10px); filter: blur(4px); transition: opacity .6s, transform .6s, filter .6s; }
+.math.morph .eq.on { opacity: 1; transform: none; filter: none; }
+.math.morph .eq.off { opacity: 0; transform: translateY(-10px); filter: blur(4px); }

@@ -19,6 +19,9 @@
         <button data-view="chat" class="active">
           <svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z" /></svg><span>Chat</span>
         </button>
+        <button data-view="team">
+          <svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2" /><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5" /><circle cx="17" cy="9" r="2.4" /><path d="M15.5 14.2c2.4-.3 4.4 1.2 5 4.3" /></svg><span>Team</span>
+        </button>
         <button data-view="hub">
           <svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5" /><rect x="13" y="4" width="7" height="7" rx="1.5" /><rect x="4" y="13" width="7" height="7" rx="1.5" /><path d="M16.5 13v7M13 16.5h7" /></svg><span>Tool Hub</span>
         </button>
@@ -55,23 +58,35 @@
             <div id="messages" aria-live="polite">
               <div id="empty" class="empty">
                 <div class="orb" id="orb"><span>AI</span></div>
-                <p class="empty-title">How can I help?</p>
-                <div class="suggestions">
-                  <button class="suggest" data-suggest="Read my 5 latest mails">Read my 5 latest mails</button>
-                  <button class="suggest" data-suggest="What's on my calendar today?">What's on my calendar today?</button>
-                  <button class="suggest" data-suggest="Explain binary search on the whiteboard">Explain binary search on the whiteboard</button>
-                  <button class="suggest" data-suggest="Look at my screen and explain this">Look at my screen and explain this</button>
-                </div>
+                <p class="empty-title">Who would you like to talk to?</p>
+                <p class="empty-sub">Ask anything and Jarvis passes it to the right expert, or start with a name: “Doctor, …”, “PA, …”</p>
+                <div id="suggestions" class="suggestions"></div>
               </div>
             </div>
             <div id="progress" class="progress hidden"><span class="mini-orb"></span><span id="progress-text"></span></div>
+            <div id="role-chips" class="role-chips" role="radiogroup" aria-label="Talk to"></div>
             <form id="composer" class="glass">
               <button type="button" id="mic" class="mic" title="Talk to Jarvis (or press the push-to-talk shortcut from any app)" aria-label="Talk">
                 <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
               </button>
-              <input id="input" autocomplete="off" placeholder="Ask Jarvis… e.g. “read my 5 latest mails”" />
+              <input id="input" autocomplete="off" placeholder="Ask anything… Jarvis passes it to the right expert" />
               <button type="submit" id="send" class="primary">Send</button>
             </form>
+          </section>
+
+          <section id="view-team" class="view">
+            <p class="lead">Your team of experts. Each one has its own skills, apps, voice and memory, and they ask each other for help when needed.</p>
+            <div id="team-grid" class="team-grid"></div>
+            <h2>Project board</h2>
+            <p class="muted">Shared by your PA and Project Manager. Coding jobs appear here on their own; you can also ask "Maya, add 'finish the report' due Friday".</p>
+            <form id="board-add" class="board-add glass">
+              <input id="board-title" placeholder="New task…" autocomplete="off" />
+              <input id="board-project" placeholder="Project" autocomplete="off" />
+              <input id="board-due" type="date" />
+              <button type="submit" class="primary">Add</button>
+            </form>
+            <div id="task-board" class="board"></div>
+            <p class="help team-note">Memory is kept only on this computer, in your Jarvis folder, and is summarised as you talk. You can read, edit or delete it here at any time. The Doctor and Finance give general information, not a diagnosis or regulated financial advice.</p>
           </section>
 
           <section id="view-hub" class="view">
@@ -179,6 +194,11 @@
                 <span>Speak replies aloud</span>
                 <input type="checkbox" id="voice-output" class="switch" />
               </label>
+              <label class="switch-row">
+                <span>Keep chat history on this computer (chat, voice and floating box together)</span>
+                <input type="checkbox" id="keep-history" class="switch" />
+              </label>
+              <div class="row-buttons"><button id="clear-history" type="button">Clear chat history</button><span id="history-status" class="muted"></span></div>
               <label>How Jarvis explains things
                 <select id="explain-level">
                   <option value="auto">Automatic (Jarvis picks from your question)</option>
@@ -189,13 +209,44 @@
               </label>
               <p class="help">You can also just say it, for example "explain like I'm five" or "explain at an expert level".</p>
             </div>
+            <h2>Coding supervisor</h2>
+            <div class="card settings-card">
+              <p class="help">When the Coding supervisor app is on (Tool Hub), you can say "Jarvis, add a login page to my project". Jarvis runs Claude Code on the folder you pick, in the background, brings you its questions with its own recommendation, and gives you updates.</p>
+              <label>What Jarvis may approve on its own
+                <select id="sup-autonomy">
+                  <option value="careful">Careful: only reading; everything else comes to you</option>
+                  <option value="balanced">Balanced: reading, editing project files, running tests and builds (recommended)</option>
+                  <option value="handsoff">Hands-off: also other commands; only risky things come to you</option>
+                </select>
+              </label>
+              <p class="help">At every level these always come to you: deleting files, git push, installing software, using the network, anything outside the project folder, and files with keys or passwords.</p>
+              <label>Progress updates
+                <select id="sup-updates">
+                  <option value="0">Only at the start, questions and the end</option>
+                  <option value="3">Every 3 minutes (if something happened)</option>
+                  <option value="5">Every 5 minutes (if something happened)</option>
+                  <option value="10">Every 10 minutes (if something happened)</option>
+                  <option value="15">Every 15 minutes (if something happened)</option>
+                </select>
+              </label>
+              <label class="switch-row">
+                <span>Speak questions and updates aloud</span>
+                <input type="checkbox" id="sup-speak" class="switch" />
+              </label>
+              <label class="switch-row">
+                <span>Also tell me when Claude Code sessions I start myself (VS Code, terminal) finish or need me</span>
+                <input type="checkbox" id="sup-watch" class="switch" />
+              </label>
+              <p class="help" id="sup-watch-help">This adds two small entries (marked "jarvis-claude-hook") to your Claude Code settings file; turning it off removes exactly those. A copy of the original file is kept next to it.</p>
+              <div id="sup-watch-error" class="error"></div>
+            </div>
             <h2>Natural voice</h2>
             <div class="card settings-card">
               <div class="app-head"><h3>Jarvis's voice (runs on this computer)</h3><span id="tts-pill" class="pill">Checking...</span></div>
               <p class="help">A realistic neural voice (Kokoro). Replies are turned into speech on your computer; nothing is sent anywhere.</p>
-              <div class="row-buttons"><button id="tts-install" class="primary hidden">Download natural voice (about 163 MB)</button></div>
+              <div class="row-buttons"><button id="tts-install" class="primary hidden">Download natural voice (about 326 MB)</button></div>
               <div id="tts-progress" class="meter-bar hidden"><i></i><span></span></div>
-              <label>Voice<select id="tts-voice"></select></label>
+              <label>Jarvis's voice <span class="muted">(each team member's voice is chosen on the Team page)</span><select id="tts-voice"></select></label>
               <label>Speed <span id="tts-speed-label" class="muted"></span><input id="tts-speed" type="range" min="0.8" max="1.3" step="0.05" /></label>
               <div class="row-buttons"><button id="tts-sample">Play sample</button><span class="help">Grades are Kokoro's own quality ratings (A is the most natural).</span></div>
               <div id="tts-error" class="error"></div>
@@ -233,7 +284,7 @@
 
     <div id="voice-card" class="voice-card hidden" aria-live="polite">
       <div class="vc-head">
-        <span class="mini-orb"></span><b>Jarvis</b>
+        <span class="mini-orb" id="vc-orb"></span><b id="vc-name">Jarvis</b>
         <span class="spacer"></span>
         <button id="vc-open" class="link" type="button">Open Jarvis</button>
         <button id="vc-close" class="vc-x" type="button" aria-label="Close">×</button>

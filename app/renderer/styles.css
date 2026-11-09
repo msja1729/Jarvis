@@ -354,3 +354,76 @@ body:not(.voice) .voice-card { display: none !important; }
 
 /* range sliders match the design (no default blue) */
 input[type=range] { accent-color: var(--light); padding: 0; border: none; background: none; height: 22px; }
+
+/* ---------- team: who you talk to ---------- */
+.role-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px 4px; }
+.role-chip { --c: #f0efec; display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 13px; border-radius: 999px; border: 1px solid var(--line); background: var(--pill); color: var(--muted); font-size: 12px; transition: background .2s, color .2s, border-color .2s, box-shadow .2s; }
+.role-chip i, .role-tag i, .msg .who i { width: 7px; height: 7px; border-radius: 50%; background: var(--c); box-shadow: 0 0 8px color-mix(in srgb, var(--c) 70%, transparent); flex: none; }
+.role-chip:hover { background: var(--pill-hover); color: var(--text); }
+.role-chip.on { color: var(--text); border-color: color-mix(in srgb, var(--c) 55%, transparent); background: color-mix(in srgb, var(--c) 14%, var(--pill)); box-shadow: 0 0 18px -6px var(--c); }
+.msg .who { --c: #9a9a96; display: flex; align-items: center; gap: 7px; margin-bottom: 6px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: color-mix(in srgb, var(--c) 70%, white); white-space: normal; }
+.empty-sub { margin: -8px 0 0; font-size: 12px; color: var(--muted); max-width: 520px; }
+.suggest { display: inline-flex; align-items: center; gap: 8px; }
+.role-tag { --c: #9a9a96; display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: color-mix(in srgb, var(--c) 70%, white); }
+.used-by { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 8px 0 2px; font-size: 11px; color: var(--faint); }
+#vc-orb { --c: #ffffff; background: var(--c); box-shadow: 0 0 10px var(--c); }
+
+/* ---------- Team page ---------- */
+.team-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.team-card { --c: #9a9a96; display: flex; flex-direction: column; gap: 12px; position: relative; overflow: hidden; }
+.team-card::before { content: ""; position: absolute; inset: -40% -20% auto auto; width: 220px; height: 220px; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--c) 22%, transparent), transparent 70%); pointer-events: none; }
+.team-head { display: flex; align-items: center; gap: 12px; }
+.team-head h3 { margin: 0; font-size: 17px; font-weight: 400; }
+.team-orb { width: 34px; height: 34px; border-radius: 50%; flex: none; background: radial-gradient(circle at 35% 30%, #fff, color-mix(in srgb, var(--c) 60%, white) 30%, var(--c) 70%); box-shadow: 0 0 22px color-mix(in srgb, var(--c) 60%, transparent); }
+.team-blurb { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.6; }
+.team-apps { display: flex; flex-wrap: wrap; gap: 6px; }
+.team-apps .pill { padding: 3px 10px; font-size: 10.5px; }
+.team-row { display: flex; align-items: center; gap: 8px; }
+.team-row .team-voice { flex: 1; min-width: 0; }
+.team-row .chip { height: 30px; padding: 0 12px; font-size: 11.5px; }
+.team-row .spacer { flex: 1; }
+.chip.danger:hover { color: var(--red); border-color: rgb(255 77 77 / 0.45); }
+.team-memory summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+.team-memory[open] summary { margin-bottom: 8px; }
+.team-notes { width: 100%; resize: vertical; min-height: 90px; border-radius: 14px; border: 1px solid var(--line); background: rgb(0 0 0 / 0.25); color: var(--text); font: 12.5px/1.6 "Segoe UI", system-ui, sans-serif; padding: 10px 12px; }
+.team-memory .team-row { margin-top: 8px; flex-wrap: wrap; }
+.small { font-size: 11px; }
+.team-talk { align-self: flex-start; margin-top: auto; }
+.team-note { margin-top: 16px; }
+
+.team-card label.team-row { display: flex; flex-direction: row; align-items: center; gap: 8px; margin: 0; text-align: left; }
+.team-card label.team-row .muted { flex: none; }
+
+.team-head .spacer { flex: 1; }
+.team-rename { height: 28px; padding: 0 11px; font-size: 11px; }
+.team-name-input { font-size: 16px; padding: 4px 10px; border-radius: 10px; width: 150px; }
+.error.small { font-size: 11px; }
+
+/* PA: morning plan and reminders */
+.pa-panel { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 16px; background: rgb(255 255 255 / 0.03); border: 1px solid var(--line); }
+.team-card label.pa-row { justify-content: space-between; font-size: 12px; color: var(--muted); }
+.pa-time { width: 110px; padding: 4px 8px; border-radius: 10px; }
+.pa-reminders { display: flex; flex-direction: column; gap: 4px; }
+.pa-reminder { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+.pa-reminder .when { color: var(--muted); min-width: 92px; font-variant-numeric: tabular-nums; }
+.pa-reminder span:nth-child(2) { flex: 1; }
+.x { width: 24px; height: 24px; padding: 0; border-radius: 50%; border: 0; background: transparent; color: var(--faint); font-size: 16px; line-height: 1; }
+.x:hover { color: var(--text); background: var(--pill-hover); }
+
+/* project board */
+.board-add { display: flex; gap: 8px; padding: 8px; border-radius: 999px; margin: 6px 0 12px; }
+.board-add input { background: transparent; border-color: transparent; }
+.board-add #board-title { flex: 1; }
+.board-add #board-project { width: 160px; }
+.board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.board-col { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 20px; background: var(--card); border: 1px solid var(--line); min-height: 120px; }
+.board-head { display: flex; justify-content: space-between; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.board-col.doing .board-head { color: #9cc4f5; }
+.board-col.done .board-head { color: var(--green); }
+.board-task { padding: 10px 12px; border-radius: 14px; background: rgb(255 255 255 / 0.04); border: 1px solid var(--line); }
+.board-col.done .board-task .board-title { color: var(--muted); text-decoration: line-through; text-decoration-color: rgb(255 255 255 / 0.25); }
+.board-title { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.board-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; font-size: 11px; color: var(--muted); }
+.board-meta .pill { padding: 2px 8px; font-size: 10.5px; }
+.board-meta .due.late { color: var(--red); }
+.board-status { margin-left: auto; font-size: 11px; padding: 2px 6px; border-radius: 8px; }

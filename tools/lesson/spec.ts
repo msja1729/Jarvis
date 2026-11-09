@@ -4,8 +4,9 @@
  * lesson window only ever receives plain data in a known shape (never code or HTML).
  */
 import { compile } from './expr.js';
+import { Action, normalizeActions, normalizeStage, Stage } from './stage.js';
 
-export const BLOCK_TYPES = ['heading', 'text', 'bullets', 'math', 'diagram', 'chart', 'plot', 'scene', 'animate', 'table', 'note', 'quote', 'code', 'snip'] as const;
+export const BLOCK_TYPES = ['heading', 'text', 'bullets', 'math', 'diagram', 'chart', 'plot', 'scene', 'animate', 'table', 'note', 'quote', 'code', 'snip', 'stage', 'play'] as const;
 export type BlockType = (typeof BLOCK_TYPES)[number];
 export const PLACEMENTS = ['auto', 'full', 'left', 'right'] as const;
 export type Placement = (typeof PLACEMENTS)[number];
@@ -107,6 +108,11 @@ export interface Block {
   /** snip: filled in by Jarvis itself (never taken from Claude): the cut-out picture and where to highlight in it (0-1). */
   image?: string;
   hl?: { x: number; y: number; w: number; h: number };
+  /** stage: an interactive maths plane; play: more actions on an earlier stage (target). */
+  stage?: Stage;
+  actions?: Action[];
+  /** math: a sequence of equations that transform one into the next. */
+  texSteps?: string[];
 }
 
 export interface Step {
@@ -212,8 +218,29 @@ export function normalizeBlock(v: unknown, warn: (m: string) => void): Block | n
       return b;
     }
     case 'math': {
+      if (Array.isArray(v.tex) || Array.isArray(v.steps)) {
+        // an equation transforming step by step, e.g. expand, simplify, solve
+        const steps = ((Array.isArray(v.tex) ? v.tex : v.steps) as unknown[]).map((t) => str(t, LIMITS.tex)).filter((t): t is string => Boolean(t)).slice(0, 12);
+        if (!steps.length) return warn('math needs tex'), null;
+        b.tex = steps[steps.length - 1];
+        if (steps.length > 1) b.texSteps = steps;
+        return b;
+      }
       b.tex = str(v.tex ?? v.text, LIMITS.tex);
       if (!b.tex) return warn('math needs tex'), null;
+      return b;
+    }
+    case 'stage': {
+      const stage = normalizeStage(v, warn);
+      if (!stage) return null;
+      b.stage = stage;
+      if (!b.id) b.id = 'stage';
+      return b;
+    }
+    case 'play': {
+      b.target = str(v.target ?? v.stage, 40) ?? 'stage';
+      b.actions = normalizeActions(v.actions, [], warn);
+      if (!b.actions.length) return warn('play needs actions'), null;
       return b;
     }
     case 'diagram': {

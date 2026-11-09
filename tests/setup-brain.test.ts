@@ -15,7 +15,8 @@ describe('C01 installer config', () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
     expect(pkg.build.mac.target[0]).toMatchObject({ target: 'dmg', arch: ['universal'] });
     expect(pkg.build.mac.minimumSystemVersion).toBe('13.0');
-    expect(pkg.build.win.target).toBe('nsis');
+    const win = pkg.build.win.target;
+    expect(typeof win === 'string' ? win : win[0].target).toBe('nsis');
   });
 });
 
@@ -125,11 +126,11 @@ describe('C06 usage limit', () => {
 });
 
 describe('C07 single brain entry point', () => {
-  it('C07 only brain/ can start claude; the only other process is the local speech engine', () => {
+  it('C07 only brain/ can start claude (the brain, the setup check, the coding supervisor); the only other process is the local speech engine', () => {
     const files = sourceFiles(['app', 'router', 'gateway', 'tools', 'speech', 'security', 'brain'], ['.ts']);
     const spawners = files.filter((f) => /from ['"](node:)?child_process['"]/.test(fs.readFileSync(f, 'utf8')));
     const rel = spawners.map((f) => path.relative(ROOT, f).replace(/\\/g, '/')).sort();
-    expect(rel).toEqual(['brain/claude-cli.ts', 'brain/setup.ts', 'speech/whisper.ts']);
+    expect(rel).toEqual(['brain/claude-cli.ts', 'brain/coder.ts', 'brain/setup.ts', 'speech/whisper.ts']);
     // The speech engine only ever runs whisper-cli, never claude.
     const stt = fs.readFileSync(path.join(ROOT, 'speech', 'whisper.ts'), 'utf8');
     expect(stt).not.toMatch(/findClaude|from ['"]\.\.\/brain|['"]claude(\.exe)?['"]/);

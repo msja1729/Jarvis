@@ -18,9 +18,12 @@ import { WHITEBOARD_APP } from '../tools/whiteboard/definition.js';
 import { RECORDER_APP } from '../tools/recorder/definition.js';
 import { LESSON_APP } from '../tools/lesson/definition.js';
 import { DOCUMENTS_APP } from '../tools/documents/definition.js';
+import { CODING_APP } from '../tools/coding/definition.js';
+import { TEAM_APP } from '../tools/team/definition.js';
+import { BOARD_APP, REMINDERS_APP } from '../tools/planner/definition.js';
 
 /** Built-in apps shown in the Tool Hub. They stay off until their account is connected. */
-export const BUILTIN_APPS: AppDef[] = [GMAIL_APP, GCAL_APP, OUTLOOK_APP, OUTLOOK_CAL_APP, LESSON_APP, DOCUMENTS_APP, SCREEN_APP, WHITEBOARD_APP, RECORDER_APP];
+export const BUILTIN_APPS: AppDef[] = [GMAIL_APP, GCAL_APP, OUTLOOK_APP, OUTLOOK_CAL_APP, LESSON_APP, DOCUMENTS_APP, CODING_APP, TEAM_APP, REMINDERS_APP, BOARD_APP, SCREEN_APP, WHITEBOARD_APP, RECORDER_APP];
 
 export class AppCatalog {
   private proxies = new Map<string, McpProxyExecutor>();

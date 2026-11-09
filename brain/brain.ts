@@ -25,6 +25,12 @@ export interface AskOptions {
   /** Live progress such as "Reading Gmail…". */
   onProgress?: (label: string) => void;
   signal?: AbortSignal;
+  /** Which team member answers: decides the system prompt and which apps' tools are offered. */
+  role?: string;
+  /** A consulted role must not consult others in turn (one hop only). */
+  consult?: boolean;
+  /** The reply as it is being written (pieces of text), so speaking can start early. */
+  onText?: (delta: string) => void;
 }
 
 export interface Brain {

@@ -17,7 +17,10 @@ export const LESSON_APP: AppDef = {
       description:
         'Teach with a narrated lesson in its own window: each step\'s "say" is spoken (plain friendly sentences, no symbols) while its visuals appear. ' +
         'Visuals: diagram (Mermaid) for processes and architecture, plot for functions (animate t), chart for data, scene+animate for motion, math, table, code. ' +
-        'When explaining a screen, PDF or code, cite it: quote the exact words or code with source ("p. 4", "src/db.ts:12-30"), and snip the part of the screenshot you mean.',
+        'When explaining a screen, PDF or code, cite it: quote the exact words or code with source ("p. 4", "src/db.ts:12-30"), and snip the part of the screenshot you mean. ' +
+        'For maths, teach visually: open with a concrete question and a picture, build intuition on a stage before any formula, let the formula emerge, ' +
+        'give each quantity one colour in pictures and equations (\\blue{x}, \\orange{...}), move things continuously (play: set a parameter, apply a matrix, zoom), ' +
+        'transform equations step by step (math tex as a list), and leave sliders or draggable points so the student can explore.',
       group: 'write',
       // Only opens Jarvis's own lesson window, so no confirmation is needed.
       defaultSetting: 'allowed',
@@ -54,7 +57,7 @@ export const LESSON_APP: AppDef = {
                       marks: { type: 'array', items: num, description: 'code: line numbers to highlight' },
                       tone: { type: 'string', enum: [...NOTE_TONES] },
                       items: { type: 'array', items: { type: 'string' }, description: 'bullets' },
-                      tex: { type: 'string', description: 'math: display LaTeX' },
+                      tex: { description: 'math: display LaTeX, or a list of LaTeX steps that transform one into the next' },
                       code: { type: 'string', description: 'diagram: Mermaid (flowchart TD/LR, sequenceDiagram, stateDiagram-v2, mindmap, timeline, classDiagram, erDiagram); code: the exact code' },
                       chart: { type: 'string', enum: [...CHART_KINDS] },
                       labels: { type: 'array', items: { type: 'string' }, description: 'chart x categories' },
@@ -66,8 +69,8 @@ export const LESSON_APP: AppDef = {
                         items: { type: 'object', properties: { expr: { type: 'string' }, label: { type: 'string' } } },
                         description: 'plot: y=f(x,t) like "sin(x-t)", "x^2-2x"; + - * / ^ sin cos tan sqrt exp ln log abs pi e',
                       },
-                      x: { description: 'plot: x range [min,max]; snip: left px' },
-                      y: { description: 'plot: y range [min,max]; snip: top px' },
+                      x: { description: 'plot/stage: x range [min,max]; snip: left px' },
+                      y: { description: 'plot/stage: y range [min,max]; snip: top px' },
                       t: { ...range, description: 'plot: animate t over this range, looping' },
                       points: { type: 'array', items: { type: 'object', properties: { x: num, y: num, label: { type: 'string' } } }, description: 'plot: marked points' },
                       w: num,
@@ -78,7 +81,28 @@ export const LESSON_APP: AppDef = {
                         description: `scene (default 800x450): ${SHAPES.join('|')} with id,x,y,w,h,r,x2,y2,d,text,size,color,fill,opacity,rotate`,
                         items: { type: 'object' },
                       },
-                      target: { type: 'string', description: 'animate: scene id' },
+                      target: { type: 'string', description: 'animate: scene id; play: stage id' },
+                      params: {
+                        type: 'array',
+                        description: 'stage: sliders, [{name, min, max, value, step, label (LaTeX)}]; usable in expressions',
+                        items: { type: 'object' },
+                      },
+                      basis: { type: 'boolean', description: 'stage: show basis vectors i-hat, j-hat' },
+                      grid: { type: 'boolean' },
+                      objects: {
+                        type: 'array',
+                        description:
+                          'stage objects, each {id, kind, color, tex (label)}: function {expr in x and params}; parametric {xt, yt, range}; vector {to, from}; point {at, drag:{x:param,y:param}}; ' +
+                          'line|segment {from, to}; tangent {of: function id, a}; area {of, a, b}; riemann {of, a, b, n}; circle {center, r}; polygon {points, fill}; label {at, tex}. ' +
+                          'Coordinates are numbers or expressions of params, e.g. at:["a","a^2"]',
+                        items: { type: 'object' },
+                      },
+                      actions: {
+                        type: 'array',
+                        description:
+                          'stage/play actions in order: {do:create, ids}, {do:set, param, to, seconds}, {do:matrix, m:[[a,b],[c,d]]}, {do:highlight|fade|show, ids}, {do:zoom, x:[..], y:[..]}, {do:wait, seconds}',
+                        items: { type: 'object' },
+                      },
                       changes: { type: 'array', items: { type: 'object' }, description: 'animate: [{id, x,y,w,h,r,x2,y2,opacity,rotate,color,fill,text}] new values' },
                       seconds: num,
                       repeat: { type: 'string', enum: ['none', 'loop', 'bounce'] },

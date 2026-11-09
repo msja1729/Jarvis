@@ -105,6 +105,18 @@ export class SettingsStore {
     return this.data.oauthClients[accountId]?.clientId ?? null;
   }
 
+  setSupervisor(patch: NonNullable<JarvisSettings['supervisor']>): void {
+    const cur = this.data.supervisor ?? {};
+    const next = { ...cur };
+    if (patch.autonomy && ['careful', 'balanced', 'handsoff'].includes(patch.autonomy)) next.autonomy = patch.autonomy;
+    if (typeof patch.updateEvery === 'number' && [0, 3, 5, 10, 15].includes(patch.updateEvery)) next.updateEvery = patch.updateEvery;
+    if (typeof patch.speak === 'boolean') next.speak = patch.speak;
+    if (typeof patch.lastFolder === 'string') next.lastFolder = patch.lastFolder;
+    if (typeof patch.watchOwn === 'boolean') next.watchOwn = patch.watchOwn;
+    this.data.supervisor = next;
+    this.save();
+  }
+
   setPttHotkey(accelerator: string | null): void {
     this.data.pttHotkey = accelerator;
     this.save();
@@ -112,6 +124,32 @@ export class SettingsStore {
 
   setVoiceCardHotkey(accelerator: string | null): void {
     this.data.voiceCardHotkey = accelerator;
+    this.save();
+  }
+
+  setPa(patch: { planAt?: string | null; lastPlan?: string }): void {
+    const next = { ...(this.data.pa ?? {}) };
+    if (patch.planAt === null || (typeof patch.planAt === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(patch.planAt))) next.planAt = patch.planAt;
+    if (typeof patch.lastPlan === 'string') next.lastPlan = patch.lastPlan;
+    this.data.pa = next;
+    this.save();
+  }
+
+  setKeepHistory(on: boolean): void {
+    this.data.keepHistory = on;
+    this.save();
+  }
+
+  setRoleName(role: string, name: string | null): void {
+    const next = { ...(this.data.roleNames ?? {}) };
+    if (name) next[role] = name;
+    else delete next[role];
+    this.data.roleNames = next;
+    this.save();
+  }
+
+  setRoleVoice(role: string, voice: string): void {
+    this.data.roleVoices = { ...(this.data.roleVoices ?? {}), [role]: voice };
     this.save();
   }
 

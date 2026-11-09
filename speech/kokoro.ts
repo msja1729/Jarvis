@@ -54,6 +54,17 @@ export class KokoroEngine {
     return { installed, ready: installed, downloadBytes: KOKORO_FILES.reduce((s, f) => s + f.bytes, 0) };
   }
 
+  /** An earlier voice model is on disk (the user installed the voice before an update). */
+  hasOlderModel(): boolean {
+    const keep = new Set(KOKORO_FILES.map((f) => path.resolve(this.filePath(f.path))));
+    const dir = path.join(this.dir, KOKORO_REPO, 'onnx');
+    try {
+      return fs.readdirSync(dir).some((f) => f.endsWith('.onnx') && !keep.has(path.resolve(dir, f)));
+    } catch {
+      return false;
+    }
+  }
+
   install(progress: (label: string, fraction: number) => void = () => undefined): Promise<void> {
     this.installing ??= (async () => {
       const total = KOKORO_FILES.reduce((s, f) => s + f.bytes, 0);
