@@ -318,11 +318,12 @@ function renderRoleChips() {
   const box = $('role-chips');
   if (!box || !teamCache) return;
   box.replaceChildren();
-  const auto = roleChip('Auto', '#f0efec', pickedRole === null, 'Jarvis picks the right expert');
+  const auto = roleChip('Auto', '#f0efec', pickedRole === null, 'Jarvis passes it to the right expert');
   auto.addEventListener('click', () => pickRole(null));
   box.append(auto);
-  for (const r of teamCache.roles) {
-    const c = roleChip(r.id === 'jarvis' ? 'Jarvis' : r.person, r.color, pickedRole === r.id, `${r.name}: ${r.blurb}`);
+  // Jarvis is the front desk, not someone you talk to: only the experts are here
+  for (const r of teamCache.roles.filter((x) => x.id !== 'jarvis')) {
+    const c = roleChip(r.person, r.color, pickedRole === r.id, `${r.name}: ${r.blurb}`);
     c.addEventListener('click', () => pickRole(r.id));
     box.append(c);
   }
@@ -532,15 +533,19 @@ async function renderTeam() {
       );
     }
     if (r.id === 'pa') card.append(await paPanel(r));
-    const talk = el('button', { type: 'button', className: 'primary team-talk' }, `Talk to ${r.id === 'jarvis' ? 'Jarvis' : r.person}`);
-    talk.addEventListener('click', () => {
-      pickRole(r.id);
-      show('chat');
-      $<HTMLInputElement>('input').focus();
-    });
     const folder = el('button', { type: 'button', className: 'chip team-folder', title: `Open ${r.folder} in the Jarvis folder` }, 'Open folder');
     folder.addEventListener('click', () => void j.teamOpenFolder(r.id).catch((e: unknown) => showNotice(String(e))));
-    card.append(el('div', { className: 'team-row team-actions' }, talk, folder));
+    // Jarvis is the front desk: you don't talk to it, it passes you to the right expert
+    if (r.id === 'jarvis') card.append(el('div', { className: 'team-row team-actions' }, folder));
+    else {
+      const talk = el('button', { type: 'button', className: 'primary team-talk' }, `Talk to ${r.person}`);
+      talk.addEventListener('click', () => {
+        pickRole(r.id);
+        show('chat');
+        $<HTMLInputElement>('input').focus();
+      });
+      card.append(el('div', { className: 'team-row team-actions' }, talk, folder));
+    }
     grid.append(card);
   }
   void renderBoard();

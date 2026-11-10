@@ -43,7 +43,7 @@ export const ROLES: RoleDef[] = [
     person: 'Jarvis',
     name: 'Jarvis',
     title: 'Front desk',
-    blurb: 'Answers general questions and hands the rest to the right expert.',
+    blurb: 'The front desk: passes everything you ask to the right expert. Speaks only to welcome you and introduce the team.',
     color: '#9a9a96',
     apps: '*',
     defaultVoice: 'bm_george',

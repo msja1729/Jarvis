@@ -44,6 +44,7 @@ import { rolePrompt } from '../roles/prompts.js';
 import { RoleMemory } from '../roles/memory.js';
 import { timePrefix } from '../brain/system-prompt.js';
 import { modelFor } from '../router/model.js';
+import { FALLBACK_ROLE } from '../router/roles.js';
 import { ensureRoleFolders, ROLE_FOLDER, roleFolder } from '../roles/folders.js';
 import { SKILLS } from '../roles/skills/index.js';
 import { noteTaker, notesRequest } from '../roles/notes.js';
@@ -672,6 +673,9 @@ async function confirm(req: ConfirmRequest): Promise<boolean> {
   );
 }
 
+/** Names speech recognition should expect, so it spells them the team's way (Sara, not Sarah). */
+const teamVocabulary = () => `${ROLES.filter((r) => r.id !== 'jarvis').map((r) => people()[r.id]).join(', ')}, Jarvis.`;
+
 /** Tools shown in the welcome, to switch on or off (the rest are always on or set up later). */
 const ONBOARD_TOOLS = ['web', 'lesson', 'documents', 'recorder', 'screen', 'reminders', 'board', 'coding'];
 
@@ -948,7 +952,9 @@ function registerIpc() {
       // the reply as it is written; stops once a lesson opens (the lesson narrates itself)
       onText: stream ? (d) => !target.isDestroyed() && (lessons?.shown ?? 0) === before && target.send('ask:partial', d) : undefined,
     });
-    const role = res.role ?? 'jarvis';
+    // Jarvis never answers or speaks while you work (only in the welcome): local replies come from the member in charge
+    let role: RoleId = res.role ?? FALLBACK_ROLE;
+    if (role === 'jarvis') role = res.command === 'start_recording' || res.command === 'stop_recording' ? recordingFor : FALLBACK_ROLE;
     // A lesson narrates itself, so the window that asked should not read the reply aloud too.
     const who = people()[role];
     const roleName = role === 'jarvis' ? 'Jarvis' : `${who} · ${roleById(role).name}`;
@@ -1038,6 +1044,7 @@ function registerIpc() {
     const taken = Object.entries(people()).find(([id, n]) => id !== role && n.toLowerCase() === clean.toLowerCase());
     if (taken) throw new Error(`${clean} is already on the team.`);
     store.setRoleName(role, clean || null);
+    voice.engine.vocabulary = teamVocabulary();
     return people()[role];
   });
   ipcMain.handle('team:setVoice', (_e, role: string, voice: string) => {
@@ -1350,6 +1357,7 @@ app.whenReady().then(async () => {
     stopSpeaking: stopAllSpeech,
   });
   makeSupervisor();
+  voice.engine.vocabulary = teamVocabulary();
   history = new ChatHistory(data('history.jsonl'), data('conversations.json'), () => store.snapshot().keepHistory !== false);
   reminders = new ReminderStore(data('reminders.json'));
   board = new BoardStore(data('board.json'));

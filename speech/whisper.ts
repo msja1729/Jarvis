@@ -41,6 +41,9 @@ export interface SpeechStatus {
 export type Progress = (label: string, fraction: number) => void;
 
 export class WhisperEngine {
+  /** Words to expect (the team's names), passed to whisper as its starting prompt. */
+  vocabulary = '';
+
   private installing: Promise<void> | null = null;
 
   constructor(
@@ -113,7 +116,8 @@ export class WhisperEngine {
     const outBase = path.join(os.tmpdir(), `jarvis-stt-${crypto.randomBytes(6).toString('hex')}`);
     const threads = Math.max(1, Math.min(8, os.cpus().length - 1));
     await new Promise<void>((resolve, reject) => {
-      const child = spawn(bin, ['-m', this.modelPath, '-f', wavPath, '-l', 'en', '-nt', '-np', '-t', String(threads), '-otxt', '-of', outBase], {
+      const hint = this.vocabulary ? ['--prompt', this.vocabulary] : [];
+      const child = spawn(bin, ['-m', this.modelPath, '-f', wavPath, '-l', 'en', '-nt', '-np', '-t', String(threads), ...hint, '-otxt', '-of', outBase], {
         stdio: ['ignore', 'ignore', 'pipe'],
         windowsHide: true,
       });

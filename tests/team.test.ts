@@ -28,7 +28,12 @@ describe('who answers', () => {
     ['Explain the chain rule in calculus', 'educator', 'Explain the chain rule in calculus', 'topic'],
     ['Help me make a monthly budget', 'finance', 'Help me make a monthly budget', 'topic'],
     ['Fix the bug in my project', 'pm', 'Fix the bug in my project', 'topic'],
-    ['hello there', 'jarvis', 'hello there', 'default'],
+    ['hello there', 'pa', 'hello there', 'default'],
+    ['Jarvis, explain photosynthesis', 'educator', 'explain photosynthesis', 'topic'],
+    ['Sarah, I have a headache', 'doctor', 'I have a headache', 'named'],
+    ['hey Allen how do magnets work', 'educator', 'how do magnets work', 'named'],
+    ['Viktor what about my savings', 'finance', 'what about my savings', 'named'],
+    ['Sara', 'doctor', 'Sara', 'named'],
   ])('"%s" → %s', (input, role, text, how) => {
     expect(routeRole(input, null, null)).toEqual({ role, text, how });
   });
@@ -41,7 +46,21 @@ describe('who answers', () => {
   it('short follow-ups stay with the member you were just talking to', () => {
     const now = 1_000_000;
     expect(routeRole('and the day after?', null, { role: 'pa', at: now - 60_000 }, now)).toMatchObject({ role: 'pa', how: 'follow-up' });
-    expect(routeRole('and the day after?', null, { role: 'pa', at: now - STICKY_MS - 1 }, now).role).toBe('jarvis');
+    expect(routeRole('and the day after?', null, { role: 'doctor', at: now - STICKY_MS - 1 }, now).role).toBe('pa');
+  });
+
+  it('Jarvis never answers while you work: it is not a member you can pick or be routed to', () => {
+    for (const t of ['hello there', 'Jarvis, hi', 'Jarvis', 'thanks!', 'what time is it']) expect(routeRole(t, null, null).role, t).not.toBe('jarvis');
+    expect(routeRole('hi', 'jarvis', null).role).toBe('pa');
+  });
+
+  it('a name spelled a little differently still reaches the member, but ordinary words do not', async () => {
+    const { soundsLike } = await import('../router/roles.js');
+    for (const [w, n] of [['Sarah', 'Sara'], ['Allen', 'Alan'], ['Viktor', 'Victor'], ['Rian', 'Ryan'], ['Maia', 'Maya']]) expect(soundsLike(w, n), w).toBe(true);
+    for (const [w, n] of [['Sure', 'Sara'], ['Sorry', 'Sara'], ['Also', 'Alan'], ['Rain', 'Ryan'], ['Maybe', 'Maya'], ['Plan', 'Alan']]) expect(soundsLike(w, n), w).toBe(false);
+    expect(routeRole('Sure, do it', null, null).role).not.toBe('doctor');
+    // names the user chose work the same way
+    expect(routeRole('Priyah, I feel dizzy', null, null, Date.now(), { doctor: 'Priya' }).role).toBe('doctor');
   });
 });
 
