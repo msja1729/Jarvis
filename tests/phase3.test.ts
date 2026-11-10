@@ -1,4 +1,4 @@
-/** Phase 3: screen look (criteria 14, 23) and whiteboard (criterion 24). */
+/** Phase 3: screen look (criteria 14, 23). The whiteboard was removed at the user's request (Lessons replace it). */
 import { describe, expect, it } from 'vitest';
 import { checkAttachment, imageSize } from '../gateway/image-guard.js';
 import { defaultSetting, SettingsStore } from '../gateway/settings.js';
@@ -6,10 +6,6 @@ import { JARVIS_SYSTEM_PROMPT, wordCount } from '../brain/system-prompt.js';
 import { pickModel } from '../router/model.js';
 import { SCREEN_APP } from '../tools/screen/definition.js';
 import { CapturedImage, ScreenBackend, ScreenChoice, ScreenExecutor, ScreenSource, ScreenUI, toPixelRect } from '../tools/screen/executor.js';
-import { WHITEBOARD_APP } from '../tools/whiteboard/definition.js';
-import { WhiteboardExecutor } from '../tools/whiteboard/executor.js';
-import { jpegSize, jpegToPdf } from '../tools/whiteboard/pdf.js';
-import { BOARD_HEIGHT, BOARD_WIDTH, describeScene, Element, normalizeSteps } from '../tools/whiteboard/scene.js';
 import { makeCore } from './helpers.js';
 
 /** Minimal JPEG (SOI + SOF0 + EOI) whose header carries the given size. */
@@ -166,96 +162,8 @@ describe('C14 screenshots are cropped and scaled to at most 1280 px', () => {
   });
 });
 
-describe('C24 whiteboard', () => {
-  /** What Claude typically sends for "Explain binary search on the whiteboard". */
-  const binarySearch = [
-    { type: 'title', text: 'Binary search' },
-    { type: 'box', id: 'arr', x: 100, y: 120, w: 1000, h: 70, text: '[1, 3, 5, 7, 9, 11, 13]' },
-    { type: 'box', id: 'mid', x: 500, y: 260, w: 200, h: 70, text: 'Check middle (7)', color: 'blue' },
-    { type: 'box', id: 'left', x: 200, y: 420, w: 220, h: 70, text: 'Target < 7: search left half' },
-    { type: 'box', id: 'right', x: 780, y: 420, w: 220, h: 70, text: 'Target > 7: search right half' },
-    { type: 'arrow', from: 'arr', to: 'mid' },
-    { type: 'arrow', from: 'mid', to: 'left', text: 'smaller' },
-    { type: 'arrow', from: 'mid', to: 'right', text: 'bigger' },
-    { type: 'text', x: 100, y: 560, text: 'Each step halves the search space: O(log n).' },
-  ];
-
-  it('C24 a title and a diagram are drawn', async () => {
-    const drawn: Element[][] = [];
-    const exec = new WhiteboardExecutor({ draw: async (e) => void drawn.push(e), snapshot: async () => ({ pngBase64: pngOf(1200, 700), userStrokes: 0 }) });
-    const r = await exec.call('draw', { steps: binarySearch });
-    expect(r.text).toBe('Drew 9 item(s) on the whiteboard.');
-    const kinds = drawn[0].map((e) => e.kind);
-    expect(kinds[0]).toBe('title');
-    expect(kinds.filter((k) => k === 'box')).toHaveLength(4);
-    expect(kinds.filter((k) => k === 'arrow')).toHaveLength(3);
-  });
-
-  it('C24 arrows start and end on shape edges, and everything stays on the board', () => {
-    const { elements, warnings } = normalizeSteps([
-      { type: 'box', id: 'a', x: 100, y: 100, w: 200, h: 100 },
-      { type: 'circle', id: 'b', x: 700, y: 150, r: 50 },
-      { type: 'arrow', from: 'a', to: 'b' },
-      { type: 'box', x: 5000, y: -40, w: 300, h: 80 },
-      { type: 'arrow', from: 'a', to: 'missing' },
-      { type: 'sparkle' },
-    ]);
-    const arrow = elements.find((e) => e.kind === 'arrow') as Extract<Element, { kind: 'arrow' }>;
-    expect(arrow.x1).toBe(300); // right edge of box a
-    expect(arrow.x2).toBe(650); // left edge of circle b
-    const far = elements[3] as Extract<Element, { kind: 'box' }>;
-    expect(far.x + far.w).toBeLessThanOrEqual(BOARD_WIDTH);
-    expect(far.y).toBeGreaterThanOrEqual(0);
-    expect(warnings).toHaveLength(2);
-  });
-
-  it('C24 arrows can connect to shapes drawn in an earlier call', async () => {
-    const drawn: Element[][] = [];
-    const exec = new WhiteboardExecutor({ draw: async (e) => void drawn.push(e), snapshot: async () => ({ pngBase64: '', userStrokes: 0 }) });
-    await exec.call('draw', { steps: [{ type: 'box', id: 'x', x: 50, y: 50 }, { type: 'box', id: 'y', x: 600, y: 50 }] });
-    await exec.call('draw', { steps: [{ type: 'arrow', from: 'x', to: 'y' }] });
-    expect(drawn[1][0].kind).toBe('arrow');
-    exec.reset();
-    await expect(exec.call('draw', { steps: [{ type: 'arrow', from: 'x', to: 'y' }] })).rejects.toThrow(/Nothing to draw/);
-  });
-
-  it('"what did I draw?": look returns a 1200x700 picture plus a summary', async () => {
-    const exec = new WhiteboardExecutor({ draw: async () => undefined, snapshot: async () => ({ pngBase64: pngOf(BOARD_WIDTH, BOARD_HEIGHT), userStrokes: 4 }) });
-    await exec.call('draw', { steps: binarySearch.slice(0, 2) });
-    const r = await exec.call('look', {});
-    expect(r.images![0].mimeType).toBe('image/png');
-    expect(r.text).toContain('title "Binary search"');
-    expect(r.text).toContain('The user drew 4 pen stroke(s).');
-    expect(describeScene([{ kind: 'title', text: 'A', color: 'white' }, { kind: 'clear' }])).toContain('has not drawn');
-  });
-
-  it('drawing needs no popup (local only); looking is a read; defaults are safe', () => {
-    const draw = WHITEBOARD_APP.abilities.find((a) => a.name === 'draw')!;
-    const look = WHITEBOARD_APP.abilities.find((a) => a.name === 'look')!;
-    expect(defaultSetting(draw)).toBe('allowed');
-    expect(defaultSetting(look)).toBe('allowed');
-    expect(defaultSetting({ ...draw, group: 'destructive', defaultSetting: 'allowed' })).toBe('ask');
-    const s = new SettingsStore(null);
-    expect(s.effective(WHITEBOARD_APP, draw)).toBe('allowed');
-  });
-
-  it('PDF export embeds the JPEG in a valid one-page PDF', () => {
-    const jpeg = tinyJpeg(1200, 700);
-    expect(jpegSize(jpeg)).toEqual({ width: 1200, height: 700 });
-    const pdf = jpegToPdf(jpeg).toString('latin1');
-    expect(pdf.startsWith('%PDF-1.4')).toBe(true);
-    expect(pdf.trimEnd().endsWith('%%EOF')).toBe(true);
-    expect(pdf).toContain('/MediaBox [0 0 900 525]');
-    // Every xref offset points at the start of its object.
-    const xrefAt = Number(/startxref\n(\d+)/.exec(pdf)![1]);
-    const offsets = pdf.slice(xrefAt).match(/^(\d{10}) 00000 n $/gm)!.map((l) => Number(l.slice(0, 10)));
-    offsets.forEach((o, i) => expect(pdf.startsWith(`${i + 1} 0 obj
-`, o)).toBe(true));
-  });
-});
-
 describe('phase 3 routing and prompt', () => {
-  it('screen and whiteboard requests use the larger model', () => {
+  it('screen and drawing requests use the larger model', () => {
     expect(pickModel('look at my screen and explain this error')).toBe('sonnet');
     expect(pickModel('what did I draw?')).toBe('sonnet');
     expect(pickModel('fix this diagram')).toBe('sonnet');
@@ -265,40 +173,3 @@ describe('phase 3 routing and prompt', () => {
   });
 });
 
-describe('whiteboard eraser (Claude can erase too)', () => {
-  it('erase by id removes the shape and the arrows attached to it', async () => {
-    const drawn: Element[][] = [];
-    const exec = new WhiteboardExecutor({ draw: async (e) => void drawn.push(e), snapshot: async () => ({ pngBase64: pngOf(1200, 700), userStrokes: 0 }) });
-    await exec.call('draw', {
-      steps: [
-        { type: 'box', id: 'a', x: 50, y: 100, text: 'A' },
-        { type: 'box', id: 'b', x: 600, y: 100, text: 'B' },
-        { type: 'arrow', from: 'a', to: 'b' },
-      ],
-    });
-    const r = await exec.call('draw', { steps: [{ type: 'erase', id: 'b' }] });
-    expect(r.text).toBe('Erased 1 time(s) on the whiteboard.');
-    expect(drawn[1]).toEqual([{ kind: 'erase', id: 'b' }]);
-    const look = await exec.call('look', {});
-    expect(look.text).toContain('box a "A"');
-    expect(look.text).not.toContain('box b');
-    expect(look.text).not.toContain('arrow');
-  });
-
-  it('erase by area is clamped to the board', () => {
-    const { elements } = normalizeSteps([{ type: 'erase', x: 1100, y: 600, w: 500, h: 500 }]);
-    expect(elements[0]).toEqual({ kind: 'eraseArea', x: 1100, y: 600, w: 100, h: 100 });
-  });
-
-  it('erasing an unknown id is reported, not silently ignored', async () => {
-    const exec = new WhiteboardExecutor({ draw: async () => undefined, snapshot: async () => ({ pngBase64: '', userStrokes: 0 }) });
-    await expect(exec.call('draw', { steps: [{ type: 'erase', id: 'ghost' }] })).rejects.toThrow(/nothing named "ghost"/);
-  });
-
-  it('the tool schema offers the erase step and neon inks', () => {
-    const draw = WHITEBOARD_APP.abilities.find((a) => a.name === 'draw')!;
-    const item = (draw.inputSchema.properties as any).steps.items.properties;
-    expect(item.type.enum).toContain('erase');
-    expect(item.color.enum).toEqual(['white', 'cyan', 'magenta', 'purple', 'green', 'yellow', 'orange', 'red']);
-  });
-});

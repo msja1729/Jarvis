@@ -14,6 +14,7 @@ import { checkAttachment } from './image-guard.js';
 import {
   AppDef,
   AppExecutor,
+  CallContext,
   ConfirmRequest,
   Confirmer,
   ToolDef,
@@ -64,7 +65,8 @@ export class GatewayCore {
     return out;
   }
 
-  async callTool(name: string, input: Record<string, unknown> = {}, allow?: (app: AppDef) => boolean): Promise<ToolResult> {
+  async callTool(name: string, input: Record<string, unknown> = {}, allow?: (app: AppDef) => boolean, ctx: CallContext = { role: 'jarvis' }): Promise<ToolResult> {
+    const role = ctx.role || 'jarvis';
     const parsed = parseToolName(name);
     const app = parsed && this.deps.apps().find((a) => a.id === parsed.appId);
     const ability = app?.abilities.find((a) => a.name === parsed!.ability);
@@ -81,12 +83,12 @@ export class GatewayCore {
       const reason = this.deps.settings.isEnabled(app)
         ? `blocked: "${ability.title}" is off for ${app.name}. The user can turn it on in the Tool Hub.`
         : `blocked: ${app.name} is turned off. The user can turn it on in the Tool Hub.`;
-      this.deps.log.add({ appId: app.id, ability: ability.name, outcome: 'blocked', detail: 'setting is off' });
+      this.deps.log.add({ role, appId: app.id, ability: ability.name, outcome: 'blocked', detail: 'setting is off' });
       return { text: reason, isError: true };
     }
 
     if (this.deps.available && !this.deps.available(app)) {
-      this.deps.log.add({ appId: app.id, ability: ability.name, outcome: 'blocked', detail: 'not connected' });
+      this.deps.log.add({ role, appId: app.id, ability: ability.name, outcome: 'blocked', detail: 'not connected' });
       return { text: `${app.name} is not connected. The user can connect it in the Tool Hub.`, isError: true };
     }
 
@@ -107,7 +109,7 @@ export class GatewayCore {
         yes = false;
       }
       if (!yes) {
-        this.deps.log.add({ appId: app.id, ability: ability.name, outcome: 'declined', detail: 'user clicked No' });
+        this.deps.log.add({ role, appId: app.id, ability: ability.name, outcome: 'declined', detail: 'user clicked No' });
         return { text: 'user declined', isError: true };
       }
     }
@@ -119,12 +121,13 @@ export class GatewayCore {
 
     this.deps.onProgress?.(ability.progress ?? `${ability.title} (${app.name})`);
     try {
-      const raw = await executor.call(ability.name, input);
+      const raw = await executor.call(ability.name, input, { ...ctx, role });
       for (const att of raw.images ?? []) {
         const problem = checkAttachment(att);
         if (problem) throw new Error(`Gateway refused result: ${problem}`);
       }
       this.deps.log.add({
+        role,
         appId: app.id,
         ability: ability.name,
         outcome: 'done',
@@ -134,7 +137,7 @@ export class GatewayCore {
       return { text: capText(raw.text, limit), isError: false, images: raw.images };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      this.deps.log.add({ appId: app.id, ability: ability.name, outcome: 'error', detail: capText(msg, 300) });
+      this.deps.log.add({ role, appId: app.id, ability: ability.name, outcome: 'error', detail: capText(msg, 300) });
       return { text: `error: ${capText(msg, 500)}`, isError: true };
     }
   }

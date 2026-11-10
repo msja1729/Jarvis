@@ -1,6 +1,9 @@
 /** The swappable brain interface (SPEC 4.2). v1 implements only ClaudeCLIBrain. */
 
-export type ModelChoice = 'haiku' | 'sonnet';
+export type ModelChoice = 'haiku' | 'sonnet' | 'opus';
+
+/** What `--model` gets: the short names pick the newest of each family; Opus is pinned to 5.5 (the Project Manager's model). */
+export const CLI_MODEL: Record<ModelChoice, string> = { haiku: 'haiku', sonnet: 'sonnet', opus: 'claude-opus-5-5' };
 
 export interface TokenUsage {
   input: number;

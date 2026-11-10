@@ -8,7 +8,7 @@ import { SessionManager } from '../brain/session.js';
 import { timePrefix } from '../brain/system-prompt.js';
 import { UsageLog } from '../brain/usage.js';
 import { LocalCommand, matchLocalCommand } from '../router/commands.js';
-import { pickModel } from '../router/model.js';
+import { modelFor } from '../router/model.js';
 import { routeRole } from '../router/roles.js';
 import type { RoleId } from '../roles/roles.js';
 
@@ -27,7 +27,12 @@ export interface HandleResult {
   followUp?: string;
   /** Which team member answered. */
   role?: RoleId;
+  /** The Claude session that answered (saved with the conversation so it can be continued). */
+  sessionId?: string | null;
 }
+
+/** Claude Code could not find a session to resume (e.g. it was cleaned up). */
+const LOST_SESSION = /no conversation found|session[^.\n]{0,40}not found|could not (find|resume)/i;
 
 export interface LocalReply {
   reply: string;
@@ -39,8 +44,8 @@ export interface OrchestratorDeps {
   sessions: SessionManager;
   usage: UsageLog;
   modelOverride: () => ModelChoice | null;
-  /** Executes a local command in the UI/app; returns a short confirmation. */
-  runLocal: (cmd: LocalCommand) => Promise<string | LocalReply> | string | LocalReply;
+  /** Executes a local command in the UI/app; returns a short confirmation. `role` is who was asked (e.g. who records a meeting). */
+  runLocal: (cmd: LocalCommand, role: RoleId) => Promise<string | LocalReply> | string | LocalReply;
   onProgress?: (label: string) => void;
   /** Called before each Claude request (used to allow one screen capture per request). */
   onRequestStart?: () => void;
@@ -65,6 +70,18 @@ export class Orchestrator {
     return this.busy;
   }
 
+  /** A new conversation: every member starts a fresh Claude session. */
+  resetSessions(): void {
+    this.deps.sessions.reset();
+    for (const s of this.roleSessions.values()) s.reset();
+  }
+
+  /** Continue an earlier conversation: each member picks up the Claude session they used in it. */
+  restoreSessions(sessions: Partial<Record<string, string>>): void {
+    this.resetSessions();
+    for (const [role, id] of Object.entries(sessions)) if (id) this.sessionsFor(role as RoleId).restore(id);
+  }
+
   private sessionsFor(role: RoleId): SessionManager {
     if (role === 'jarvis') return this.deps.sessions;
     let s = this.roleSessions.get(role);
@@ -85,16 +102,15 @@ export class Orchestrator {
     const text = routed.text;
     const cmd = matchLocalCommand(text);
     if (cmd) {
-      if (cmd === 'new_conversation') {
-        this.deps.sessions.reset();
-        for (const s of this.roleSessions.values()) s.reset();
-      }
-      const out = await this.deps.runLocal(cmd);
+      if (cmd === 'new_conversation') this.resetSessions();
+      // a local command belongs to a member only if the user named or picked them ("Alan, record this lecture")
+      const asked: RoleId = routed.how === 'named' || routed.how === 'picked' ? role : 'jarvis';
+      const out = await this.deps.runLocal(cmd, asked);
       const { reply, followUp } = typeof out === 'string' ? { reply: out, followUp: undefined } : out;
-      return { kind: 'local', command: cmd, reply, followUp, newConversation: cmd === 'new_conversation' };
+      return { kind: 'local', command: cmd, reply, followUp, newConversation: cmd === 'new_conversation', role: asked };
     }
 
-    const model = pickModel(text, this.deps.modelOverride());
+    const model = modelFor(role, text, this.deps.modelOverride());
     const sessions = this.sessionsFor(role);
     const decision = sessions.current();
     const now = this.deps.now?.() ?? new Date();
@@ -108,12 +124,15 @@ export class Orchestrator {
       const notes = !decision.sessionId && role !== 'jarvis' ? this.deps.memory?.prefix(role) : '';
       // spoken questions get spoken-length answers: shorter to write, and to listen to
       const spoken = live.spoken ? ' [spoken: answer in at most 3 short, plain sentences; no lists or headings, unless asked for detail]' : '';
-      const prefix = `${notes ? `${notes}\n` : ''}${timePrefix(now)}${level ? ` [level: ${level}]` : ''}${spoken}`;
-      const res = await this.deps.brain.ask(`${prefix} ${text}`, decision.sessionId, model, {
-        onProgress: this.deps.onProgress,
-        role,
-        onText: live.onText,
-      });
+      const base = `${timePrefix(now)}${level ? ` [level: ${level}]` : ''}${spoken}`;
+      const withNotes = (n: string | undefined) => `${n ? `${n}\n` : ''}${base} ${text}`;
+      const opts = { onProgress: this.deps.onProgress, role, onText: live.onText };
+      let res = await this.deps.brain.ask(withNotes(notes), decision.sessionId, model, opts);
+      if (res.is_error && decision.sessionId && LOST_SESSION.test(res.reply)) {
+        // an earlier conversation whose Claude session is gone: answer in a fresh one instead
+        sessions.reset();
+        res = await this.deps.brain.ask(withNotes(role === 'jarvis' ? '' : this.deps.memory?.prefix(role)), null, model, opts);
+      }
       if (!res.is_error || res.session_id) sessions.record(res.session_id);
       if (!res.is_error && role !== 'jarvis') void this.deps.memory?.remember(role, text, res.reply).catch(() => undefined);
       const expensive = this.deps.usage.isExpensive(res.tokens_used, role);
@@ -135,6 +154,7 @@ export class Orchestrator {
         limitReached: res.limit_reached,
         newConversation: decision.startedNew,
         role,
+        sessionId: res.session_id,
       };
     } finally {
       this.busy = false;

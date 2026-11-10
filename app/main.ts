@@ -1,5 +1,5 @@
 /** Electron main process. */
-import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, screen, shell } from 'electron';
+import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, systemPreferences } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -12,18 +12,19 @@ import { SUGGESTED_APPS } from '../gateway/suggested.js';
 import { SettingsStore, defaultSetting, groupOf } from '../gateway/settings.js';
 import type { AbilitySetting, ConfirmRequest, ExplainLevel } from '../gateway/types.js';
 import { ClaudeCLIBrain } from '../brain/claude-cli.js';
+import { CLI_MODEL } from '../brain/brain.js';
 import { SessionManager } from '../brain/session.js';
 import { UsageLog } from '../brain/usage.js';
-import { checkSetup, SetupStep } from '../brain/setup.js';
+import { checkSetup, openInstallTerminal, openLoginTerminal, SetupStep } from '../brain/setup.js';
+import { fallbackIntros, introCards, introPrompt, Intros, parseIntros } from '../roles/intros.js';
+import { uninstallCleanup } from './uninstall-cleanup.js';
+import { applyPronunciations, parseRespelling, respellPrompt } from '../speech/pronounce.js';
 import { allowedSettings } from '../security/destructive-lock.js';
 import { createKeyringStore, SecretStore, secretKeyForApp } from '../security/secrets.js';
 import { AccountId, AccountManager, APP_ACCOUNT, PROVIDERS } from '../security/accounts.js';
 import type { LocalCommand } from '../router/commands.js';
 import { ScreenExecutor, ScreenUI } from '../tools/screen/executor.js';
 import { ElectronScreenBackend } from '../tools/screen/electron-backend.js';
-import { WhiteboardExecutor } from '../tools/whiteboard/executor.js';
-import { jpegToPdf } from '../tools/whiteboard/pdf.js';
-import type { Element } from '../tools/whiteboard/scene.js';
 import { TranscriptExecutor } from '../tools/recorder/executor.js';
 import { LessonExecutor } from '../tools/lesson/executor.js';
 import { DocumentsExecutor } from '../tools/documents/executor.js';
@@ -37,11 +38,18 @@ import { ChatHistory } from './history.js';
 import { hookCommand, hooksInstalled, installHooks, removeHooks } from '../supervisor/hooks.js';
 import { shortTask } from '../supervisor/supervisor.js';
 import os from 'node:os';
-import { fullName, isRole, peopleNames, PERSON_NAME, roleById, RoleId, ROLES, roleUsesApp } from '../roles/roles.js';
+import { fullName, isRole, peopleNames, PERSON_NAME, roleById, RoleId, ROLES } from '../roles/roles.js';
+import { canUse, cleanMembers, guessMembers, isShared, membersOf } from '../roles/access.js';
 import { rolePrompt } from '../roles/prompts.js';
 import { RoleMemory } from '../roles/memory.js';
 import { timePrefix } from '../brain/system-prompt.js';
-import { pickModel } from '../router/model.js';
+import { modelFor } from '../router/model.js';
+import { ensureRoleFolders, ROLE_FOLDER, roleFolder } from '../roles/folders.js';
+import { SKILLS } from '../roles/skills/index.js';
+import { noteTaker, notesRequest } from '../roles/notes.js';
+import { FilesExecutor } from '../tools/files/executor.js';
+import { SkillsExecutor } from '../tools/skills/executor.js';
+import { WebExecutor } from '../tools/web/executor.js';
 import { pdfPages } from '../tools/documents/pdf-text.js';
 import type { Lesson } from '../tools/lesson/spec.js';
 import { bgraToGray, chooseSide, SIDE_FRACTION, Side } from '../tools/lesson/placement.js';
@@ -77,7 +85,6 @@ let accounts: AccountManager;
 let signInAbort: AbortController | null = null;
 const pendingConfirms = new Map<string, (yes: boolean) => void>();
 let requestSeq = 0;
-let whiteboard: WhiteboardExecutor;
 let lessons: LessonExecutor;
 let coder: Coder | null = null;
 let roleMemory: RoleMemory;
@@ -98,7 +105,8 @@ async function announce(role: RoleId, title: string, text: string) {
   w.webContents.send('voice:announce', { name: role === 'jarvis' ? 'Jarvis' : `${people()[role]} · ${roleById(role).name}`, color: roleById(role).color, voice: roleVoice(role), title, text });
 }
 
-const PLAN_PROMPT = "Plan my day: check today's calendar (and any important unread email), then give me a short, friendly plan with times and priorities, and add a reminder 10 minutes before each meeting today.";
+const PLAN_PROMPT =
+  "Plan my day. Use your inbox-triage skill on new email first (put new deadlines and tasks on the board with reminders), then your daily-plan skill: today's calendar, tasks due soon or overdue, and my teammates' notes where useful. Save the plan in your Plans folder and give me a short, friendly version with times and the top 3 priorities. Add a reminder 10 minutes before each meeting today.";
 
 /** The PA's clock: due reminders, and the morning plan once a day. Free; Claude is only used for the plan. */
 function plannerTick() {
@@ -446,7 +454,8 @@ function makeSupervisor() {
         // the limited token: it can only send permission prompts to the supervisor
         env: { ELECTRON_RUN_AS_NODE: '1', JARVIS_CONTROL_URL: control.url, JARVIS_CONTROL_TOKEN: control.supToken, JARVIS_SHIM_MODE: 'supervisor', JARVIS_RUN_ID: runId },
       };
-      return coder.run({ ...args, shim }, cwd, onEvent);
+      // the Project Manager's coding sessions run on Opus 5.5, the strongest model for building projects
+      return coder.run({ ...args, shim, model: CLI_MODEL.opus }, cwd, onEvent);
     },
     // the advisor runs in Jarvis's own folder, not the project, so no project files steer it
     advise: (prompt, system) => (coder ? coder.advise(prompt, system, data('brain-cwd')) : Promise.resolve(null)),
@@ -663,21 +672,49 @@ async function confirm(req: ConfirmRequest): Promise<boolean> {
   );
 }
 
-async function runLocal(cmd: LocalCommand): Promise<string | { reply: string; followUp?: string }> {
+/** Tools shown in the welcome, to switch on or off (the rest are always on or set up later). */
+const ONBOARD_TOOLS = ['web', 'lesson', 'documents', 'recorder', 'screen', 'reminders', 'board', 'coding'];
+
+/** Fresh introductions written by Claude for this user (hand-written ones if that fails or is slow). */
+let introsPromise: Promise<Intros> | null = null;
+async function writeIntros(): Promise<Intros> {
+  const user = store.snapshot().userName;
+  const fallback = fallbackIntros(people(), user);
+  if (!coder) return fallback;
+  const { prompt, system } = introPrompt(people(), user);
+  const timeout = new Promise<null>((r) => setTimeout(() => r(null), 60_000));
+  const raw = await Promise.race([coder.advise(prompt, system, data('brain-cwd')), timeout]).catch(() => null);
+  return parseIntros(raw, fallback);
+}
+
+/** The conversation the next message belongs to; a new one means fresh Claude sessions for everyone. */
+function prepareConversation() {
+  const r = history.prepare();
+  if (r.isNew) orchestrator?.resetSessions();
+  return r;
+}
+
+/** The team member who takes notes when the current recording ends. */
+let recordingFor: RoleId = 'pm';
+
+async function startRecordingFor(asked: RoleId) {
+  const r = await voice.startRecording();
+  if (!voice.recorder.recording) return r;
+  recordingFor = noteTaker(asked);
+  const who = fullName(recordingFor, people());
+  return { ...r, reply: `${r.reply}\n${who} will take the notes when you say "stop recording".` };
+}
+
+async function stopRecordingWithNotes() {
+  const r = await voice.stopRecording();
+  return r.followUp ? { ...r, followUp: notesRequest(recordingFor, people()[recordingFor]) } : r;
+}
+
+async function runLocal(cmd: LocalCommand, role: RoleId = 'jarvis'): Promise<string | { reply: string; followUp?: string }> {
   switch (cmd) {
-    case 'open_whiteboard':
-      send('ui:navigate', 'whiteboard');
-      return 'Whiteboard opened.';
-    case 'clear_whiteboard':
-      whiteboard.reset();
-      send('whiteboard:clear');
-      return 'Whiteboard cleared.';
     case 'open_tool_hub':
       send('ui:navigate', 'hub');
       return 'Tool Hub opened.';
-    case 'show_usage':
-      send('ui:navigate', 'usage');
-      return 'Here is your usage.';
     case 'new_conversation':
       return 'New conversation started.';
     case 'mute_voice':
@@ -689,9 +726,9 @@ async function runLocal(cmd: LocalCommand): Promise<string | { reply: string; fo
       send('settings:changed', store.snapshot());
       return 'Voice on.';
     case 'start_recording':
-      return voice.startRecording();
+      return startRecordingFor(role);
     case 'stop_recording':
-      return voice.stopRecording();
+      return stopRecordingWithNotes();
   }
 }
 
@@ -762,6 +799,9 @@ async function hubList() {
       connected: await catalog.isConnected(a),
       account: APP_ACCOUNT[a.id] ?? null,
       auth: a.mcp?.auth ?? null,
+      members: membersOf(a, snap.appRoles),
+      everyone: isShared(a.id),
+      membersChanged: Boolean(snap.appRoles?.[a.id]),
       abilities: a.abilities.map((ab) => ({
         name: ab.name,
         title: ab.title,
@@ -786,6 +826,109 @@ function registerIpc() {
     usage.add({ request: '(setup test request)', model: res.model ?? 'haiku', tokens: res.tokens_used, usage: res.usage, isError: res.is_error });
     return { ok: !res.is_error, reply: res.reply, tokens: res.tokens_used, limitReached: res.limit_reached };
   });
+  /* ---------- first-run welcome (setup, tools, voices, meet the team) ---------- */
+  ipcMain.handle('onboard:state', async () => {
+    await ensureBrain().catch(() => undefined);
+    const snap = store.snapshot();
+    const micStatus = process.platform === 'linux' ? 'granted' : systemPreferences.getMediaAccessStatus('microphone');
+    return {
+      onboarded: snap.onboarded === true,
+      userName: snap.userName ?? '',
+      platform: process.platform,
+      claude: setupState?.step ?? 'install',
+      voice: kokoro.status(),
+      speech: voice.engine.status(),
+      mic: micStatus,
+      tools: ONBOARD_TOOLS.flatMap((id) => {
+        const a = catalog.find(id);
+        return a ? [{ id, name: a.name, description: a.description, enabled: store.isEnabled(a) }] : [];
+      }),
+      cards: introCards(people()),
+    };
+  });
+  ipcMain.handle('onboard:installClaude', () => openInstallTerminal());
+  // the user signs in in their browser; Jarvis never sees or stores the login
+  ipcMain.handle('onboard:loginClaude', () => openLoginTerminal());
+  ipcMain.handle('onboard:setName', (_e, name: string) => {
+    const before = store.snapshot().userName;
+    const clean = store.setUserName(String(name ?? ''));
+    if (before && before !== clean) store.setPronunciation(before, null);
+    // every member learns the name (kept in their memory notes, which the user can edit)
+    for (const r of ROLES) {
+      if (r.id === 'jarvis') continue;
+      const notes = roleMemory.notes(r.id).replace(/^- The user's name is .*\n?/m, '');
+      roleMemory.setNotes(r.id, clean ? `- The user's name is ${clean}.\n${notes}` : notes);
+    }
+    introsPromise = null; // write them again with the name
+    return clean;
+  });
+  /** The user's name and how it should sound. */
+  ipcMain.handle('name:get', () => {
+    const snap = store.snapshot();
+    const name = snap.userName ?? '';
+    return { name, sayAs: name ? (snap.pronunciations?.[name] ?? '') : '' };
+  });
+  ipcMain.handle('name:setSayAs', (_e, sayAs: string) => {
+    const name = store.snapshot().userName;
+    if (!name) throw new Error('Tell Jarvis your name first.');
+    store.setPronunciation(name, typeof sayAs === 'string' ? sayAs : null);
+    introsPromise = null;
+    return store.snapshot().pronunciations?.[name] ?? '';
+  });
+  /** Claude suggests a spelling the English voice reads the right way. */
+  ipcMain.handle('name:suggest', async (_e, name?: string) => {
+    const n = (typeof name === 'string' && name.trim()) || store.snapshot().userName;
+    if (!n || !coder) return null;
+    const { prompt, system } = respellPrompt(n);
+    const timeout = new Promise<null>((r) => setTimeout(() => r(null), 25_000));
+    return parseRespelling(await Promise.race([coder.advise(prompt, system, data('brain-cwd')), timeout]).catch(() => null), n);
+  });
+  ipcMain.handle('onboard:askMic', async () => {
+    if (process.platform === 'darwin') await systemPreferences.askForMediaAccess('microphone');
+    return process.platform === 'linux' ? 'granted' : systemPreferences.getMediaAccessStatus('microphone');
+  });
+  ipcMain.handle('onboard:micSettings', () =>
+    shell.openExternal(process.platform === 'win32' ? 'ms-settings:privacy-microphone' : 'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone'),
+  );
+  ipcMain.handle('onboard:intros', async () => {
+    // Claude starts writing them when Claude is connected; if they are still not ready, the hand-written ones play
+    const late = new Promise<Intros>((r) => setTimeout(() => r(fallbackIntros(people(), store.snapshot().userName)), 8000));
+    const intros = await Promise.race([(introsPromise ??= writeIntros()), late]);
+    return { intros, cards: introCards(people()), voices: Object.fromEntries(ROLES.map((r) => [r.id, roleVoice(r.id)])) };
+  });
+  ipcMain.handle('onboard:prepareIntros', () => {
+    introsPromise ??= writeIntros();
+    return true;
+  });
+  ipcMain.handle('onboard:finish', async () => {
+    store.setOnboarded(true);
+    // the small test request that records the usual request size (used to spot unusually large ones)
+    if (brain && !usage.baseline) {
+      void brain.ask('Say hello in one short sentence.', null, 'haiku').then((res) => {
+        if (!res.is_error) usage.setBaseline(res.tokens_used);
+      });
+    }
+    return true;
+  });
+  ipcMain.handle('app:uninstall', async () => {
+    if (process.platform === 'win32') {
+      const uninstaller = path.join(path.dirname(process.execPath), `Uninstall ${app.getName()}.exe`);
+      if (!app.isPackaged || !fs.existsSync(uninstaller)) throw new Error('Uninstall works in the installed app (Windows Settings → Apps → Jarvis also works).');
+      const err = await shell.openPath(uninstaller);
+      if (err) throw new Error(err);
+      setTimeout(() => app.quit(), 300);
+      return true;
+    }
+    if (process.platform === 'darwin' && app.isPackaged) {
+      await uninstallCleanup({ home: os.homedir(), userData: app.getPath('userData'), keepUserData: true });
+      const bundle = path.resolve(path.dirname(process.execPath), '..', '..');
+      if (bundle.endsWith('.app')) await shell.trashItem(bundle).catch(() => undefined);
+      fs.rmSync(app.getPath('userData'), { recursive: true, force: true });
+      app.exit(0);
+      return true;
+    }
+    throw new Error('Uninstall works in the installed app.');
+  });
   ipcMain.handle('ask', async (e, text: string, picked?: string, opts?: { stream?: boolean }) => {
     requestSender = e.sender;
     // not started yet (or Claude Code was just installed / logged in): check again now
@@ -795,6 +938,7 @@ function registerIpc() {
     const target = e.sender;
     const fromVoice = BrowserWindow.fromWebContents(target) === voiceWindow;
     const stream = opts?.stream === true;
+    const conv = prepareConversation().conv;
     const res = await orchestrator.handle(String(text), isRole(picked) ? picked : null, {
       spoken: fromVoice,
       // who answers, so the window can show their name and use their voice right away
@@ -812,21 +956,56 @@ function registerIpc() {
     const win = BrowserWindow.fromWebContents(target);
     const via = win === voiceWindow ? 'voice' : win === boxWindow ? 'box' : 'chat';
     const meta = res.kind === 'brain' ? `${res.model} · ${res.tokens?.toLocaleString() ?? 0} tokens` : 'handled locally · 0 tokens';
+    if (res.command === 'new_conversation') {
+      // "new conversation": nothing to keep; the next message starts a fresh one
+      history.startNew();
+      send('history:changed', { newChat: true });
+      return { ...res, role, roleName, person: who, roleColor: roleById(role).color, voice: roleVoice(role), conv: null };
+    }
     const items = history.add([
       { who: 'user', text: String(text), via },
       { who: 'assistant', text: res.reply, via, roleName, color: roleById(role).color, meta, error: Boolean(res.isError) },
     ]);
+    history.setSession(conv, role, res.sessionId);
     if (win !== mainWindow && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('history:add', items);
-    return { ...res, role, roleName, person: who, roleColor: roleById(role).color, voice: roleVoice(role), lessonShown: (lessons?.shown ?? 0) > before };
+    send('history:changed', {});
+    return { ...res, role, roleName, person: who, roleColor: roleById(role).color, voice: roleVoice(role), lessonShown: (lessons?.shown ?? 0) > before, conv };
   });
-  ipcMain.handle('history:get', () => history.recent(80));
+  ipcMain.handle('history:prepare', () => prepareConversation());
+  ipcMain.handle('history:list', (_e, query?: string) => ({ items: history.list(typeof query === 'string' ? query.slice(0, 200) : ''), current: history.currentId }));
+  ipcMain.handle('history:open', (_e, id: string) => {
+    const conv = history.get(String(id));
+    if (!conv) throw new Error('That conversation no longer exists.');
+    return { conv, messages: history.messages(conv.id), current: history.currentId === conv.id };
+  });
+  ipcMain.handle('history:continue', (_e, id: string) => {
+    const conv = history.continue(String(id));
+    orchestrator?.restoreSessions(conv.sessions);
+    return { conv, messages: history.messages(conv.id) };
+  });
+  ipcMain.handle('history:new', () => {
+    history.startNew();
+    orchestrator?.resetSessions();
+    send('history:changed', { newChat: true });
+    return true;
+  });
+  ipcMain.handle('history:remove', (_e, ids: unknown) => {
+    const list = Array.isArray(ids) ? ids.filter((x): x is string => typeof x === 'string') : [];
+    const wasCurrent = history.currentId !== null && list.includes(history.currentId);
+    const n = history.remove(list);
+    if (wasCurrent) orchestrator?.resetSessions();
+    send('history:changed', {});
+    return n;
+  });
   ipcMain.handle('history:set', (_e, keep: boolean) => {
     store.setKeepHistory(Boolean(keep));
     if (!keep) history.clear();
+    send('history:cleared');
     return Boolean(keep);
   });
   ipcMain.handle('history:clear', () => {
     history.clear();
+    orchestrator?.resetSessions();
     send('history:cleared');
     return true;
   });
@@ -842,10 +1021,13 @@ function registerIpc() {
       voice: roleVoice(r.id),
       apps: catalog
         .all()
-        .filter((a) => a.id !== 'team' && roleUsesApp(r, a.id, a.kind === 'mcp'))
+        .filter((a) => a.id !== 'team' && canUse(r.id, a, store.snapshot().appRoles))
         .map((a) => a.name),
       notes: r.id === 'jarvis' ? null : roleMemory.notes(r.id),
       pending: r.id === 'jarvis' ? 0 : roleMemory.pendingCount(r.id),
+      skills: SKILLS[r.id].map((k) => ({ id: k.id, when: k.when })),
+      folder: `Team/${ROLE_FOLDER[r.id]}`,
+      model: r.model === 'opus' ? 'Opus 5.5' : null,
     })),
     voices: VOICES,
   }));
@@ -885,6 +1067,13 @@ function registerIpc() {
     store.setEnabled(appId, on);
     return hubList();
   });
+  ipcMain.handle('hub:setMembers', (_e, appId: string, members: unknown) => {
+    const a = catalog.find(appId);
+    if (!a) throw new Error('unknown app');
+    if (isShared(a.id)) throw new Error(`${a.name} is for everyone on the team.`);
+    store.setAppRoles(a.id, members === null ? null : cleanMembers(members));
+    return hubList();
+  });
   ipcMain.handle('hub:setAbility', (_e, appId: string, ability: string, setting: AbilitySetting) => {
     const a = catalog.find(appId);
     if (!a) throw new Error('unknown app');
@@ -897,19 +1086,25 @@ function registerIpc() {
   });
   ipcMain.handle(
     'hub:addMcp',
-    async (_e, input: { id?: string; name: string; url?: string; command?: string; args?: string[]; apiKey?: string }) => {
+    async (_e, input: { id?: string; name: string; url?: string; command?: string; args?: string[]; apiKey?: string; members?: string[] }) => {
       const id = (input.id ?? input.name).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 20) || 'app';
+      // who gets the new app: the user's pick, else a guess from what the app is for
+      const chosen = cleanMembers(input.members);
+      const giveTo = (def: { id: string; name: string; description?: string; abilities: { description: string }[] }) =>
+        store.setAppRoles(id, chosen.length ? chosen : guessMembers({ ...def, name: input.name, description: `${def.description ?? ''} ${def.abilities.map((x) => x.description).join(' ')}` }));
       if (catalog.find(id)?.kind === 'builtin') throw new Error('That name is taken by a built-in app.');
       await catalog.forget(id);
       if (input.apiKey) {
         await secrets.set(secretKeyForApp(id), input.apiKey);
         const def = await discoverApp(id, input.name, { url: input.url, command: input.command, args: input.args, auth: 'key' }, { secret: input.apiKey });
         store.addCustomApp(def);
+        giveTo(def);
         return hubList();
       }
       if (!input.url) {
         const def = await discoverApp(id, input.name, { command: input.command, args: input.args, auth: 'none' }, {});
         store.addCustomApp(def);
+        giveTo(def);
         return hubList();
       }
       // URL without a key: sign in through the browser if the app asks for it.
@@ -922,6 +1117,7 @@ function registerIpc() {
         def.mcp = { url: input.url, auth: 'none' };
       }
       store.addCustomApp(def);
+        giveTo(def);
       return hubList();
     },
   );
@@ -968,6 +1164,15 @@ function registerIpc() {
   });
   ipcMain.handle('usage:summary', () => usage.summary());
   ipcMain.handle('activity:list', () => activity.list());
+  ipcMain.handle('activity:remove', (_e, ids: unknown) => activity.remove(Array.isArray(ids) ? ids.filter((x): x is string => typeof x === 'string') : []));
+  ipcMain.handle('activity:clear', () => activity.clear());
+  ipcMain.handle('team:openFolder', async (_e, role: string) => {
+    if (!isRole(role)) throw new Error('unknown role');
+    const dir = roleFolder(app.getPath('userData'), role);
+    fs.mkdirSync(dir, { recursive: true });
+    const err = await shell.openPath(dir);
+    if (err) throw new Error(err);
+  });
   ipcMain.handle('settings:get', () => store.snapshot());
   ipcMain.handle('settings:set', (_e, patch: { modelOverride?: 'haiku' | 'sonnet' | null; voiceOutput?: boolean; ttsVoice?: string; ttsSpeed?: number; explainLevel?: ExplainLevel }) => {
     if (patch.modelOverride !== undefined) store.setModelOverride(patch.modelOverride);
@@ -998,7 +1203,8 @@ function registerIpc() {
     const v = isVoice(opts?.voice) ? opts.voice : (own ?? (isVoice(snap.ttsVoice) ? snap.ttsVoice : DEFAULT_VOICE));
     const speed = Math.min(MAX_SPEED, Math.max(MIN_SPEED, snap.ttsSpeed ?? 1));
     const target = e.sender;
-    const { id, done } = kokoro.speak(String(text), v, speed, (c) => {
+    // names are said the way the user taught us (only the sound changes, never the written text)
+    const { id, done } = kokoro.speak(applyPronunciations(String(text), snap.pronunciations), v, speed, (c) => {
       if (!target.isDestroyed()) target.send('tts:chunk', { id: c.id, rate: c.rate, audio: c.audio });
     });
     void done.then((r) => !target.isDestroyed() && target.send('tts:done', { id, error: r.error, cancelled: r.cancelled }));
@@ -1107,20 +1313,6 @@ function registerIpc() {
       w.show();
     }
   });
-  ipcMain.on('wb:cleared', () => whiteboard.reset());
-  ipcMain.handle('wb:export', async (_e, format: 'png' | 'pdf', dataUrl: string) => {
-    const m = /^data:image\/(png|jpeg);base64,(.+)$/.exec(String(dataUrl));
-    if (!m) throw new Error('bad image');
-    const image = Buffer.from(m[2], 'base64');
-    const options = {
-      title: 'Save whiteboard',
-      defaultPath: `whiteboard-${new Date().toISOString().slice(0, 10)}.${format}`,
-      filters: [format === 'png' ? { name: 'PNG image', extensions: ['png'] } : { name: 'PDF document', extensions: ['pdf'] }],
-    };
-    const { canceled, filePath } = mainWindow ? await dialog.showSaveDialog(mainWindow, options) : await dialog.showSaveDialog(options);
-    if (canceled || !filePath) return;
-    fs.writeFileSync(filePath, format === 'png' ? image : jpegToPdf(image));
-  });
 }
 
 app.whenReady().then(async () => {
@@ -1130,17 +1322,7 @@ app.whenReady().then(async () => {
   secrets = await createKeyringStore();
   accounts = new AccountManager({ secrets, clientId: (id) => store.oauthClientId(id), openBrowser });
   await accounts.init();
-  whiteboard = new WhiteboardExecutor({
-    draw: async (elements: Element[]) => {
-      const w = await readyMainWindow(originIsMain());
-      w.webContents.send('wb:draw', elements);
-    },
-    snapshot: async () => {
-      const snap = await askRenderer<{ pngBase64: string; userStrokes: number }>('wb:snapshot', {}, 10_000, originIsMain());
-      if (!snap) throw new Error('The whiteboard did not respond.');
-      return snap;
-    },
-  });
+  ensureRoleFolders(app.getPath('userData'));
   const screenExec = new ScreenExecutor(new ElectronScreenBackend(), screenUI, () => requestSeq);
   kokoro = new KokoroEngine(path.join(app.getPath('userData'), 'speech', 'kokoro'), path.join(__dirname, '..', 'speech', 'kokoro-worker.mjs'));
   setTimeout(() => kokoro.warmUp(), 4000); // load the voice in the background so the first reply speaks quickly
@@ -1168,7 +1350,7 @@ app.whenReady().then(async () => {
     stopSpeaking: stopAllSpeech,
   });
   makeSupervisor();
-  history = new ChatHistory(data('history.jsonl'), () => store.snapshot().keepHistory !== false);
+  history = new ChatHistory(data('history.jsonl'), data('conversations.json'), () => store.snapshot().keepHistory !== false);
   reminders = new ReminderStore(data('reminders.json'));
   board = new BoardStore(data('board.json'));
   setInterval(plannerTick, 15_000);
@@ -1178,7 +1360,7 @@ app.whenReady().then(async () => {
     consult: async (role, question) => {
       if (!brain) return { reply: 'Jarvis is not set up yet.', isError: true };
       const notes = roleMemory.prefix(role);
-      const res = await brain.ask(`${notes ? `${notes}\n` : ''}${timePrefix()} (A teammate asks you.) ${question}`, null, pickModel(question), { role, consult: true });
+      const res = await brain.ask(`${notes ? `${notes}\n` : ''}${timePrefix()} (A teammate asks you.) ${question}`, null, modelFor(role, question, store.snapshot().modelOverride), { role, consult: true });
       return { reply: res.reply, isError: res.is_error, name: fullName(role, people()) };
     },
     onAsk: (role) => send('progress', `Asking ${fullName(role, people())}…`),
@@ -1190,8 +1372,22 @@ app.whenReady().then(async () => {
     pickFolder: (reason) => pick('openDirectory', reason),
     pdfPages,
   });
-  const transcripts = new TranscriptExecutor(path.join(app.getPath('userData'), 'transcripts'));
-  catalog = new AppCatalog(store, secrets, accounts, { screen: screenExec, whiteboard, recorder: transcripts, lesson: lessons, documents, coding, team, reminders: new RemindersExecutor(reminders, () => send('planner:changed')), board: new BoardExecutor(board, () => send('planner:changed')) });
+  const transcripts = new TranscriptExecutor(path.join(app.getPath('userData'), 'transcripts'), {
+    start: async (role) => (await startRecordingFor(isRole(role) ? role : 'jarvis')).reply,
+    // asked by a member mid-conversation: they read the transcript themselves, so no follow-up request
+    stop: async () => (await voice.stopRecording()).reply,
+  });
+  const files = new FilesExecutor({
+    jarvisDir: app.getPath('userData'),
+    trash: (p) => shell.trashItem(p),
+    onChange: () => send('team:filesChanged'),
+  });
+  catalog = new AppCatalog(store, secrets, accounts, {
+    files,
+    skills: new SkillsExecutor(app.getPath('userData')),
+    web: new WebExecutor(),
+    screen: screenExec,
+    recorder: transcripts, lesson: lessons, documents, coding, team, reminders: new RemindersExecutor(reminders, () => send('planner:changed')), board: new BoardExecutor(board, () => send('planner:changed')) });
   core = new GatewayCore({
     apps: () => catalog.all(),
     settings: store,
@@ -1219,8 +1415,8 @@ app.whenReady().then(async () => {
     },
     scope: (role, consult) => {
       if (!isRole(role)) return undefined;
-      const r = roleById(role);
-      return (app) => (app.id === 'team' ? !consult : roleUsesApp(r, app.id, app.kind === 'mcp'));
+      // read fresh on every list/call, so a change in the Tool Hub applies on the next request
+      return (app) => (app.id === 'team' ? !consult : canUse(role, app, store.snapshot().appRoles));
     },
   });
 

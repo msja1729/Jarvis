@@ -35,7 +35,7 @@ export interface AbilityDef {
    */
   resultLimit?: number;
   /**
-   * Built-in, local-only abilities (e.g. drawing on Jarvis's own whiteboard) may
+   * Built-in, local-only abilities (e.g. saving a file in a team member's own folder) may
    * start with a different default than their group. Never "allowed" for destructive.
    */
   defaultSetting?: AbilitySetting;
@@ -47,7 +47,7 @@ export interface AppDef {
   name: string;
   description: string;
   kind: 'builtin' | 'mcp';
-  /** On without any setup (screen, whiteboard, recorder). Others start off until connected. */
+  /** On without any setup (screen, recorder, team folders). Others start off until connected. */
   defaultEnabled?: boolean;
   abilities: AbilityDef[];
   /** For user-added MCP apps. auth: "oauth" = browser sign-in, "key" = API key/token, "none". */
@@ -83,8 +83,16 @@ export interface JarvisSettings {
   voiceOutput: boolean;
   /** Natural voice chosen for each team role (Jarvis itself uses ttsVoice). */
   roleVoices?: Record<string, string>;
+  /** Who may use each app (app id → team members), chosen in the Tool Hub; missing = the usual members. */
+  appRoles?: Record<string, string[]>;
   /** Names the user gave team members ("Sara" for the Doctor). */
   roleNames?: Record<string, string>;
+  /** First-run welcome finished (setup, tools, voices, meeting the team). */
+  onboarded?: boolean;
+  /** How names should sound when spoken (name → "say it like" spelling), e.g. the user's own name. */
+  pronunciations?: Record<string, string>;
+  /** What the team calls the user, chosen during setup. */
+  userName?: string;
   /** Keep chat history on this computer (default on). */
   keepHistory?: boolean;
   /** How Jarvis pitches explanations: auto (guess from the question), eli5, student or professional. */
@@ -110,8 +118,14 @@ export interface RawResult {
   images?: { data: string; mimeType: string }[];
 }
 
+/** Who is calling a tool: the team member (jarvis, pa, educator…) and whether a teammate consulted them. */
+export interface CallContext {
+  role: string;
+  consult?: boolean;
+}
+
 export interface AppExecutor {
-  call(ability: string, input: Record<string, unknown>): Promise<RawResult>;
+  call(ability: string, input: Record<string, unknown>, ctx?: CallContext): Promise<RawResult>;
 }
 
 export interface ConfirmRequest {

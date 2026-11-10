@@ -37,6 +37,13 @@ export class SessionManager {
     this.lastActive = this.now();
   }
 
+  /** Continue an earlier Claude session (an older conversation the user picked up again). */
+  restore(sessionId: string): void {
+    this.id = sessionId;
+    this.turns = 0;
+    this.lastActive = this.now();
+  }
+
   reset(): void {
     this.id = null;
     this.turns = 0;

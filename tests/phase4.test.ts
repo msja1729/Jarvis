@@ -135,9 +135,11 @@ describe('C22 / C15 / T8: Claude reads transcripts as text, in parts', () => {
     await expect(ex.call('read_transcript', { id: '../../secrets' })).rejects.toThrow(/No transcript/);
   });
 
-  it('is listed for Claude and read-only by default', async () => {
+  it('is listed for Claude; reading is allowed, starting a recording asks first', async () => {
     const h = makeCore([RECORDER_APP], { recorder: withTranscript('hello') });
-    expect(h.core.listTools().map((t) => t.name)).toEqual(['recorder__list_transcripts', 'recorder__read_transcript']);
+    expect(h.core.listTools().map((t) => t.name)).toEqual(['recorder__start_recording', 'recorder__stop_recording', 'recorder__list_transcripts', 'recorder__read_transcript']);
+    const start = RECORDER_APP.abilities.find((a) => a.name === 'start_recording')!;
+    expect(h.settings.effective(RECORDER_APP, start)).toBe('ask');
     const r = await h.core.callTool('recorder__list_transcripts', {});
     expect(r.text).toContain('2026-11-08_15-30-00');
     expect(h.confirms).toHaveLength(0);

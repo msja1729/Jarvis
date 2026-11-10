@@ -69,7 +69,8 @@ export async function startControlServer(core: () => GatewayCore, extras: Contro
           await extras.hook?.(payload && typeof payload === 'object' ? payload : {});
           out = { ok: true };
         } else if (req.url === '/list') out = { tools: core().listTools(allow) };
-        else if (req.url === '/call') out = await core().callTool(String(payload.name), payload.arguments ?? {}, allow);
+        else if (req.url === '/call')
+          out = await core().callTool(String(payload.name), payload.arguments ?? {}, allow, { role: typeof payload.role === 'string' && payload.role ? payload.role : 'jarvis', consult: payload.consult === true });
         else if (req.url === '/sup/approve' && extras.approve) {
           const input = payload.input && typeof payload.input === 'object' ? payload.input : {};
           out = await extras.approve(String(payload.runId ?? ''), { tool_name: String(payload.tool_name ?? ''), input });

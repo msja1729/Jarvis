@@ -87,6 +87,16 @@ export class SettingsStore {
   removeCustomApp(appId: string): void {
     this.data.customApps = this.data.customApps.filter((a) => a.id !== appId);
     delete this.data.apps[appId];
+    if (this.data.appRoles) delete this.data.appRoles[appId];
+    this.save();
+  }
+
+  /** Who may use an app; null puts back the usual members. */
+  setAppRoles(appId: string, roles: string[] | null): void {
+    const next = { ...(this.data.appRoles ?? {}) };
+    if (roles) next[appId] = [...new Set(roles)];
+    else delete next[appId];
+    this.data.appRoles = next;
     this.save();
   }
 
@@ -133,6 +143,33 @@ export class SettingsStore {
     if (typeof patch.lastPlan === 'string') next.lastPlan = patch.lastPlan;
     this.data.pa = next;
     this.save();
+  }
+
+  /** How a name should sound when spoken; null forgets it. */
+  setPronunciation(word: string, sayAs: string | null): void {
+    const key = word.replace(/\s+/g, ' ').trim();
+    if (!key) return;
+    const next = { ...(this.data.pronunciations ?? {}) };
+    if (sayAs && sayAs.trim()) {
+      if (!/^[\p{L} '.-]{1,60}$/u.test(sayAs.trim())) throw new Error('Use letters, spaces and hyphens only.');
+      next[key] = sayAs.trim();
+    } else delete next[key];
+    this.data.pronunciations = next;
+    this.save();
+  }
+
+  setOnboarded(on: boolean): void {
+    this.data.onboarded = on;
+    this.save();
+  }
+
+  /** 1-30 letters, spaces, apostrophes, dots or hyphens; empty clears it. */
+  setUserName(name: string): string {
+    const clean = name.replace(/\s+/g, ' ').trim().slice(0, 30);
+    if (clean && !/^[\p{L}][\p{L} '.-]*$/u.test(clean)) throw new Error('Use letters only, please.');
+    this.data.userName = clean || undefined;
+    this.save();
+    return clean;
   }
 
   setKeepHistory(on: boolean): void {

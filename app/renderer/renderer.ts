@@ -1,12 +1,11 @@
 /** Renderer UI. All untrusted text is inserted with textContent, never innerHTML. */
 import { initTts, speak, speakStream, stopSpeaking } from '../../speech/tts.js';
-import type { Element } from '../../tools/whiteboard/scene.js';
-import { initWhiteboard } from './whiteboard.js';
 import { startWorldMap } from './worldmap.js';
+import { Onboarding, sayMyName } from './onboard.js';
 import { startCapture, stopCapture, CaptureKind } from './audio.js';
 
 interface Ability { name: string; title: string; description: string; group: string; setting: string; options: string[] }
-interface HubApp { id: string; name: string; description: string; kind: string; enabled: boolean; connected: boolean; account: string | null; auth: string | null; abilities: Ability[] }
+interface HubApp { id: string; name: string; description: string; kind: string; enabled: boolean; connected: boolean; account: string | null; auth: string | null; abilities: Ability[]; members: string[]; everyone: boolean; membersChanged: boolean }
 interface Account { id: string; name: string; configured: boolean; connected: boolean; email: string | null; needsSecret: boolean }
 interface Suggested { id: string; name: string; description: string; url: string; auth: 'oauth' | 'key' | 'none'; keyHelp?: string; added: boolean }
 interface ConfirmReq { id: string; appName: string; abilityTitle: string; group: string; summary: string }
@@ -16,10 +15,20 @@ declare global {
     jarvis: {
       setupCheck(): Promise<any>;
       setupBaseline(): Promise<any>;
+      onboardState(): Promise<any>;
+      onboardSetName(name: string): Promise<string>;
+      nameGet(): Promise<{ name: string; sayAs: string }>;
+      appUninstall(): Promise<boolean>;
       ask(text: string, role?: string | null, opts?: { stream?: boolean }): Promise<any>;
       onAskStart(cb: (s: { roleName: string; roleColor: string; voice: string }) => void): void;
       onAskPartial(cb: (d: string) => void): void;
-      historyGet(): Promise<HistoryItem[]>;
+      historyPrepare(): Promise<{ conv: string; isNew: boolean }>;
+      historyList(query?: string): Promise<{ items: ConvSummary[]; current: string | null }>;
+      historyOpen(id: string): Promise<{ conv: ConvSummary; messages: HistoryItem[]; current: boolean }>;
+      historyContinue(id: string): Promise<{ conv: ConvSummary; messages: HistoryItem[] }>;
+      historyNew(): Promise<boolean>;
+      historyRemove(ids: string[]): Promise<number>;
+      onHistoryChanged(cb: (p: { newChat?: boolean }) => void): void;
       historySet(keep: boolean): Promise<boolean>;
       historyClear(): Promise<boolean>;
       onHistoryAdd(cb: (items: HistoryItem[]) => void): void;
@@ -46,7 +55,11 @@ declare global {
       accountsOpenGuide(id: string): Promise<void>;
       cancelSignIn(): void;
       usageSummary(): Promise<any>;
-      activityList(): Promise<any[]>;
+      hubSetMembers(appId: string, members: string[] | null): Promise<HubApp[]>;
+      activityList(): Promise<ActivityItem[]>;
+      activityRemove(ids: string[]): Promise<number>;
+      activityClear(): Promise<void>;
+      teamOpenFolder(role: string): Promise<void>;
       settingsGet(): Promise<any>;
       settingsSet(patch: unknown): Promise<any>;
       toggleBox(): void;
@@ -56,12 +69,6 @@ declare global {
       onNavigate(cb: (view: string) => void): void;
       onNotice(cb: (text: string) => void): void;
       onSettings(cb: (s: any) => void): void;
-      onWhiteboardClear(cb: () => void): void;
-      onWbDraw(cb: (elements: any) => void): void;
-      onWbSnapshot(cb: (id: any) => void): void;
-      wbSnapshotReply(id: string, data: unknown): void;
-      wbCleared(): void;
-      wbExport(format: 'png' | 'pdf', dataUrl: string): Promise<void>;
       onScreenPick(cb: (req: any) => void): void;
       screenPickReply(id: string, choice: unknown): void;
       onScreenArea(cb: (req: any) => void): void;
@@ -176,17 +183,13 @@ const SUBS: Record<string, string> = {
   chat: 'Ask anything, by typing or with your voice',
   team: 'Your experts, their voices and what they remember',
   hub: 'Your apps and what Jarvis may do in each  ·  changes apply on the next request',
-  whiteboard: 'Draw together  ·  ask “what did I draw?”',
-  usage: 'Tokens used on your Claude plan  ·  updated after every request',
-  activity: 'Everything Jarvis did or was stopped from doing',
+  activity: 'What your team did or was stopped from doing, day by day',
   settings: 'Model, voice and shortcuts',
 };
 const TITLES: Record<string, string> = {
   chat: 'Chat',
   team: 'Team',
   hub: 'Tool Hub',
-  whiteboard: 'Whiteboard',
-  usage: 'Usage',
   activity: 'Activity',
   settings: 'Settings',
 };
@@ -202,7 +205,6 @@ function show(view: string) {
     void renderSuggested();
   }
   if (view === 'team') void renderTeam();
-  if (view === 'usage') void renderUsage();
   if (view === 'activity') void renderActivity();
   if (view === 'settings') {
     void renderSettings();
@@ -223,15 +225,11 @@ function setStatus(state: 'ok' | 'busy' | 'err', text: string) {
 }
 async function refreshChips() {
   try {
-    const [usage, apps] = await Promise.all([j.usageSummary(), j.hubList()]);
-    $('chip-tokens').textContent = compact(usage.todayTotal);
+    const apps = await j.hubList();
     $('chip-apps').textContent = String(apps.filter((a) => a.enabled && a.connected).length);
   } catch {
     /* chips are informational */
   }
-}
-function compact(n: number): string {
-  return n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 10_000 ? `${Math.round(n / 1000)}k` : n.toLocaleString();
 }
 
 /* ---------- live replies: speak while Claude is still writing ---------- */
@@ -286,6 +284,9 @@ interface TeamRole {
   apps: string[];
   notes: string | null;
   pending: number;
+  skills?: { id: string; when: string }[];
+  folder: string;
+  model: string | null;
 }
 let teamCache: { roles: TeamRole[]; voices: { id: string; name: string; accent: string; gender: string; grade: string }[] } | null = null;
 /** Who the chat talks to; null = Auto (Jarvis picks the right expert). */
@@ -478,6 +479,12 @@ async function renderTeam() {
     const apps = el('div', { className: 'team-apps' });
     for (const a of r.id === 'jarvis' ? ['Every app'] : r.apps) apps.append(el('span', { className: 'pill' }, a));
     card.append(apps);
+    if (r.skills?.length) {
+      const skills = el('div', { className: 'team-apps team-skills' });
+      for (const k of r.skills) skills.append(el('span', { className: 'pill skill', title: `Used for: ${k.when}` }, k.id.replace(/-/g, ' ')));
+      card.append(el('div', { className: 'team-sub muted small' }, 'Skills'), skills);
+    }
+    if (r.model) card.append(el('p', { className: 'muted small team-model' }, `Thinks with ${r.model}, the strongest model for building projects.`));
 
     // voice (natural voices only)
     const select = el('select', { className: 'team-voice' });
@@ -531,7 +538,9 @@ async function renderTeam() {
       show('chat');
       $<HTMLInputElement>('input').focus();
     });
-    card.append(talk);
+    const folder = el('button', { type: 'button', className: 'chip team-folder', title: `Open ${r.folder} in the Jarvis folder` }, 'Open folder');
+    folder.addEventListener('click', () => void j.teamOpenFolder(r.id).catch((e: unknown) => showNotice(String(e))));
+    card.append(el('div', { className: 'team-row team-actions' }, talk, folder));
     grid.append(card);
   }
   void renderBoard();
@@ -552,6 +561,8 @@ function addMsg(who: 'user' | 'jarvis', text: string, meta?: string, isError = f
   messages.scrollTop = messages.scrollHeight;
 }
 interface HistoryItem {
+  id: string;
+  conv: string;
   at: string;
   who: 'user' | 'assistant';
   text: string;
@@ -566,21 +577,230 @@ function showHistoryItem(i: HistoryItem) {
   if (i.who === 'user') addMsg('user', i.text, i.via !== 'chat' ? VIA[i.via].replace(' · ', '') : undefined);
   else addMsg('jarvis', i.text, `${i.meta ?? ''}${VIA[i.via] ?? ''}`, Boolean(i.error), i.roleName ? { name: i.roleName, color: i.color ?? '#9a9a96' } : undefined);
 }
-/** Earlier conversations, shown when Jarvis opens. */
-async function loadHistory() {
-  const items = await j.historyGet();
-  if (!items.length) return;
-  addNote('Earlier conversations');
-  items.forEach(showHistoryItem);
-  addNote('Today');
+/* ---------- conversations: the History panel next to the chat ---------- */
+interface ConvSummary { id: string; title: string; startedAt: string; updatedAt: string; count: number; people: { name: string; color: string }[] }
+/** The conversation shown in the chat; null = a new, empty chat. */
+let shownConv: string | null = null;
+/** True while looking at an earlier conversation (read-only until "Continue"). */
+let viewingOld = false;
+let convSelecting = false;
+const convSelected = new Set<string>();
+let convItems: ConvSummary[] = [];
+let convQuery = '';
+
+function clearChatView() {
+  messages.querySelectorAll('.msg, .note').forEach((n) => n.remove());
+  $('empty').classList.remove('hidden');
 }
+
+/** Shows a saved conversation, with a date line wherever the day changes. */
+function renderConversation(items: HistoryItem[]) {
+  clearChatView();
+  let day = '';
+  for (const i of items) {
+    const d = new Date(i.at).toDateString();
+    if (d !== day) {
+      addNote(dayLabel(new Date(i.at)));
+      day = d;
+    }
+    showHistoryItem(i);
+  }
+  messages.scrollTop = messages.scrollHeight;
+}
+
+function setOldMode(conv: ConvSummary | null) {
+  viewingOld = conv !== null;
+  $('old-banner').classList.toggle('hidden', !viewingOld);
+  $('composer').classList.toggle('hidden', viewingOld);
+  $('role-chips').classList.toggle('hidden', viewingOld);
+  if (conv) {
+    const d = new Date(conv.updatedAt);
+    $('old-when').textContent = `An earlier conversation · ${dayLabel(d)}, ${d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
+  }
+}
+
+/** Narrow windows show the panel over the chat; close it after picking. */
+const narrow = () => window.matchMedia('(max-width: 860px)').matches;
+function setChatsOpen(open: boolean) {
+  const v = $('view-chat');
+  if (narrow()) v.classList.toggle('chats-open', open);
+  else {
+    v.classList.toggle('chats-hidden', !open);
+    try {
+      localStorage.setItem('jarvis.chatsHidden', open ? '0' : '1');
+    } catch {
+      /* only a convenience */
+    }
+  }
+}
+
+async function startNewChat() {
+  await j.historyNew();
+  shownConv = null;
+  setOldMode(null);
+  clearChatView();
+  if (narrow()) setChatsOpen(false);
+  void renderChats();
+  $<HTMLInputElement>('input').focus();
+}
+
+async function openConv(id: string) {
+  if (convSelecting) return;
+  const r = await j.historyOpen(id);
+  renderConversation(r.messages);
+  shownConv = id;
+  setOldMode(r.current ? null : r.conv);
+  if (narrow()) setChatsOpen(false);
+  void renderChats();
+}
+
+async function continueConv() {
+  if (!shownConv) return;
+  const r = await j.historyContinue(shownConv);
+  renderConversation(r.messages);
+  addNote('Continuing this conversation');
+  setOldMode(null);
+  void renderChats();
+  $<HTMLInputElement>('input').focus();
+}
+
+function convGroup(d: Date): string {
+  const start = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((start(new Date()) - start(d)) / 86_400_000);
+  if (days <= 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return 'Previous 7 days';
+  if (days < 30) return 'Previous 30 days';
+  return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+}
+
+function syncChatsBar() {
+  $('chats-bar').classList.toggle('hidden', !convSelecting);
+  $('chats-select').textContent = convSelecting ? 'Done' : 'Select';
+  const n = convSelected.size;
+  $('chats-count').textContent = n ? `${n} selected` : '';
+  $<HTMLButtonElement>('chats-delete').disabled = n === 0;
+  const all = $<HTMLInputElement>('chats-all');
+  all.checked = n > 0 && n === convItems.length;
+  all.indeterminate = n > 0 && n < convItems.length;
+}
+
+async function renderChats() {
+  if (MODE !== 'main') return;
+  const { items } = await j.historyList(convQuery);
+  convItems = items;
+  for (const id of [...convSelected]) if (!items.some((c) => c.id === id)) convSelected.delete(id);
+  const list = $('chats-list');
+  if (!items.length) {
+    list.replaceChildren(el('p', { className: 'chats-empty muted small' }, convQuery ? `No conversation mentions “${convQuery}”.` : 'Your conversations will appear here, grouped by day.'));
+    syncChatsBar();
+    return;
+  }
+  const out: HTMLElement[] = [];
+  let group = '';
+  for (const c of items) {
+    const d = new Date(c.updatedAt);
+    const g = convGroup(d);
+    if (g !== group) {
+      out.push(el('div', { className: 'chats-group' }, g));
+      group = g;
+    }
+    const when = g === 'Today' || g === 'Yesterday' ? d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    const dots = el('span', { className: 'chats-dots' });
+    for (const p of c.people.slice(0, 5)) {
+      const dot = el('i', { title: p.name });
+      dot.style.background = p.color;
+      dots.append(dot);
+    }
+    const item = el('button', { type: 'button', className: `chats-item${c.id === shownConv ? ' active' : ''}${convSelected.has(c.id) ? ' selected' : ''}`, title: c.title });
+    if (convSelecting) {
+      const box = el('input', { type: 'checkbox', className: 'activity-check', tabIndex: -1 });
+      box.checked = convSelected.has(c.id);
+      item.append(box);
+    }
+    item.append(el('span', { className: 'chats-title' }, c.title), el('span', { className: 'chats-meta' }, dots, el('span', { className: 'muted' }, `${when} · ${Math.ceil(c.count / 2)} message${c.count > 2 ? 's' : ''}`)));
+    item.addEventListener('click', () => {
+      if (!convSelecting) return void openConv(c.id);
+      if (convSelected.has(c.id)) convSelected.delete(c.id);
+      else convSelected.add(c.id);
+      void renderChats();
+    });
+    out.push(item);
+  }
+  list.replaceChildren(...out);
+  syncChatsBar();
+}
+
+/** After conversations were deleted: if the one on screen is gone, show an empty chat. */
+function afterDelete(ids: string[]) {
+  if (shownConv && ids.includes(shownConv)) {
+    shownConv = null;
+    setOldMode(null);
+    clearChatView();
+  }
+}
+
 if (MODE === 'main') {
-  void loadHistory();
-  // what was said by voice or in the floating box appears here too
-  j.onHistoryAdd((items) => items.forEach(showHistoryItem));
+  try {
+    if (localStorage.getItem('jarvis.chatsHidden') === '1') $('view-chat').classList.add('chats-hidden');
+  } catch {
+    /* only a convenience */
+  }
+  void renderChats();
+  $('chat-new').addEventListener('click', () => void startNewChat());
+  $('old-new').addEventListener('click', () => void startNewChat());
+  $('old-continue').addEventListener('click', () => void continueConv());
+  $('chats-hide').addEventListener('click', () => setChatsOpen(false));
+  $('chats-show').addEventListener('click', () => setChatsOpen(true));
+  $('chats-select').addEventListener('click', () => {
+    convSelecting = !convSelecting;
+    convSelected.clear();
+    void renderChats();
+  });
+  $('chats-all').addEventListener('change', (ev) => {
+    convSelected.clear();
+    if ((ev.target as HTMLInputElement).checked) for (const c of convItems) convSelected.add(c.id);
+    void renderChats();
+  });
+  let searchTimer = 0;
+  $('chats-q').addEventListener('input', (ev) => {
+    window.clearTimeout(searchTimer);
+    searchTimer = window.setTimeout(() => {
+      convQuery = (ev.target as HTMLInputElement).value.trim();
+      void renderChats();
+    }, 200);
+  });
+  confirmTwice($<HTMLButtonElement>('chats-delete'), 'Delete', () => `Delete ${convSelected.size} for good?`, async () => {
+    const ids = [...convSelected];
+    await j.historyRemove(ids);
+    convSelected.clear();
+    afterDelete(ids);
+    void renderChats();
+  });
+  confirmTwice($<HTMLButtonElement>('chats-clear'), 'Delete all', () => 'Delete every conversation?', async () => {
+    await j.historyClear();
+    convSelected.clear();
+    convSelecting = false;
+  });
+  // what was said by voice or in the floating box appears here too, if that conversation is on screen
+  j.onHistoryAdd((items) => {
+    const conv = items[0]?.conv;
+    if (!conv || viewingOld || (shownConv !== null && shownConv !== conv)) return;
+    shownConv = conv;
+    items.forEach(showHistoryItem);
+  });
+  j.onHistoryChanged((p) => {
+    if (p?.newChat && !viewingOld) {
+      shownConv = null;
+      clearChatView();
+    }
+    void renderChats();
+  });
   j.onHistoryCleared(() => {
-    messages.querySelectorAll('.msg, .note').forEach((n) => n.remove());
-    $('empty').classList.remove('hidden');
+    shownConv = null;
+    setOldMode(null);
+    clearChatView();
+    void renderChats();
   });
 }
 
@@ -618,6 +838,16 @@ $('composer').addEventListener('submit', async (e) => {
   if (!text) return;
   input.value = '';
   stopSpeaking();
+  if (MODE === 'main') {
+    const prep = await j.historyPrepare();
+    if (prep.conv !== shownConv) {
+      if (shownConv !== null) {
+        clearChatView();
+        addNote('New conversation · the last message was over 30 minutes ago');
+      }
+      shownConv = prep.conv;
+    }
+  }
   addMsg('user', text);
   const send = $<HTMLButtonElement>('send');
   send.disabled = true;
@@ -625,7 +855,11 @@ $('composer').addEventListener('submit', async (e) => {
   try {
     awaitingLive = voiceOn;
     const r = await j.ask(text, pickedRole, { stream: voiceOn });
-    if (r.newConversation && r.kind === 'brain') addNote('New conversation started');
+    if (r.command === 'new_conversation' && MODE === 'main') {
+      shownConv = null;
+      clearChatView();
+    }
+    if (r.newConversation && r.kind === 'brain') addNote('Fresh start for this expert: earlier messages are not sent again, to save tokens');
     let meta: string | undefined;
     if (r.kind === 'brain') meta = `${r.model} · ${r.tokens?.toLocaleString() ?? 0} tokens${r.expensive ? ' · ▲ 3× more than usual' : ''}`;
     else meta = 'handled locally · 0 tokens';
@@ -893,8 +1127,29 @@ function setupCard(a: Account): HTMLElement {
   return card;
 }
 
+/** The team members (not Jarvis), for "Who can use it". */
+async function teamMembers(): Promise<TeamRole[]> {
+  if (!teamCache) teamCache = await j.teamList().catch(() => null);
+  return (teamCache?.roles ?? []).filter((r) => r.id !== 'jarvis');
+}
+
+/** One chip per member; on = may use the app. */
+function memberChips(members: TeamRole[], on: Set<string>, onToggle: (id: string) => void, disabled = false): HTMLElement {
+  const row = el('div', { className: 'member-chips' });
+  for (const m of members) {
+    const chip = el('button', { type: 'button', className: `member-chip${on.has(m.id) ? ' on' : ''}`, title: `${m.person} · ${m.name}`, disabled });
+    chip.style.setProperty('--c', m.color);
+    chip.setAttribute('aria-pressed', String(on.has(m.id)));
+    chip.append(el('i', {}), m.person);
+    chip.addEventListener('click', () => onToggle(m.id));
+    row.append(chip);
+  }
+  return row;
+}
+
 async function renderHub(list?: HubApp[]) {
   const apps = list ?? (await j.hubList());
+  const team = await teamMembers();
   const root = $('hub-list');
   root.replaceChildren();
   for (const a of apps) {
@@ -948,14 +1203,37 @@ async function renderHub(list?: HubApp[]) {
       );
     }
     const details = el('details', {}, el('summary', {}, `What Jarvis may do (${a.abilities.length})`), table);
-    const users = (teamCache?.roles ?? []).filter((r) => r.id !== 'jarvis' && r.apps.includes(a.name));
-    const usedBy = el('div', { className: 'used-by' }, users.length ? 'Used by ' : 'Used by Jarvis');
-    for (const u of users) {
-      const chip = el('span', { className: 'role-tag' }, el('i', {}), u.name);
-      chip.style.setProperty('--c', u.color);
-      usedBy.append(chip);
+    // who can use it: the user picks members; Jarvis (front desk) always can
+    const who = el('div', { className: 'who-uses' }, el('span', { className: 'who-label muted small' }, 'Who can use it'));
+    if (a.everyone) {
+      who.append(el('span', { className: 'muted small' }, 'Everyone on the team, always'));
+    } else {
+      const on = new Set(a.members);
+      who.append(
+        memberChips(team, on, async (id) => {
+          if (on.has(id)) on.delete(id);
+          else on.add(id);
+          try {
+            showHubError(null);
+            teamCache = null; // the Team page lists each member's apps
+            renderHub(await j.hubSetMembers(a.id, [...on]));
+          } catch (err) {
+            showHubError(err);
+          }
+        }),
+        el('span', { className: 'muted small who-note' }, on.size ? '+ Jarvis' : 'Only Jarvis'),
+      );
+      if (a.membersChanged) {
+        const reset = el('button', { type: 'button', className: 'link-btn small' }, 'Reset');
+        reset.title = a.kind === 'mcp' ? 'Back to the suggested members' : 'Back to the usual members';
+        reset.addEventListener('click', async () => {
+          teamCache = null;
+          renderHub(await j.hubSetMembers(a.id, null));
+        });
+        who.append(reset);
+      }
     }
-    root.append(el('div', { className: 'card' }, head, el('div', { className: 'muted' }, a.description), usedBy, details));
+    root.append(el('div', { className: 'card' }, head, el('div', { className: 'muted' }, a.description), who, details));
   }
 }
 
@@ -1004,6 +1282,23 @@ async function renderSuggested() {
   }
 }
 
+/** Members picked for an app being added; none = Jarvis suggests them from what the app does. */
+const addMembers = new Set<string>();
+async function renderAddMembers() {
+  const team = await teamMembers();
+  const box = $('add-members');
+  const hint = el('span', { className: 'muted small' }, addMembers.size ? '+ Jarvis' : 'None picked: Jarvis suggests members from what the app does. You can change it later.');
+  box.replaceChildren(
+    memberChips(team, addMembers, (id) => {
+      if (addMembers.has(id)) addMembers.delete(id);
+      else addMembers.add(id);
+      void renderAddMembers();
+    }),
+    hint,
+  );
+}
+if (MODE === 'main') void renderAddMembers();
+
 $('add-app').addEventListener('submit', async (e) => {
   e.preventDefault();
   const f = e.target as HTMLFormElement;
@@ -1011,189 +1306,153 @@ $('add-app').addEventListener('submit', async (e) => {
   const [command, ...args] = (data.command ?? '').trim().split(/\s+/).filter(Boolean);
   $('add-error').textContent = '';
   const res = await duringSignIn(() =>
-    j.hubAddMcp({ name: data.name, url: data.url || undefined, command, args, apiKey: data.apiKey || undefined }),
+    j.hubAddMcp({ name: data.name, url: data.url || undefined, command, args, apiKey: data.apiKey || undefined, members: [...addMembers] }),
   );
   if (res) {
     f.reset();
+    addMembers.clear();
+    void renderAddMembers();
+    teamCache = null;
     renderHub(res);
   } else {
     $('add-error').textContent = $('hub-error').textContent;
   }
 });
 
-/* ---------- usage ---------- */
-interface UsageEntry { ts: string; request: string; model: string; tokens: number; expensive: boolean; usage?: { input: number; output: number; cacheCreation: number; cacheRead: number } }
+/* ---------- activity ---------- */
+interface ActivityItem { id: string; ts: string; role?: string; appId: string; ability: string; outcome: 'done' | 'blocked' | 'declined' | 'error'; detail: string }
+const OUTCOME: Record<ActivityItem['outcome'], string> = { done: 'Done', blocked: 'Blocked', declined: 'You said no', error: 'Failed' };
+const activitySelected = new Set<string>();
+let activityItems: ActivityItem[] = [];
+/** "Gmail" for gmail, "Team folders" for files: the app's name from the Tool Hub when known. */
+let appNames: Record<string, string> = {};
 
-async function renderUsage() {
-  const s = await j.usageSummary();
-  const stat = (label: string, value: string) => el('div', { className: 'stat' }, el('b', {}, value), el('span', {}, label));
-  const today: UsageEntry[] = s.entries.filter((e: UsageEntry) => new Date(e.ts).toDateString() === new Date().toDateString());
-  $('usage-stats').replaceChildren(
-    stat('Tokens today', s.todayTotal.toLocaleString()),
-    stat('Requests today', String(today.length)),
-    stat('Reused from cache today', s.todayReused ? `${s.todayReused.toLocaleString()}` : '0'),
-    stat('Unusually large today', String(today.filter((e) => e.expensive).length)),
-  );
-  renderUsageChart(s.entries.slice(-30), s.baseline);
-  renderRings(today);
-
-  const head = () => el('tr', {}, el('th', {}, 'Time'), el('th', {}, 'Request'), el('th', {}, 'Model'), el('th', { className: 'num' }, 'Tokens'));
-  const row = (e: UsageEntry, flag: boolean) =>
-    el(
-      'tr',
-      { className: flag && e.expensive ? 'hot' : '' },
-      el('td', {}, new Date(e.ts).toLocaleTimeString()),
-      el('td', {}, flag && e.expensive ? `▲ ${e.request}` : e.request),
-      el('td', {}, e.model),
-      el('td', { className: 'num', title: e.usage ? `${(e.usage.cacheRead ?? 0).toLocaleString()} reused from cache (cheaper), ${(e.usage.input + e.usage.output + e.usage.cacheCreation).toLocaleString()} new` : '' }, e.tokens.toLocaleString()),
-    );
-  $('usage-top').replaceChildren(head(), ...s.topExpensive.map((e: UsageEntry) => row(e, false)));
-  $('usage-table').replaceChildren(head(), ...[...s.entries].reverse().map((e: UsageEntry) => row(e, true)));
+function dayLabel(d: Date): string {
+  const today = new Date();
+  const start = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((start(today) - start(d)) / 86_400_000);
+  const date = d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: d.getFullYear() === today.getFullYear() ? undefined : 'numeric' });
+  return days === 0 ? `Today · ${date}` : days === 1 ? `Yesterday · ${date}` : date;
 }
 
-/** Single-series bar chart: one bar per request, expensive ones marked ▲ (not by color alone). */
-function renderUsageChart(entries: UsageEntry[], baseline: number | null) {
-  const root = $('usage-chart');
-  const tip = $('chart-tip');
-  $('chart-sub').textContent = entries.length ? `last ${entries.length} requests` : '';
-  if (entries.length === 0) {
-    root.replaceChildren(el('div', { className: 'chart-empty' }, 'No requests yet. Ask Jarvis something to see usage here.'));
+function abilityName(e: ActivityItem): string {
+  return e.ability.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
+}
+
+function whoDid(role?: string): { name: string; color: string } {
+  const r = teamCache?.roles.find((x) => x.id === (role || 'jarvis'));
+  return r ? { name: r.id === 'jarvis' ? 'Jarvis' : r.person, color: r.color } : { name: 'Jarvis', color: '#9a9a96' };
+}
+
+function syncActivityBar() {
+  const n = activitySelected.size;
+  $('activity-count').textContent = n ? `${n} selected` : `${activityItems.length} item${activityItems.length === 1 ? '' : 's'}`;
+  $<HTMLButtonElement>('activity-delete').disabled = n === 0;
+  $<HTMLButtonElement>('activity-clear').disabled = activityItems.length === 0;
+  const all = $<HTMLInputElement>('activity-all');
+  all.checked = n > 0 && n === activityItems.length;
+  all.indeterminate = n > 0 && n < activityItems.length;
+}
+
+async function renderActivity() {
+  const [list, apps] = await Promise.all([j.activityList(), j.hubList().catch(() => [] as HubApp[])]);
+  if (!teamCache) teamCache = await j.teamList().catch(() => null);
+  appNames = Object.fromEntries(apps.map((a) => [a.id, a.name]));
+  activityItems = [...list].reverse();
+  for (const id of [...activitySelected]) if (!activityItems.some((e) => e.id === id)) activitySelected.delete(id);
+  const root = $('activity-list');
+  if (!activityItems.length) {
+    root.replaceChildren(el('div', { className: 'activity-empty muted' }, 'Nothing here yet. When your team uses an app (email, calendar, the web, their folders…), it shows up here, day by day.'));
+    syncActivityBar();
     return;
   }
-  const NS = 'http://www.w3.org/2000/svg';
-  const W = Math.max(320, root.clientWidth || 800);
-  const H = 240;
-  const pad = { l: 48, r: 8, t: 18, b: 22 };
-  const max = Math.max(...entries.map((e) => e.tokens), (baseline ?? 0) * 3, 1);
-  const step = niceStep(max / 4);
-  const top = Math.ceil(max / step) * step;
-  const y = (v: number) => pad.t + (1 - v / top) * (H - pad.t - pad.b);
-  const slot = (W - pad.l - pad.r) / entries.length;
-  const barW = Math.max(3, Math.min(28, slot - 2)); // >= 2px gap between bars
-  const svg = document.createElementNS(NS, 'svg');
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  svg.setAttribute('role', 'img');
-  svg.setAttribute('aria-label', 'Tokens per request; full numbers are in the Recent requests table below');
-  const add = (tag: string, attrs: Record<string, string | number>, text?: string) => {
-    const n = document.createElementNS(NS, tag);
-    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, String(v));
-    if (text) n.textContent = text;
-    svg.append(n);
-    return n;
-  };
-  const defs = document.createElementNS(NS, 'defs');
-  for (const [id, light, base] of [['bar-cool', '#5fd3ee', '#12a2c6'], ['bar-hot', '#d76be0', '#b02fb8']]) {
-    const g = document.createElementNS(NS, 'linearGradient');
-    g.id = id;
-    g.setAttribute('x1', '0');
-    g.setAttribute('y1', '0');
-    g.setAttribute('x2', '0');
-    g.setAttribute('y2', '1');
-    for (const [off, col] of [['0', light], ['1', base]]) {
-      const st = document.createElementNS(NS, 'stop');
-      st.setAttribute('offset', off);
-      st.setAttribute('stop-color', col);
-      g.append(st);
-    }
-    defs.append(g);
+  const groups = new Map<string, ActivityItem[]>();
+  for (const e of activityItems) {
+    const key = new Date(e.ts).toDateString();
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(e);
   }
-  svg.append(defs);
-  for (let v = 0; v <= top; v += step) {
-    add('line', { class: 'grid-line', x1: pad.l, x2: W - pad.r, y1: y(v), y2: y(v) });
-    add('text', { class: 'axis-label', x: pad.l - 8, y: y(v) + 4, 'text-anchor': 'end' }, compact(v));
-  }
-  if (baseline) {
-    add('line', { class: 'baseline', x1: pad.l, x2: W - pad.r, y1: y(baseline * 3), y2: y(baseline * 3) });
-    add('text', { class: 'baseline-label', x: W - pad.r, y: y(baseline * 3) - 5, 'text-anchor': 'end' }, '3× baseline');
-  }
-  entries.forEach((e, i) => {
-    const x = pad.l + i * slot + (slot - barW) / 2;
-    const h = Math.max(1, y(0) - y(e.tokens));
-    const r = Math.min(4, barW / 2, h);
-    // Rounded top (4px), square at the baseline.
-    const d = `M${x},${y(0)} V${y(0) - h + r} Q${x},${y(0) - h} ${x + r},${y(0) - h} H${x + barW - r} Q${x + barW},${y(0) - h} ${x + barW},${y(0) - h + r} V${y(0)} Z`;
-    const bar = add('path', { class: `bar${e.expensive ? ' hot' : ''}`, d });
-    if (e.expensive) add('text', { class: 'flag', x: x + barW / 2, y: y(0) - h - 4 }, '▲');
-    const hit = add('rect', { class: 'hit', x: pad.l + i * slot, y: pad.t, width: slot, height: H - pad.t - pad.b });
-    hit.addEventListener('pointerenter', () => {
-      bar.classList.add('hover');
-      const cached = e.usage?.cacheRead ? ` (${e.usage.cacheRead.toLocaleString()} reused from cache)` : '';
-      tip.replaceChildren(
-        el('div', {}, el('b', {}, `${e.tokens.toLocaleString()} tokens`), cached),
-        el('div', { className: 'muted' }, `${new Date(e.ts).toLocaleTimeString()} · ${e.model}`),
-        el('div', {}, e.request),
-        ...(e.expensive ? [el('div', {}, '▲ above 3× baseline')] : []),
-      );
-      tip.classList.remove('hidden');
-      const card = root.parentElement!.getBoundingClientRect();
-      const b = (hit as SVGGraphicsElement).getBoundingClientRect();
-      tip.style.left = `${Math.min(card.width - 290, Math.max(8, b.left - card.left + b.width / 2 - 140))}px`;
-      tip.style.top = `${b.top - card.top + 8}px`;
-    });
-    hit.addEventListener('pointerleave', () => {
-      bar.classList.remove('hover');
-      tip.classList.add('hidden');
-    });
-  });
-  root.replaceChildren(svg);
-}
-
-/** Two radial progress rings, as in the design. Each shows its number in text too. */
-function renderRings(today: UsageEntry[]) {
-  const total = today.reduce((a, e) => a + e.tokens, 0);
-  const cached = today.reduce((a, e) => a + (e.usage?.cacheRead ?? 0), 0);
-  const normal = today.filter((e) => !e.expensive).length;
-  const rings: [number | null, string, string, string][] = [
-    [total ? cached / total : null, '#e6e6e6', 'Reused from cache', 'Share of today’s tokens Claude reused from memory (cheaper).'],
-    [today.length ? normal / today.length : null, '#5a8fd0', 'Normal-cost requests', 'Requests today that stayed under 3× your baseline.'],
-  ];
-  const NS = 'http://www.w3.org/2000/svg';
-  $('usage-rings').replaceChildren(
-    ...rings.map(([frac, color, title, sub]) => {
-      const svg = document.createElementNS(NS, 'svg');
-      svg.setAttribute('viewBox', '0 0 92 92');
-      const r = 38;
-      const c = 2 * Math.PI * r;
-      const track = document.createElementNS(NS, 'circle');
-      track.setAttribute('class', 'track');
-      const val = document.createElementNS(NS, 'circle');
-      val.setAttribute('class', 'value');
-      for (const n of [track, val]) {
-        n.setAttribute('cx', '46');
-        n.setAttribute('cy', '46');
-        n.setAttribute('r', String(r));
+  const out: HTMLElement[] = [];
+  for (const [key, items] of groups) {
+    const dayBox = el('input', { type: 'checkbox', className: 'activity-check', title: 'Select this whole day' });
+    dayBox.checked = items.every((e) => activitySelected.has(e.id));
+    dayBox.addEventListener('change', () => {
+      for (const e of items) {
+        if (dayBox.checked) activitySelected.add(e.id);
+        else activitySelected.delete(e.id);
       }
-      val.setAttribute('stroke', color);
-      val.setAttribute('style', `color:${color}`);
-      val.setAttribute('stroke-dasharray', `${c * (frac ?? 0)} ${c}`);
-      val.setAttribute('transform', 'rotate(-90 46 46)');
-      const label = document.createElementNS(NS, 'text');
-      label.setAttribute('class', 'pct');
-      label.setAttribute('x', '46');
-      label.setAttribute('y', '46');
-      label.textContent = frac === null ? '–' : `${Math.round(frac * 100)}%`;
-      svg.append(track, val, label);
-      return el('div', { className: 'card ring-card' }, svg, el('div', {}, el('b', {}, title), el('span', {}, sub)));
-    }),
-  );
+      void renderActivity();
+    });
+    const rows = items.map((e) => {
+      const box = el('input', { type: 'checkbox', className: 'activity-check', title: 'Select' });
+      box.checked = activitySelected.has(e.id);
+      const p = whoDid(e.role);
+      const dot = el('i', { className: 'activity-dot' });
+      dot.style.background = p.color;
+      const what = el('span', { className: 'activity-what' }, el('b', {}, abilityName(e)), el('span', { className: 'muted' }, ` · ${appNames[e.appId] ?? e.appId}`));
+      if (e.detail && e.outcome !== 'done') what.append(el('span', { className: 'activity-detail muted small' }, e.detail));
+      const row = el(
+        'label',
+        { className: `activity-row${box.checked ? ' selected' : ''}` },
+        box,
+        el('span', { className: 'activity-time' }, new Date(e.ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })),
+        el('span', { className: 'activity-who' }, dot, p.name),
+        what,
+        el('span', { className: `activity-outcome ${e.outcome}` }, OUTCOME[e.outcome] ?? e.outcome),
+      );
+      box.addEventListener('change', () => {
+        if (box.checked) activitySelected.add(e.id);
+        else activitySelected.delete(e.id);
+        row.classList.toggle('selected', box.checked);
+        dayBox.checked = items.every((x) => activitySelected.has(x.id));
+        syncActivityBar();
+      });
+      return row;
+    });
+    const head = el('header', { className: 'activity-day-head' }, dayBox, el('h3', {}, dayLabel(new Date(key))), el('span', { className: 'pill' }, String(items.length)));
+    out.push(el('section', { className: 'activity-day card' }, head, ...rows));
+  }
+  root.replaceChildren(...out);
+  syncActivityBar();
 }
 
-function niceStep(raw: number): number {
-  const p = 10 ** Math.floor(Math.log10(Math.max(raw, 1)));
-  const n = raw / p;
-  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p;
+/** Two clicks for anything permanent: the first asks, the second does it (resets after 4 s). */
+function confirmTwice(btn: HTMLButtonElement, label: string, ask: () => string, run: () => Promise<void>) {
+  btn.addEventListener('click', async () => {
+    if (!btn.dataset.sure) {
+      btn.dataset.sure = '1';
+      btn.textContent = ask();
+      btn.classList.add('danger');
+      setTimeout(() => {
+        delete btn.dataset.sure;
+        btn.textContent = label;
+        btn.classList.remove('danger');
+      }, 4000);
+      return;
+    }
+    delete btn.dataset.sure;
+    btn.textContent = label;
+    btn.classList.remove('danger');
+    await run();
+  });
 }
 
-/* ---------- activity ---------- */
-async function renderActivity() {
-  const list = await j.activityList();
-  $('activity-table').replaceChildren(
-    el('tr', {}, el('th', {}, 'Time'), el('th', {}, 'App'), el('th', {}, 'Ability'), el('th', {}, 'Outcome'), el('th', {}, 'Detail')),
-    ...[...list].reverse().map((e) =>
-      el('tr', {}, el('td', {}, new Date(e.ts).toLocaleString()), el('td', {}, e.appId), el('td', {}, e.ability), el('td', {}, e.outcome), el('td', {}, e.detail)),
-    ),
-  );
-}
+$('activity-all').addEventListener('change', (ev) => {
+  const on = (ev.target as HTMLInputElement).checked;
+  activitySelected.clear();
+  if (on) for (const e of activityItems) activitySelected.add(e.id);
+  void renderActivity();
+});
+confirmTwice($<HTMLButtonElement>('activity-delete'), 'Delete selected', () => `Delete ${activitySelected.size} for good?`, async () => {
+  await j.activityRemove([...activitySelected]);
+  activitySelected.clear();
+  void renderActivity();
+});
+confirmTwice($<HTMLButtonElement>('activity-clear'), 'Delete all', () => 'Delete the whole history?', async () => {
+  await j.activityClear();
+  activitySelected.clear();
+  void renderActivity();
+});
 
 /* ---------- settings ---------- */
 /* ---------- natural voice settings ---------- */
@@ -1352,26 +1611,6 @@ $('explain-level').addEventListener('change', async (e) => {
 });
 j.onSettings((s) => renderSettings(s));
 
-/* ---------- whiteboard ---------- */
-const board = initWhiteboard($<HTMLCanvasElement>('board'), () => {
-  board.clear();
-  j.wbCleared();
-});
-j.onWhiteboardClear(() => board.clear());
-j.onWbDraw((elements: Element[]) => {
-  show('whiteboard');
-  board.draw(elements);
-});
-j.onWbSnapshot((id: string) => j.wbSnapshotReply(id, board.snapshot()));
-for (const format of ['png', 'pdf'] as const) {
-  $(`wb-${format}`).addEventListener('click', async () => {
-    try {
-      await j.wbExport(format, board.exportData(format));
-    } catch (err) {
-      alertInline($('board'), String(err));
-    }
-  });
-}
 function alertInline(after: HTMLElement, text: string) {
   after.after(el('div', { className: 'error' }, text));
 }
@@ -1451,40 +1690,51 @@ areaImg.addEventListener('pointerup', () => {
 $('area-ok').addEventListener('click', () => closeArea(true));
 $('area-cancel').addEventListener('click', () => closeArea(false));
 
-/* ---------- setup ---------- */
-async function runSetup() {
-  const s = await j.setupCheck();
-  if (s.envNotice) showNotice(s.envNotice);
-  const overlay = $('setup');
-  const testBtn = $('setup-test');
-  if (s.step === 'ready' && s.baseline) {
-    overlay.classList.add('hidden');
-    return;
-  }
-  overlay.classList.remove('hidden');
-  if (s.step === 'install' || s.step === 'login') {
-    $('setup-text').textContent = s.instructions;
-    testBtn.classList.add('hidden');
-  } else {
-    $('setup-text').textContent = 'Claude Code is installed and logged in.\nRun one small test request to record your baseline token use.';
-    testBtn.classList.remove('hidden');
-  }
+/* ---------- first-run welcome (replaces the old setup dialog) ---------- */
+let onboarding: Onboarding | null = null;
+function welcome(from?: 'title' | 'claude' | 'meet', only = false) {
+  onboarding = new Onboarding(() => {
+    onboarding = null;
+    void renderTeam();
+    void renderChats();
+    $<HTMLInputElement>('input').focus();
+  });
+  void onboarding.start(from, only);
 }
-$('setup-retry').addEventListener('click', runSetup);
-$('setup-test').addEventListener('click', async () => {
-  const btn = $<HTMLButtonElement>('setup-test');
-  btn.disabled = true;
-  $('setup-text').textContent = 'Running test request…';
-  const r = await j.setupBaseline();
-  btn.disabled = false;
-  if (r.ok) {
-    $('setup').classList.add('hidden');
-    addMsg('jarvis', r.reply, `setup test · baseline ${r.tokens.toLocaleString()} tokens`);
-  } else {
-    $('setup-text').textContent = `The test request failed:\n${r.reply}`;
-  }
-});
+/** Settings → You: the name and how it should sound. */
+async function renderYou() {
+  const { name } = await j.nameGet();
+  $<HTMLInputElement>('you-name').value = name;
+  $('you-say').replaceChildren(name ? sayMyName(name, { compact: true }) : el('p', { className: 'help' }, 'Add your name to choose how your team says it.'));
+}
+async function checkWelcome() {
+  const st = await j.onboardState();
+  if (!st.onboarded) welcome('title');
+  else if (st.claude !== 'ready') welcome('claude', true); // Claude Code was removed or signed out
+}
+if (MODE === 'main') {
+  void renderYou();
+  $('you-save').addEventListener('click', async () => {
+    try {
+      await j.onboardSetName($<HTMLInputElement>('you-name').value);
+      void renderYou();
+    } catch (err) {
+      $('you-say').replaceChildren(el('p', { className: 'error' }, String(err).replace(/^Error.*?: /, '')));
+    }
+  });
+  $('meet-again').addEventListener('click', () => welcome('meet', true));
+  $('setup-again').addEventListener('click', () => welcome('title'));
+  const un = $<HTMLButtonElement>('uninstall');
+  confirmTwice(un, 'Uninstall Jarvis', () => 'Remove Jarvis and all its data?', async () => {
+    try {
+      $('uninstall-msg').textContent = 'Opening the uninstaller…';
+      await j.appUninstall();
+    } catch (err) {
+      $('uninstall-msg').textContent = String(err).replace(/^Error.*?: /, '');
+    }
+  });
+}
 
 void renderSettings();
-if (MODE === 'main') void runSetup();
+if (MODE === 'main') void checkWelcome();
 void refreshChips();

@@ -14,16 +14,19 @@ import { GoogleCalendarExecutor } from '../tools/calendar/google.js';
 import { OUTLOOK_CAL_APP } from '../tools/calendar/outlook-definition.js';
 import { OutlookCalendarExecutor } from '../tools/calendar/outlook.js';
 import { SCREEN_APP } from '../tools/screen/definition.js';
-import { WHITEBOARD_APP } from '../tools/whiteboard/definition.js';
 import { RECORDER_APP } from '../tools/recorder/definition.js';
 import { LESSON_APP } from '../tools/lesson/definition.js';
 import { DOCUMENTS_APP } from '../tools/documents/definition.js';
 import { CODING_APP } from '../tools/coding/definition.js';
 import { TEAM_APP } from '../tools/team/definition.js';
 import { BOARD_APP, REMINDERS_APP } from '../tools/planner/definition.js';
+import { FILES_APP } from '../tools/files/definition.js';
+import { SKILLS_APP } from '../tools/skills/definition.js';
+import { WEB_APP } from '../tools/web/definition.js';
 
 /** Built-in apps shown in the Tool Hub. They stay off until their account is connected. */
-export const BUILTIN_APPS: AppDef[] = [GMAIL_APP, GCAL_APP, OUTLOOK_APP, OUTLOOK_CAL_APP, LESSON_APP, DOCUMENTS_APP, CODING_APP, TEAM_APP, REMINDERS_APP, BOARD_APP, SCREEN_APP, WHITEBOARD_APP, RECORDER_APP];
+export const BUILTIN_APPS: AppDef[] = [GMAIL_APP, GCAL_APP, OUTLOOK_APP, OUTLOOK_CAL_APP, LESSON_APP, DOCUMENTS_APP, CODING_APP, TEAM_APP, FILES_APP, SKILLS_APP, WEB_APP, REMINDERS_APP, BOARD_APP, SCREEN_APP, RECORDER_APP];
+const BUILTIN_IDS = new Set(BUILTIN_APPS.map((a) => a.id));
 
 export class AppCatalog {
   private proxies = new Map<string, McpProxyExecutor>();
@@ -32,12 +35,13 @@ export class AppCatalog {
     private readonly settings: SettingsStore,
     private readonly secrets: SecretStore,
     readonly accounts: AccountManager,
-    /** Executors for local built-in tools (screen, whiteboard) that need Electron. */
+    /** Executors for local built-in tools (screen, team folders, web…) that need Electron or app state. */
     private readonly local: Record<string, AppExecutor> = {},
   ) {}
 
   all(): AppDef[] {
-    return [...BUILTIN_APPS, ...this.settings.snapshot().customApps];
+    // an app the user added earlier under a name that is now built in (e.g. "web") gives way to the built-in one
+    return [...BUILTIN_APPS, ...this.settings.snapshot().customApps.filter((a) => !BUILTIN_IDS.has(a.id))];
   }
 
   find(id: string): AppDef | undefined {

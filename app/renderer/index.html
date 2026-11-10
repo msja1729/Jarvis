@@ -5,6 +5,7 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
     <title>Jarvis</title>
     <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="onboard.css" />
   </head>
   <body>
     <div class="titlebar" aria-hidden="true"></div>
@@ -25,12 +26,6 @@
         <button data-view="hub">
           <svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5" /><rect x="13" y="4" width="7" height="7" rx="1.5" /><rect x="4" y="13" width="7" height="7" rx="1.5" /><path d="M16.5 13v7M13 16.5h7" /></svg><span>Tool Hub</span>
         </button>
-        <button data-view="whiteboard">
-          <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 21l4-4 4 4M7 13l3-3 2 2 4-4" /></svg><span>Whiteboard</span>
-        </button>
-        <button data-view="usage">
-          <svg viewBox="0 0 24 24"><path d="M5 20V11M10 20V5M15 20v-7M20 20V8" /></svg><span>Usage</span>
-        </button>
         <button data-view="activity">
           <svg viewBox="0 0 24 24"><path d="M3 12h4l3-7 4 14 3-7h4" /></svg><span>Activity</span>
         </button>
@@ -48,12 +43,38 @@
           <div class="hero"><h1 id="page-title">Chat</h1><p id="page-sub">Ask anything, by typing or with your voice</p></div>
           <div class="spacer"></div>
           <div class="chip" title="Jarvis status"><span id="status-dot" class="dot ok"></span><span id="status-text">Ready</span></div>
-          <div class="chip" title="Tokens used today"><span class="chip-label">Today</span><b id="chip-tokens">–</b></div>
           <div class="chip" title="Connected apps"><span class="chip-label">Apps</span><b id="chip-apps">–</b></div>
         </header>
 
         <main>
           <section id="view-chat" class="view active">
+            <aside id="chats" class="chats glass" aria-label="Conversations">
+              <div class="chats-head">
+                <button type="button" id="chat-new" class="primary chats-new">
+                  <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>New chat
+                </button>
+                <button type="button" id="chats-select" class="chip" title="Select conversations to delete">Select</button>
+                <button type="button" id="chats-hide" class="chip chats-icon" title="Hide history" aria-label="Hide history">
+                  <svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6" /></svg>
+                </button>
+              </div>
+              <label class="chats-search">
+                <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6" /><path d="M20 20l-4.5-4.5" /></svg>
+                <input id="chats-q" type="search" placeholder="Search conversations" autocomplete="off" />
+              </label>
+              <div id="chats-bar" class="chats-bar hidden">
+                <label class="chats-all"><input type="checkbox" id="chats-all" /> All</label>
+                <span id="chats-count" class="muted small"></span>
+                <span class="spacer"></span>
+                <button type="button" id="chats-delete" class="chip" disabled>Delete</button>
+                <button type="button" id="chats-clear" class="chip">Delete all</button>
+              </div>
+              <div id="chats-list" class="chats-list"></div>
+            </aside>
+            <div class="chat-main">
+            <button type="button" id="chats-show" class="chip chats-show" title="Show your conversations">
+              <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10" /></svg>History
+            </button>
             <div id="notice" class="notice hidden"></div>
             <div id="messages" aria-live="polite">
               <div id="empty" class="empty">
@@ -72,6 +93,13 @@
               <input id="input" autocomplete="off" placeholder="Ask anything… Jarvis passes it to the right expert" />
               <button type="submit" id="send" class="primary">Send</button>
             </form>
+            <div id="old-banner" class="old-banner glass hidden">
+              <span id="old-when" class="muted"></span>
+              <span class="spacer"></span>
+              <button type="button" id="old-continue" class="primary">Continue this conversation</button>
+              <button type="button" id="old-new" class="chip">New chat</button>
+            </div>
+            </div>
           </section>
 
           <section id="view-team" class="view">
@@ -114,78 +142,30 @@
                 <label>…or a command to start it <input name="command" placeholder="npx -y some-mcp-server" /></label>
                 <label>API key, if the app gave you one (kept in your system keychain) <input name="apiKey" type="password" autocomplete="off" /></label>
                 <p class="muted">No key? Leave it empty. If the app needs you to sign in, your browser opens.</p>
+                <div class="add-who"><span class="muted">Who can use it</span><div id="add-members"></div></div>
                 <button type="submit" class="primary">Add app</button>
                 <div id="add-error" class="error"></div>
               </form>
             </details>
           </section>
 
-          <section id="view-whiteboard" class="view">
-            <div class="wb-toolbar glass">
-              <div class="seg" role="group" aria-label="Tool">
-                <button class="tool active" data-tool="pen" title="Pen">
-                  <svg viewBox="0 0 24 24"><path d="M4 20l4-1 11-11-3-3L5 16z" /></svg>Pen
-                </button>
-                <button class="tool" data-tool="eraser" title="Eraser">
-                  <svg viewBox="0 0 24 24"><path d="M7 20h12M5 15l8-8 6 6-6 6H9z" /></svg>Eraser
-                </button>
-              </div>
-              <span class="sep"></span>
-              <div class="swatches" role="group" aria-label="Ink color">
-                <button class="swatch active" data-pen="white" title="White"></button>
-                <button class="swatch" data-pen="cyan" title="Cyan"></button>
-                <button class="swatch" data-pen="magenta" title="Magenta"></button>
-                <button class="swatch" data-pen="green" title="Green"></button>
-                <button class="swatch" data-pen="yellow" title="Yellow"></button>
-              </div>
-              <span class="sep"></span>
-              <div class="seg" role="group" aria-label="Size">
-                <button class="size" data-size="2" title="Fine"><span style="width:4px;height:4px"></span></button>
-                <button class="size active" data-size="4" title="Medium"><span style="width:7px;height:7px"></span></button>
-                <button class="size" data-size="8" title="Bold"><span style="width:11px;height:11px"></span></button>
-              </div>
-              <span class="sep"></span>
-              <button id="wb-undo">Undo</button>
-              <button id="wb-clear">Clear</button>
-              <span class="spacer"></span>
-              <button id="wb-png">Save PNG</button>
-              <button id="wb-pdf">Save PDF</button>
-            </div>
-            <div class="board-wrap">
-              <canvas id="board" aria-label="Glass whiteboard"></canvas>
-            </div>
-            <p class="muted board-hint">Ask “explain … on the whiteboard”, or draw here and ask “what did I draw?”</p>
-          </section>
-
-          <section id="view-usage" class="view">
-            <div id="usage-stats" class="stats"></div>
-            <div id="usage-rings" class="rings"></div>
-            <div class="card chart-card">
-              <div class="card-head">
-                <h3>Tokens per request</h3>
-                <span class="muted" id="chart-sub"></span>
-                <span class="spacer"></span>
-                <span class="key"><span class="key-mark warn">▲</span>above 3× baseline</span>
-              </div>
-              <div id="usage-chart" class="chart"></div>
-              <div id="chart-tip" class="tip hidden" role="tooltip"></div>
-            </div>
-            <h2>Most expensive today</h2>
-            <div class="table-wrap"><table id="usage-top"></table></div>
-            <h2>Recent requests</h2>
-            <div class="table-wrap"><table id="usage-table"></table></div>
-          </section>
-
           <section id="view-activity" class="view">
-            <p class="lead">Every action Jarvis took or was blocked from taking.</p>
-            <div class="table-wrap"><table id="activity-table"></table></div>
+            <div class="activity-bar glass">
+              <label class="activity-all"><input type="checkbox" id="activity-all" /> Select all</label>
+              <span id="activity-count" class="muted"></span>
+              <span class="spacer"></span>
+              <button id="activity-delete" type="button" class="chip" disabled>Delete selected</button>
+              <button id="activity-clear" type="button" class="chip">Delete all</button>
+            </div>
+            <p class="muted small activity-note">Deleting removes entries from this computer for good (they are only kept in Jarvis's activity file).</p>
+            <div id="activity-list"></div>
           </section>
 
           <section id="view-settings" class="view">
             <div class="card settings-card">
               <label>Model
                 <select id="model-override">
-                  <option value="">Automatic (haiku for look-ups, sonnet for drafting)</option>
+                  <option value="">Automatic (haiku for look-ups, sonnet for drafting, Opus 5.5 for the Project Manager)</option>
                   <option value="haiku">Always haiku</option>
                   <option value="sonnet">Always sonnet</option>
                 </select>
@@ -277,6 +257,22 @@
               <p class="help">The written answer stays hidden while Jarvis speaks. Press this shortcut to see it, and again to hide it. Hiding it does not stop the speech. The ✕ on the card stops it.</p>
               <div id="ptt-error" class="error"></div>
             </div>
+            <h2>You</h2>
+            <div class="card settings-card">
+              <label>Your name (your team uses it)
+                <div class="row-buttons"><input id="you-name" maxlength="30" autocomplete="off" placeholder="Your name" /><button id="you-save" type="button">Save</button></div>
+              </label>
+              <div id="you-say"></div>
+            </div>
+            <h2>Welcome &amp; uninstall</h2>
+            <div class="card settings-card">
+              <div class="row-buttons">
+                <button id="meet-again" type="button">Meet the team again</button>
+                <button id="setup-again" type="button">Run the setup again</button>
+              </div>
+              <p class="help">Uninstalling removes Jarvis and everything it kept on this computer: settings, chats, memory, team folders, voices, saved sign-ins and the Claude Code hooks it added. Claude Code itself and your own projects are not touched.</p>
+              <div class="row-buttons"><button id="uninstall" type="button" class="chip danger">Uninstall Jarvis</button><span id="uninstall-msg" class="muted"></span></div>
+            </div>
           </section>
         </main>
       </div>
@@ -294,17 +290,7 @@
       <div id="vc-answer" class="vc-answer"></div>
     </div>
 
-    <div id="setup" class="overlay hidden">
-      <div class="dialog glass">
-        <div class="orb small"><span>AI</span></div>
-        <h1>Set up Jarvis</h1>
-        <pre id="setup-text"></pre>
-        <div class="actions">
-          <button id="setup-retry">Check again</button>
-          <button id="setup-test" class="primary hidden">Run test request</button>
-        </div>
-      </div>
-    </div>
+    <div id="onboard" class="ob hidden" aria-live="polite"></div>
 
     <div id="confirm" class="overlay hidden" role="alertdialog" aria-modal="true">
       <div class="dialog glass">

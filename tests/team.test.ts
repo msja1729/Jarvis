@@ -46,9 +46,9 @@ describe('who answers', () => {
 });
 
 describe('each member\'s expertise', () => {
-  it('every system prompt stays under 500 words and is fixed text', () => {
+  it('Jarvis stays under 500 words, experts under 700 (skills list included), all fixed text', () => {
     for (const r of ROLE_IDS) {
-      expect(wordCount(rolePrompt(r)), r).toBeLessThan(500);
+      expect(wordCount(rolePrompt(r)), r).toBeLessThan(r === 'jarvis' ? 500 : 700);
       expect(rolePrompt(r)).not.toMatch(/\d{4}-\d{2}-\d{2}/);
     }
     expect(rolePrompt('jarvis')).toBe(JARVIS_SYSTEM_PROMPT);

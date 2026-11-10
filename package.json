@@ -58,8 +58,14 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "shortcutName": "Jarvis",
-      "deleteAppDataOnUninstall": false,
-      "artifactName": "Jarvis-Setup-${version}.${ext}"
+      "deleteAppDataOnUninstall": true,
+      "artifactName": "Jarvis-Setup-${version}.${ext}",
+      "include": "build/installer.nsh",
+      "installerSidebar": "build/installerSidebar.bmp",
+      "uninstallerSidebar": "build/uninstallerSidebar.bmp",
+      "uninstallDisplayName": "Jarvis",
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true
     },
     "mac": {
       "target": [
@@ -90,8 +96,10 @@
       }
     },
     "directories": {
-      "output": "release"
-    }
+      "output": "release",
+      "buildResources": "build"
+    },
+    "icon": "build/icon.png"
   },
   "dependencies": {
     "@napi-rs/keyring": "^2.1.2",

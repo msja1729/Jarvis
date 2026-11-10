@@ -34,14 +34,14 @@ describe('C08 local commands use zero claude runs', () => {
   const commands = [
     'stop recording',
     'Start recording',
-    'open whiteboard',
-    'clear the whiteboard',
+    'record this meeting and take notes',
+    'the meeting is over',
     'new conversation',
     'open Tool Hub',
-    'show usage',
     'mute voice',
     'unmute',
-    'Jarvis, open the whiteboard please.',
+    'Jarvis, open the Tool Hub please.',
+    'Ryan, record this meeting and note down the tasks given to me',
   ];
   it.each(commands)('C08 "%s" is handled locally', async (text) => {
     const { brain, calls } = countingBrain();

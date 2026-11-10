@@ -12,6 +12,23 @@ export const RECORDER_APP: AppDef = {
   defaultEnabled: true,
   abilities: [
     {
+      name: 'start_recording',
+      title: 'Start recording',
+      description: 'Start recording the meeting, lecture or appointment the user is in, so you can take notes when it ends.',
+      group: 'act',
+      progress: 'Starting the recording',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      name: 'stop_recording',
+      title: 'Stop recording',
+      description: 'Stop the recording and finish the transcript (then read it to take notes).',
+      group: 'write',
+      defaultSetting: 'allowed',
+      progress: 'Finishing the transcript',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
       name: 'list_transcripts',
       title: 'List transcripts',
       description: 'List recent meeting transcripts with their ids and lengths.',

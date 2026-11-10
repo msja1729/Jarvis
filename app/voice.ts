@@ -231,7 +231,7 @@ export class VoiceController {
       }
       const warn = r.failedSegments ? ` (${r.failedSegments} part(s) could not be transcribed)` : '';
       return {
-        reply: `Recording stopped (${mins} min). The transcript is saved on this computer${warn}:\n${r.transcriptPath}`,
+        reply: `Recording stopped (${mins} min). The transcript (id ${r.id}) is saved on this computer${warn}:\n${r.transcriptPath}`,
         followUp: 'Summarize the meeting I just recorded: key points, decisions, and action items with owners.',
       };
     } finally {

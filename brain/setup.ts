@@ -73,3 +73,31 @@ export async function checkSetup(prefix: string[] = [], command = findClaude()):
   if (!(await isLoggedIn(command, prefix))) return { step: 'login', instructions: LOGIN_INSTRUCTIONS };
   return { step: 'ready', command };
 }
+
+/** Opens a visible terminal running one command, for the user to watch (install or sign in). */
+function openTerminal(command: string): boolean {
+  const { env } = sanitizeEnv(process.env);
+  delete env.ELECTRON_RUN_AS_NODE;
+  if (process.platform === 'win32') {
+    // detached: Windows gives the child its own console window, which stays open (-NoExit)
+    spawn('powershell.exe', ['-NoExit', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command], { detached: true, stdio: 'ignore', env }).unref();
+  } else if (process.platform === 'darwin') {
+    const script = `tell application "Terminal" to do script ${JSON.stringify(command)}\ntell application "Terminal" to activate`;
+    spawn('osascript', ['-e', script], { detached: true, stdio: 'ignore', env }).unref();
+  } else {
+    spawn('x-terminal-emulator', ['-e', `bash -lc ${JSON.stringify(`${command}; exec bash`)}`], { detached: true, stdio: 'ignore', env }).unref();
+  }
+  return true;
+}
+
+/** Runs Anthropic's official Claude Code installer in a terminal the user can see. */
+export function openInstallTerminal(platform = process.platform): boolean {
+  return openTerminal(platform === 'win32' ? 'irm https://claude.ai/install.ps1 | iex' : 'curl -fsSL https://claude.ai/install.sh | bash');
+}
+
+/** Runs `claude auth login` in a terminal: the user signs in in their browser; Jarvis never sees the login. */
+export function openLoginTerminal(platform = process.platform): boolean {
+  const exe = findClaude(platform);
+  if (!exe) throw new Error('Install Claude Code first.');
+  return openTerminal(platform === 'win32' ? `& '${exe.replace(/'/g, "''")}' auth login` : `'${exe.replace(/'/g, "'\\''")}' auth login`);
+}

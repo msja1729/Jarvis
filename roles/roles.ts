@@ -27,7 +27,12 @@ export interface RoleDef {
   weak?: RegExp;
   /** Example questions for the chat's empty state. */
   examples: string[];
+  /** Always use this model for this member (the user's model override in Settings still wins). */
+  model?: 'opus';
 }
+
+/** Every member has these: their own folder, their skills, and the web. */
+export const SHARED_APPS = ['files', 'skills', 'web', 'team'];
 
 export const ROLE_IDS = ['jarvis', 'pa', 'educator', 'pm', 'doctor', 'finance'] as const;
 export type RoleId = (typeof ROLE_IDS)[number];
@@ -51,9 +56,9 @@ export const ROLES: RoleDef[] = [
     person: 'Maya',
     name: 'PA',
     title: 'Personal assistant',
-    blurb: 'Your schedule, meetings, email and daily plan.',
+    blurb: 'Your schedule, email, deadlines, daily plan and every personal task the others don’t cover.',
     color: '#3987e5',
-    apps: ['gmail', 'gcal', 'outlook', 'outlook_cal', 'recorder', 'documents', 'reminders', 'board', 'web', 'team'],
+    apps: ['gmail', 'gcal', 'outlook', 'outlook_cal', 'recorder', 'documents', 'reminders', 'board', ...SHARED_APPS],
     defaultVoice: 'bf_emma',
     names: ['pa', 'assistant', 'secretary'],
     topics: /\b(schedule|calendar|meeting|meetings|appointment|remind|reminder|agenda|plan my (day|week)|my day|email|emails|e-?mail|inbox|mail|reply to|invite|free (time|slot)|busy|tomorrow's|today's)\b/i,
@@ -66,7 +71,7 @@ export const ROLES: RoleDef[] = [
     title: 'Teacher for every subject',
     blurb: 'Explains anything with lessons, diagrams, animations and visual maths.',
     color: '#9085e9',
-    apps: ['lesson', 'documents', 'screen', 'whiteboard', 'web', 'team'],
+    apps: ['lesson', 'documents', 'screen', ...SHARED_APPS],
     defaultVoice: 'bm_fable',
     names: ['educator', 'teacher', 'tutor', 'professor'],
     topics: /\b(teach|lesson|learn|derivative|integral|theorem|equation|formula|physics|chemistry|biology|history|geography|grammar|math|maths|algebra|calculus|geometry|homework|exam|study|concept)\b/i,
@@ -78,13 +83,14 @@ export const ROLES: RoleDef[] = [
     person: 'Ryan',
     name: 'Project Manager',
     title: 'Projects and coding',
-    blurb: 'Runs coding work with Claude Code, tracks progress and deadlines.',
+    blurb: 'Runs coding work with Claude Code on Opus 5.5, takes meeting minutes, tracks progress and deadlines.',
     color: '#199e70',
-    apps: ['coding', 'documents', 'gcal', 'outlook_cal', 'screen', 'board', 'reminders', 'team', 'custom'],
+    apps: ['coding', 'documents', 'gcal', 'outlook_cal', 'screen', 'board', 'reminders', 'recorder', 'custom', ...SHARED_APPS],
     defaultVoice: 'am_michael',
     names: ['pm', 'project manager', 'manager', 'lead'],
     topics: /\b(project|projects|code|coding|codebase|repo|repository|bug|feature|build|deploy|deadline|milestone|sprint|task list|refactor|pull request|github|claude code)\b/i,
-    examples: ['Add a login page to my project', "How's the coding going?"],
+    examples: ['Add a login page to my project', 'Record this meeting and take notes'],
+    model: 'opus',
   },
   {
     id: 'doctor',
@@ -93,7 +99,7 @@ export const ROLES: RoleDef[] = [
     title: 'Health and nutrition',
     blurb: 'Health questions, food, sleep and exercise; explains your reports. Not a replacement for a real doctor.',
     color: '#d55181',
-    apps: ['documents', 'lesson', 'screen', 'web', 'team'],
+    apps: ['documents', 'lesson', 'screen', ...SHARED_APPS],
     defaultVoice: 'af_heart',
     names: ['doctor', 'doc', 'physician'],
     topics: /\b(health|healthy|doctor|symptom|symptoms|pain|headache|fever|cold|cough|sick|ill|medicine|medication|diet|eat|eating|food|meal|nutrition|calorie|calories|protein|vitamin|sleep|exercise|workout|weight|blood|report|cholesterol|sugar|bp|blood pressure)\b/i,
@@ -106,7 +112,7 @@ export const ROLES: RoleDef[] = [
     title: 'Money and business',
     blurb: 'Budgets, spending, investing basics and business analysis. Information, not regulated advice.',
     color: '#c98500',
-    apps: ['documents', 'lesson', 'screen', 'web', 'team'],
+    apps: ['documents', 'lesson', 'screen', ...SHARED_APPS],
     defaultVoice: 'am_fenrir',
     names: ['finance', 'accountant', 'cfo', 'banker', 'business'],
     topics: /\b(money|budget|budgets|spend|spending|expense|expenses|save|saving|savings|invest|investing|investment|stock|stocks|shares|mutual fund|sip|loan|emi|interest|tax|taxes|salary|income|profit|revenue|pricing|business plan|startup|invoice|finance|financial)\b/i,

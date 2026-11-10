@@ -1,7 +1,7 @@
 /** Lets Claude read finished meeting transcripts, in parts of at most 3,500 chars (T5, T8). */
 import fs from 'node:fs';
 import path from 'node:path';
-import type { AppExecutor, RawResult } from '../../gateway/types.js';
+import type { AppExecutor, CallContext, RawResult } from '../../gateway/types.js';
 
 export const PART_CHARS = 3500;
 const ID = /^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$/;
@@ -21,8 +21,17 @@ export function splitParts(text: string, size = PART_CHARS): string[] {
   return parts;
 }
 
+/** Starting and stopping the microphone recording (lives in the app; absent in tests). */
+export interface RecordingControl {
+  start(role: string): Promise<string>;
+  stop(): Promise<string>;
+}
+
 export class TranscriptExecutor implements AppExecutor {
-  constructor(private readonly dir: string) {}
+  constructor(
+    private readonly dir: string,
+    private readonly control?: RecordingControl,
+  ) {}
 
   private ids(): string[] {
     if (!fs.existsSync(this.dir)) return [];
@@ -34,7 +43,11 @@ export class TranscriptExecutor implements AppExecutor {
       .reverse();
   }
 
-  async call(ability: string, input: Record<string, unknown>): Promise<RawResult> {
+  async call(ability: string, input: Record<string, unknown>, ctx?: CallContext): Promise<RawResult> {
+    if (ability === 'start_recording' || ability === 'stop_recording') {
+      if (!this.control) throw new Error('Recording is not available here.');
+      return { text: ability === 'start_recording' ? await this.control.start(ctx?.role || 'jarvis') : await this.control.stop() };
+    }
     if (ability === 'list_transcripts') {
       const ids = this.ids().slice(0, 10);
       if (!ids.length) return { text: 'No meeting transcripts yet. The user can say "record this meeting".' };

@@ -40,13 +40,57 @@ interface Live {
 }
 let live: Live | null = null;
 
+/** Everything spoken goes through this, so animations can follow the voice (speechLevel). */
+let analyser: AnalyserNode | null = null;
+let levelBuf: Float32Array<ArrayBuffer> | null = null;
+
+function output(): AudioNode {
+  ctx ??= new AudioContext();
+  if (!analyser) {
+    analyser = ctx.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.6;
+    analyser.connect(ctx.destination);
+    levelBuf = new Float32Array(analyser.fftSize);
+  }
+  return analyser;
+}
+
+/** How loud the natural voice is right now, 0..1 (0 when silent or using the OS voice). */
+export function speechLevel(): number {
+  if (!analyser || !levelBuf || sources.length === 0) return 0;
+  analyser.getFloatTimeDomainData(levelBuf);
+  let sum = 0;
+  for (let i = 0; i < levelBuf.length; i++) sum += levelBuf[i] * levelBuf[i];
+  return Math.min(1, Math.sqrt(sum / levelBuf.length) * 4);
+}
+
+/** Speak and wait until it has been said (or stopped, or failed). */
+export function speakAndWait(text: string, opts: { voice?: string } = {}, maxMs = 60_000): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, maxMs);
+    void speak(
+      text,
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      opts,
+    ).catch(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+
 function play(c: { rate: number; audio: Float32Array }) {
+  const out = output();
   ctx ??= new AudioContext();
   const buffer = ctx.createBuffer(1, c.audio.length, c.rate);
   buffer.copyToChannel(new Float32Array(c.audio), 0);
   const src = ctx.createBufferSource();
   src.buffer = buffer;
-  src.connect(ctx.destination);
+  src.connect(out);
   const at = Math.max(ctx.currentTime + 0.03, nextTime);
   src.start(at);
   nextTime = at + buffer.duration;

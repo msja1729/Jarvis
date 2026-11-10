@@ -3,7 +3,7 @@
  * This is the only place CLI flags are built.
  */
 import { JARVIS_SYSTEM_PROMPT } from './system-prompt.js';
-import type { ModelChoice } from './brain.js';
+import { CLI_MODEL, ModelChoice } from './brain.js';
 
 export const DEFAULT_MAX_TURNS = 8;
 export const GATEWAY_SERVER_NAME = 'jarvis';
@@ -42,7 +42,7 @@ export function buildArgs(r: RunArgs): string[] {
     'stream-json',
     '--verbose',
     '--model',
-    r.model,
+    CLI_MODEL[r.model] ?? r.model,
     '--max-turns',
     String(r.maxTurns ?? DEFAULT_MAX_TURNS),
     '--tools',
