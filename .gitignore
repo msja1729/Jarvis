@@ -3,3 +3,7 @@ dist/
 release/
 *.log
 tests/.capture/
+
+# design references (kept locally, not published)
+UI design
+UI design 2
