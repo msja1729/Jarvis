@@ -180,3 +180,15 @@ describe('crisp graphics', () => {
     expect(css).not.toMatch(/\.ob-member\.live[^}]*scale/);
   });
 });
+
+describe('title card', () => {
+  it('hovering the first button never cancels its fade-in (it would vanish)', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer', 'onboard.css'), 'utf8');
+    expect(css).toMatch(/\.ob-title \.ob-cta:hover:not\(:disabled\)[^{]*\{ animation: ob-rise/);
+  });
+
+  it('the logo ring ends as one continuous circle, not separate dots', () => {
+    const ts = fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer', 'onboard.ts'), 'utf8');
+    expect(ts).toMatch(/g\.arc\(cx, cx, R, 0, Math\.PI \* 2\);\s*g\.stroke\(\)/);
+  });
+});

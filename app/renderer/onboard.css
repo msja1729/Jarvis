@@ -69,6 +69,8 @@ body.onboarding #app, body.onboarding .nebula { visibility: hidden; }
 @keyframes ob-letter { to { opacity: 1; filter: none; transform: none; } }
 .ob-tag { margin: 0; color: #a7adb8; font-size: 15px; letter-spacing: .04em; opacity: 0; animation: ob-rise .9s ease 2.9s forwards; }
 .ob-title .ob-cta { margin-top: 22px; opacity: 0; animation: ob-rise .8s ease 3.4s forwards; }
+/* hovering must not cancel the fade-in (it would drop the button back to invisible) */
+.ob-title .ob-cta:hover:not(:disabled), .ob-title .ob-cta:active:not(:disabled) { animation: ob-rise .8s ease 3.4s forwards; }
 @keyframes ob-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 
 /* ---------- 2. name ---------- */

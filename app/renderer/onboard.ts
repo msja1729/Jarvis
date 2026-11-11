@@ -194,18 +194,32 @@ function titleLogo(canvas: HTMLCanvasElement): () => void {
     const cx = size / 2;
     const R = size * 0.34;
     g.clearRect(0, 0, size, size);
-    // particles fly in and settle on a ring with a gap (the Jarvis mark)
-    for (const p of pts) {
-      const k = ease((t - p.d * 0.8) / 1.6);
-      const gap = Math.abs(((p.a + 0.9) % (Math.PI * 2)) - Math.PI) < 0.42; // opening at the right
-      const tx = cx + Math.cos(p.a + t * 0.25) * R * (1 + p.j);
-      const ty = cx + Math.sin(p.a + t * 0.25) * R * (1 + p.j);
-      const x = p.sx * size + (tx - p.sx * size) * k;
-      const y = p.sy * size + (ty - p.sy * size) * k;
-      g.fillStyle = `rgba(255,255,255,${(gap && k > 0.95 ? 0.15 : 0.85) * (0.3 + 0.7 * k)})`;
+    // particles fly in and gather on the ring, then melt into one smooth, continuous circle
+    const solid = ease((t - 1.35) / 0.7);
+    if (solid < 1) {
+      for (const p of pts) {
+        const k = ease((t - p.d * 0.8) / 1.6);
+        const wobble = p.j * (1 - k); // they line up exactly as they arrive
+        const tx = cx + Math.cos(p.a + t * 0.25) * R * (1 + wobble);
+        const ty = cx + Math.sin(p.a + t * 0.25) * R * (1 + wobble);
+        const x = p.sx * size + (tx - p.sx * size) * k;
+        const y = p.sy * size + (ty - p.sy * size) * k;
+        g.fillStyle = `rgba(255,255,255,${0.85 * (0.3 + 0.7 * k) * (1 - solid)})`;
+        g.beginPath();
+        g.arc(x, y, (1.1 + k * 0.6) * dpr, 0, 6.29);
+        g.fill();
+      }
+    }
+    if (solid > 0) {
+      g.save();
+      g.lineWidth = 2 * dpr;
+      g.shadowColor = `rgba(200,215,255,${0.75 * solid})`;
+      g.shadowBlur = 14 * dpr;
+      g.strokeStyle = `rgba(255,255,255,${0.92 * solid})`;
       g.beginPath();
-      g.arc(x, y, (1.1 + k * 0.6) * dpr, 0, 6.29);
-      g.fill();
+      g.arc(cx, cx, R, 0, Math.PI * 2);
+      g.stroke();
+      g.restore();
     }
     // the core blooms once the ring has formed
     const bloom = ease((t - 1.7) / 1.2);
