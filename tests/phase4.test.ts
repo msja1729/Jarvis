@@ -18,6 +18,13 @@ import { makeCore, ROOT, tmpDir } from './helpers.js';
 
 const SECOND = 16000 * 2; // bytes of 16 kHz mono 16-bit audio
 const silence = (sec: number) => new Uint8Array(Math.round(sec * SECOND));
+/** Speech-level sound (silent parts are no longer sent to Whisper). */
+const sound = (sec: number) => {
+  const b = new Uint8Array(Math.round(sec * SECOND));
+  const v = new DataView(b.buffer);
+  for (let i = 0; i + 1 < b.length; i += 2) v.setInt16(i, Math.round(2000 * Math.sin(i / 9)), true);
+  return b;
+};
 
 describe('PCM and WAV helpers', () => {
   it('converts floats to 16-bit PCM with clipping', () => {
@@ -58,7 +65,7 @@ describe('C22 meeting recorder', () => {
     const id = rec.start();
     expect(Date.now() - t0).toBeLessThan(3000);
     expect(rec.recording).toBe(true);
-    for (let i = 0; i < 75; i++) rec.push(silence(1)); // 75 seconds in 1-second chunks
+    for (let i = 0; i < 75; i++) rec.push(sound(1)); // 75 seconds in 1-second chunks
     await new Promise((r) => setTimeout(r, 20));
     expect(seen.length).toBe(2); // two full 30 s parts transcribed while the meeting goes on
     const r = await rec.stop();
@@ -80,7 +87,7 @@ describe('C22 meeting recorder', () => {
       throw new Error('engine missing');
     });
     const id = rec.start();
-    rec.push(silence(30));
+    rec.push(sound(30));
     const r = await rec.stop();
     expect(r.failedSegments).toBe(1);
     expect(fs.readFileSync(r.transcriptPath, 'utf8')).toContain('could not be transcribed');

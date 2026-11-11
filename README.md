@@ -7,7 +7,7 @@
 Talk to a personal assistant, a project manager, a doctor and a finance expert, by typing or by voice.
 They work in the apps you allow, remember what matters to you, and run on **your own Claude Pro or Max plan**.
 
-[**Download for Windows**](https://github.com/msja1729/Jarvis/releases/latest/download/Jarvis-Setup-0.3.1.exe) · [All releases](https://github.com/msja1729/Jarvis/releases) · [What Jarvis can do (PDF)](docs/Jarvis-Capabilities.pdf)
+[**Download for Windows**](https://github.com/msja1729/Jarvis/releases/latest/download/Jarvis-Setup-0.3.2.exe) · [All releases](https://github.com/msja1729/Jarvis/releases) · [What Jarvis can do (PDF)](docs/Jarvis-Capabilities.pdf)
 
 <img src="docs/images/chat.png" alt="Chatting with Sara, the doctor" width="860" />
 
@@ -53,7 +53,7 @@ Start a message with a name, like *"Sara, …"*, and you stay with her until you
 
 ## Install (Windows 10/11)
 
-1. **[Download Jarvis-Setup-0.3.1.exe](https://github.com/msja1729/Jarvis/releases/latest/download/Jarvis-Setup-0.3.1.exe)** and run it.
+1. **[Download Jarvis-Setup-0.3.2.exe](https://github.com/msja1729/Jarvis/releases/latest/download/Jarvis-Setup-0.3.2.exe)** and run it.
    Windows may say *"Windows protected your PC"* because the installer is not code-signed yet: click **More info → Run anyway**.
 2. Jarvis opens and sets itself up with you: your name (and how to say it), connecting your Claude (it installs Claude Code and signs you in if needed), tools and microphone, the natural voices, and then the team introduces itself.
 

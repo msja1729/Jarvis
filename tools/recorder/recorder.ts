@@ -7,6 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { bytesToSeconds, SAMPLE_RATE, wavHeader } from '../../speech/pcm.js';
+import { dropFiller, pcmLevel, SILENCE_LEVEL } from '../../speech/hallucination.js';
 
 export const SEGMENT_SECONDS = 30;
 const SEGMENT_BYTES = SEGMENT_SECONDS * SAMPLE_RATE * 2;
@@ -122,9 +123,10 @@ export class MeetingRecorder {
     };
     fs.writeFileSync(seg.wav, Buffer.concat([Buffer.from(wavHeader(data.length)), data]));
     this.segments.push(seg);
+    const silent = pcmLevel(data) < SILENCE_LEVEL; // nobody spoke: Whisper would only invent filler
     this.queue = this.queue.then(async () => {
       try {
-        seg.text = await this.transcribe(seg.wav);
+        seg.text = silent ? '' : dropFiller(await this.transcribe(seg.wav));
       } catch (err) {
         seg.error = err instanceof Error ? err.message : String(err);
       } finally {

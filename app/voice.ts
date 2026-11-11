@@ -14,6 +14,7 @@ import { WhisperEngine } from '../speech/whisper.js';
 import { MeetingRecorder } from '../tools/recorder/recorder.js';
 import { ScreenIndex, ScreenStore } from '../tools/recorder/screen-store.js';
 import { glassOptions } from './glass.js';
+import { allowCapture } from './permissions.js';
 
 export const DEFAULT_PTT_HOTKEY = process.platform === 'darwin' ? 'Alt+Space' : 'Control+Alt+Space';
 
@@ -103,11 +104,9 @@ export class VoiceController {
 
   setupSession(): void {
     const ses = session.defaultSession;
-    // Only audio capture is ever allowed, and only for Jarvis's own pages.
+    // Jarvis's own pages only: the microphone, and for meetings the screen + computer sound (see allowCapture).
     ses.setPermissionRequestHandler((wc, permission, callback, details) => {
-      const own = wc.getURL().startsWith('file://');
-      const audioOnly = permission === 'media' && ((details as { mediaTypes?: string[] }).mediaTypes ?? []).every((t) => t === 'audio');
-      callback(own && audioOnly);
+      callback(allowCapture(permission, (details as { mediaTypes?: string[] }).mediaTypes, wc.getURL()));
     });
     ses.setPermissionCheckHandler((_wc, permission, origin) => permission === 'media' && origin.startsWith('file://'));
     // Meetings: the screen the mouse is on, with the computer's own sound (Windows loopback). No picker is shown.

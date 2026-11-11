@@ -84,13 +84,27 @@ describe('the recording on disk', () => {
     const rec = new MeetingRecorder({ work: path.join(root, 'work'), transcripts: path.join(root, 'tr') }, async () => 'Here is the plan for next quarter.');
     rec.start();
     rec.note('screen picture 1');
-    rec.push(new Uint8Array(16000 * 2 * 31)); // 31 s of sound
+    const pcm = new Uint8Array(16000 * 2 * 31); // 31 s of sound
+    for (let i = 0; i < pcm.length; i += 2) new DataView(pcm.buffer).setInt16(i, Math.round(2000 * Math.sin(i / 9)), true);
+    rec.push(pcm);
     rec.note('screen picture 2');
     const r = await rec.stop('C:/Videos/Jarvis Meetings/x/Meeting.mp4');
     const file = fs.readFileSync(r.transcriptPath, 'utf8');
     expect(file).toContain('Video with sound: C:/Videos/Jarvis Meetings/x/Meeting.mp4');
     expect(file.indexOf('[00:00] (screen picture 1)')).toBeLessThan(file.indexOf('[00:31] (screen picture 2)'));
     expect(file).toContain('Here is the plan for next quarter.');
+  });
+
+  it('a silent recording gives an empty transcript, not "Thank you." filler', async () => {
+    const root = tmp();
+    let asked = 0;
+    const rec = new MeetingRecorder({ work: path.join(root, 'work'), transcripts: path.join(root, 'tr') }, async () => (asked++, 'Thank you.'));
+    rec.start();
+    rec.push(new Uint8Array(16000 * 2 * 31)); // 31 s of silence
+    const r = await rec.stop();
+    expect(asked).toBe(0); // silence is never sent to Whisper
+    expect(r.text).toBe('');
+    expect(fs.readFileSync(r.transcriptPath, 'utf8')).toContain('(No speech was detected.)');
   });
 
   it('a recording that never started leaves nothing behind', () => {
