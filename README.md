@@ -57,6 +57,8 @@ Start a message with a name, like *"Sara, …"*, and you stay with her until you
    Windows may say *"Windows protected your PC"* because the installer is not code-signed yet: click **More info → Run anyway**.
 2. Jarvis opens and sets itself up with you: your name (and how to say it), connecting your Claude (it installs Claude Code and signs you in if needed), tools and microphone, the natural voices, and then the team introduces itself.
 
+<p align="center"><img src="docs/images/welcome.png" alt="The Jarvis welcome screen" width="640" /></p>
+
 **You need:** a **Claude Pro or Max** plan and about 2.5 GB of disk space after setup (less without an NVIDIA graphics card). Speech recognition is fastest with an NVIDIA graphics card; other computers work too, just more slowly.
 
 To connect email and calendar, follow the one-time guides: [Google](docs/connect-google.md) · [Microsoft](docs/connect-microsoft.md).
