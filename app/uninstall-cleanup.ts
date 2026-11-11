@@ -5,7 +5,7 @@
  * functions: importing it never deletes anything. It removes:
  *  - every Jarvis entry in the system keychain (app keys, Google/Microsoft sign-ins),
  *  - the Claude Code hooks Jarvis added to ~/.claude/settings.json (if the user turned them on),
- *  - Claude Code's saved sessions for Jarvis's own working folder (~/.claude/projects/…-Jarvis-brain-cwd),
+ *  - Claude Code's saved sessions for Jarvis's own working folders (~/.claude/projects/…-Jarvis-brain-cwd and …-Jarvis-Team-*),
  *  - the Jarvis folder: settings, chats, memory, team folders, voices and speech models.
  * It never touches Claude Code itself or the user's own projects.
  */
@@ -73,9 +73,12 @@ export async function uninstallCleanup(o: CleanupOptions): Promise<string[]> {
   try {
     const projects = path.join(claudeDir, 'projects');
     const ours = claudeProjectName(path.join(o.userData, 'brain-cwd')).toLowerCase();
+    // experts work in their own team folders (Team/PA, Team/Doctor…), so their sessions are saved under those
+    const team = `${claudeProjectName(path.join(o.userData, 'Team')).toLowerCase()}-`;
     if (fs.existsSync(projects)) {
       for (const name of fs.readdirSync(projects)) {
-        if (name.toLowerCase() !== ours) continue;
+        const n = name.toLowerCase();
+        if (n !== ours && !n.startsWith(team)) continue;
         fs.rmSync(path.join(projects, name), { recursive: true, force: true });
         done.push(`removed Claude Code sessions ${name}`);
       }

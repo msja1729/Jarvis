@@ -35,13 +35,13 @@ export interface Verdict {
 }
 
 /** Keys, passwords and tokens. */
-const SECRET = /(^|[\\/])(\.env(\.[\w-]+)?|[^\\/]*\.(pem|key|p12|pfx|jks|keystore|ppk|kdbx)|id_(rsa|dsa|ecdsa|ed25519)(\.pub)?|\.?(netrc|npmrc|pypirc)|[^\\/]*credentials[^\\/]*|secrets?\.(json|ya?ml|toml))$/i;
+export const SECRET = /(^|[\\/])(\.env(\.[\w-]+)?|[^\\/]*\.(pem|key|p12|pfx|jks|keystore|ppk|kdbx)|id_(rsa|dsa|ecdsa|ed25519)(\.pub)?|\.?(netrc|npmrc|pypirc)|[^\\/]*credentials[^\\/]*|secrets?\.(json|ya?ml|toml))$/i;
 
 const READ_TOOLS = new Set(['Read', 'Glob', 'Grep', 'LS', 'NotebookRead', 'TodoRead', 'TodoWrite', 'BashOutput', 'TaskOutput', 'ListMcpResourcesTool', 'ReadMcpResourceTool']);
 const EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
 const SHELL_TOOLS = new Set(['Bash', 'PowerShell']);
 
-function inside(root: string, p: string): boolean {
+export function inside(root: string, p: string): boolean {
   const abs = path.resolve(root, p);
   const r = path.resolve(root);
   const norm = (s: string) => (process.platform === 'win32' ? s.toLowerCase() : s);

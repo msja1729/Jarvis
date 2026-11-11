@@ -91,6 +91,8 @@ export interface JarvisSettings {
   pauseMedia?: boolean;
   /** Meeting recordings also record the screen (video + pictures of what was shown). Default on. */
   recordScreen?: boolean;
+  /** Experts also use Claude Code's own tools (files, commands, web) in their folders. Default on. */
+  claudeTools?: boolean;
   /** Keep a meeting's video and pictures after its notes are written. Default off (they are deleted). */
   keepMeetingMedia?: boolean;
   /** First-run welcome finished (setup, tools, voices, meeting the team). */
@@ -143,6 +145,8 @@ export interface ConfirmRequest {
   input: Record<string, unknown>;
   /** Plain-language description of exactly what will happen. */
   summary: string;
+  /** The question at the top of the popup, when the usual "Allow Jarvis to … in …?" does not fit. */
+  title?: string;
 }
 
 export type Confirmer = (req: ConfirmRequest) => Promise<boolean>;

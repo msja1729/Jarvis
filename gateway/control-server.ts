@@ -18,6 +18,8 @@ export interface ControlServer {
   supToken: string;
   /** For the Claude Code hook script (sessions the user starts themselves). Only opens /hook. */
   hookToken: string;
+  /** For the experts' permission prompts (Claude Code's own tools). Only opens /expert/approve. */
+  expertToken: string;
   close(): Promise<void>;
 }
 
@@ -26,6 +28,8 @@ const MAX_BODY = 1_000_000;
 export interface ControlExtras {
   /** Coding supervisor: answers Claude Code's permission prompts (see supervisor/). */
   approve?: (runId: string, req: { tool_name: string; input: Record<string, unknown> }) => Promise<unknown>;
+  /** An expert using Claude Code's own tools asks for permission (Jarvis decides or asks the user). */
+  expertApprove?: (role: string, consult: boolean, req: { tool_name: string; input: Record<string, unknown> }) => Promise<unknown>;
   /** A Claude Code session the user started themselves finished or needs them. */
   hook?: (payload: Record<string, unknown>) => Promise<void> | void;
   /** Team roles: which apps the asking role may use (all when it returns undefined). */
@@ -36,6 +40,8 @@ export async function startControlServer(core: () => GatewayCore, extras: Contro
   const token = crypto.randomBytes(32).toString('hex');
   const supToken = crypto.randomBytes(32).toString('hex');
   const hookToken = crypto.randomBytes(32).toString('hex');
+  const expertToken = crypto.randomBytes(32).toString('hex');
+  const expectedExpert = Buffer.from(`Bearer ${expertToken}`);
   const expectedHook = Buffer.from(`Bearer ${hookToken}`);
   const expected = Buffer.from(`Bearer ${token}`);
   const expectedSup = Buffer.from(`Bearer ${supToken}`);
@@ -46,7 +52,14 @@ export async function startControlServer(core: () => GatewayCore, extras: Contro
     const full = same(auth, expected);
     const supOnly = !full && same(auth, expectedSup);
     const hookOnly = !full && !supOnly && same(auth, expectedHook);
-    if ((!full && !supOnly && !hookOnly) || (supOnly && req.url !== '/sup/approve') || (hookOnly && req.url !== '/hook')) {
+    const expertOnly = !full && !supOnly && !hookOnly && same(auth, expectedExpert);
+    if (
+      (!full && !supOnly && !hookOnly && !expertOnly) ||
+      (supOnly && req.url !== '/sup/approve') ||
+      (hookOnly && req.url !== '/hook') ||
+      (expertOnly && req.url !== '/expert/approve') ||
+      (full && req.url === '/expert/approve') // only the approve shim may answer permission prompts
+    ) {
       res.writeHead(401).end();
       return;
     }
@@ -71,7 +84,10 @@ export async function startControlServer(core: () => GatewayCore, extras: Contro
         } else if (req.url === '/list') out = { tools: core().listTools(allow) };
         else if (req.url === '/call')
           out = await core().callTool(String(payload.name), payload.arguments ?? {}, allow, { role: typeof payload.role === 'string' && payload.role ? payload.role : 'jarvis', consult: payload.consult === true });
-        else if (req.url === '/sup/approve' && extras.approve) {
+        else if (req.url === '/expert/approve' && expertOnly && extras.expertApprove) {
+          const input = payload.input && typeof payload.input === 'object' ? payload.input : {};
+          out = await extras.expertApprove(String(payload.role ?? ''), payload.consult === true, { tool_name: String(payload.tool_name ?? ''), input });
+        } else if (req.url === '/sup/approve' && extras.approve) {
           const input = payload.input && typeof payload.input === 'object' ? payload.input : {};
           out = await extras.approve(String(payload.runId ?? ''), { tool_name: String(payload.tool_name ?? ''), input });
         }
@@ -95,6 +111,7 @@ export async function startControlServer(core: () => GatewayCore, extras: Contro
     token,
     supToken,
     hookToken,
+    expertToken,
     close: () => new Promise((resolve) => server.close(() => resolve())),
   };
 }

@@ -168,6 +168,11 @@ export class SettingsStore {
     this.save();
   }
 
+  setClaudeTools(on: boolean): void {
+    this.data.claudeTools = on;
+    this.save();
+  }
+
   setKeepMeetingMedia(on: boolean): void {
     this.data.keepMeetingMedia = on;
     this.save();

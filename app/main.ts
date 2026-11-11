@@ -43,7 +43,8 @@ import { RoleMemory } from '../roles/memory.js';
 import { timePrefix } from '../brain/system-prompt.js';
 import { modelFor } from '../router/model.js';
 import { FALLBACK_ROLE } from '../router/roles.js';
-import { ensureRoleFolders, ROLE_FOLDER, roleFolder } from '../roles/folders.js';
+import { ensureRoleFolders, ROLE_FOLDER, roleFolder, teamRoot } from '../roles/folders.js';
+import { askTitle, judgeExpert } from '../roles/expert-tools.js';
 import { casebookContext, seedCasebook } from '../roles/casebook.js';
 import { SKILLS } from '../roles/skills/index.js';
 import { noteTaker, notesRequest } from '../roles/notes.js';
@@ -797,6 +798,60 @@ async function ensureBrain(): Promise<void> {
 }
 let brainCommand: string | null = null;
 
+/**
+ * An expert at work: their own team folder is the working directory (files they make land there),
+ * teammates' folders are readable, and Claude Code's own tools are on, with every permission prompt
+ * coming to Jarvis (expertApprove). The front desk, and the setting turned off, get none of this.
+ */
+function expertWorkspace(role?: string, consult?: boolean) {
+  if (!control || !isRole(role) || role === 'jarvis' || store.snapshot().claudeTools === false) return null;
+  const jdir = app.getPath('userData');
+  return {
+    cwd: roleFolder(jdir, role),
+    addDirs: [teamRoot(jdir)],
+    approve: {
+      command: process.execPath,
+      args: [path.join(__dirname, '..', 'gateway', 'shim.mjs')],
+      env: { ELECTRON_RUN_AS_NODE: '1', JARVIS_CONTROL_URL: control.url, JARVIS_CONTROL_TOKEN: control.expertToken, JARVIS_ROLE: role, JARVIS_CONSULT: consult ? '1' : '0', JARVIS_SHIM_MODE: 'expert' },
+    },
+  };
+}
+
+/** Claude Code asks whether an expert may use one of its own tools: allowed, asked (popup) or refused. */
+async function expertApprove(role: string, req: { tool_name: string; input: Record<string, unknown> }) {
+  if (!isRole(role) || role === 'jarvis' || store.snapshot().claudeTools === false) {
+    return { behavior: 'deny', message: 'Claude Code tools are turned off in Settings.' };
+  }
+  const jdir = app.getPath('userData');
+  const v = judgeExpert(req, { own: roleFolder(jdir, role), team: teamRoot(jdir) });
+  const who = fullName(role, people());
+  const log = (outcome: 'done' | 'blocked' | 'declined', detail: string) => activity.add({ role, appId: 'claude', ability: req.tool_name, outcome, detail });
+  if (v.decision === 'deny') {
+    log('blocked', `${v.what}: ${v.why}`);
+    return { behavior: 'deny', message: `Not allowed: ${v.what} (${v.why}).` };
+  }
+  if (v.decision === 'allow') {
+    if (v.group !== 'read') log('done', v.what); // reading is not listed (it would flood the Activity page)
+    return { behavior: 'allow', updatedInput: req.input };
+  }
+  const yes = await confirm({
+    appId: 'claude',
+    appName: 'Claude Code',
+    ability: req.tool_name,
+    abilityTitle: req.tool_name,
+    group: v.group,
+    input: req.input,
+    summary: `${who} wants to ${v.what}.
+
+Jarvis asks you because ${v.why}.`,
+    title: askTitle(who, req.tool_name, v),
+  });
+  log(yes ? 'done' : 'declined', yes ? `${v.what} (you said yes)` : 'user clicked No');
+  return yes
+    ? { behavior: 'allow', updatedInput: req.input }
+    : { behavior: 'deny', message: `The user said no to: ${v.what}. Find another way, or ask them in your reply.` };
+}
+
 function buildBrain(command: string) {
   brainCommand = command;
   coder = new Coder({ command });
@@ -810,7 +865,8 @@ function buildBrain(command: string) {
         // the role decides which apps' tools this run sees (see the control server scope)
         env: { ELECTRON_RUN_AS_NODE: '1', JARVIS_CONTROL_URL: control.url, JARVIS_CONTROL_TOKEN: control.token, JARVIS_ROLE: role ?? '', JARVIS_CONSULT: consult ? '1' : '0' },
       },
-    systemPrompt: (role) => rolePrompt(isRole(role) ? role : 'jarvis', people()),
+    workspace: (role, consult) => expertWorkspace(role, consult),
+    systemPrompt: (role) => rolePrompt(isRole(role) ? role : 'jarvis', people(), store.snapshot().claudeTools !== false),
     progressFor: (tool) => catalog.progressFor(tool),
     onEnvScrubbed: (removed) => {
       envNotice = `${removed.join(', ')} was set on this computer. Jarvis removed it for Claude so requests use your Claude plan, not API billing.`;
@@ -1200,7 +1256,7 @@ function registerIpc() {
     fs.mkdirSync(dir, { recursive: true });
     await shell.openPath(dir);
   });
-  ipcMain.handle('settings:set', (_e, patch: { modelOverride?: 'haiku' | 'sonnet' | null; voiceOutput?: boolean; pauseMedia?: boolean; recordScreen?: boolean; keepMeetingMedia?: boolean; ttsVoice?: string; ttsSpeed?: number; explainLevel?: ExplainLevel }) => {
+  ipcMain.handle('settings:set', (_e, patch: { modelOverride?: 'haiku' | 'sonnet' | null; voiceOutput?: boolean; pauseMedia?: boolean; recordScreen?: boolean; keepMeetingMedia?: boolean; claudeTools?: boolean; ttsVoice?: string; ttsSpeed?: number; explainLevel?: ExplainLevel }) => {
     if (patch.modelOverride !== undefined) store.setModelOverride(patch.modelOverride);
     if (patch.voiceOutput !== undefined) store.setVoiceOutput(patch.voiceOutput);
     if (patch.pauseMedia !== undefined) {
@@ -1208,6 +1264,7 @@ function registerIpc() {
       if (!patch.pauseMedia) void media?.releaseAll();
     }
     if (patch.recordScreen !== undefined) store.setRecordScreen(patch.recordScreen === true);
+    if (patch.claudeTools !== undefined) store.setClaudeTools(patch.claudeTools === true);
     if (patch.keepMeetingMedia !== undefined) store.setKeepMeetingMedia(patch.keepMeetingMedia === true);
     if (patch.explainLevel !== undefined) store.setExplainLevel(patch.explainLevel);
     if (patch.ttsVoice !== undefined || patch.ttsSpeed !== undefined) {
@@ -1471,6 +1528,7 @@ app.whenReady().then(async () => {
   });
   control = await startControlServer(() => core, {
     approve: (runId, req) => supervisor.onPermission(runId, req),
+    expertApprove: (role, _consult, req) => expertApprove(role, req),
     // each team member sees only its own apps; a consulted member cannot consult others (one hop)
     hook: (p) => {
       const folder = typeof p.cwd === 'string' ? path.basename(p.cwd) : 'your project';

@@ -19,6 +19,12 @@ export interface ClaudeCLIBrainOptions {
   cwd: string;
   /** Returns how to start the Gateway shim for this run (fresh settings each run), for a team role. */
   gateway: (role?: string, consult?: boolean) => GatewayLaunch | null;
+  /**
+   * Where a team member works and whether they get Claude Code's own tools: their own folder as the
+   * working directory, teammates' folders readable, every permission prompt to Jarvis. null = the
+   * default (Jarvis's own working folder, no built-in tools).
+   */
+  workspace?: (role?: string, consult?: boolean) => { cwd: string; addDirs: string[]; approve: GatewayLaunch } | null;
   /** The fixed system prompt for a team role. */
   systemPrompt?: (role?: string) => string;
   /** Tool name (without mcp__jarvis__) → progress label. */
@@ -37,6 +43,8 @@ export class ClaudeCLIBrain implements Brain {
   constructor(private readonly opts: ClaudeCLIBrainOptions) {}
 
   async ask(text: string, session_id: string | null, model: ModelChoice, ask: AskOptions = {}): Promise<BrainResult> {
+    const ws = this.opts.workspace?.(ask.role, ask.consult) ?? null;
+    const cwd = ws?.cwd ?? this.opts.cwd;
     const args = [
       ...(this.opts.prefixArgs ?? []),
       ...buildArgs({
@@ -47,6 +55,7 @@ export class ClaudeCLIBrain implements Brain {
         maxTurns: this.opts.maxTurns,
         systemPrompt: this.opts.systemPrompt?.(ask.role),
         partial: Boolean(ask.onText),
+        builtinTools: ws ? { approve: ws.approve, addDirs: ws.addDirs } : undefined,
       }),
     ];
     const { env, removed } = sanitizeEnv(this.opts.baseEnv ?? process.env, { MCP_TOOL_TIMEOUT: '300000' });
@@ -54,10 +63,10 @@ export class ClaudeCLIBrain implements Brain {
       this.warned = true;
       this.opts.onEnvScrubbed?.(removed);
     }
-    fs.mkdirSync(this.opts.cwd, { recursive: true });
+    fs.mkdirSync(cwd, { recursive: true });
 
     const child = spawn(this.opts.command, args, {
-      cwd: this.opts.cwd,
+      cwd,
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,

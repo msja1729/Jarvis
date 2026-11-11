@@ -45,13 +45,14 @@ const VOICE: Record<Exclude<RoleId, 'jarvis'>, string> = {
   finance: 'the finance and business expert',
 };
 
-function teamRules(self: RoleId, people: Record<RoleId, string>): string {
+function teamRules(self: RoleId, people: Record<RoleId, string>, claudeTools = true): string {
   const others = ROLES.filter((r) => r.id !== self && r.id !== 'jarvis')
     .map((r) => `${people[r.id]} (${r.title.toLowerCase()}; ${r.id})`)
     .join(', ');
   return `Team:
 - Teammates: ${others}. If part of a request is their field, ask them with the team tool.
-- Your folder is "${ROLE_FOLDER[self]}" (files tool): keep your work there (notes, plans, minutes, research) in tidy sub-folders, with dates in file names. You can read teammates' folders (owner) to find what they know, e.g. the Project Manager's "Meetings".
+- Your folder is "${ROLE_FOLDER[self]}" (files tool): keep your work there (notes, plans, minutes, research) in tidy sub-folders, dated. Teammates' folders (owner) show what they know, e.g. the Project Manager's "Meetings".
+${claudeTools ? '' : '__NO_TOOLS__'}- You also have Claude Code's tools (Read, Write, Edit, Grep, WebFetch, Bash…), working in your folder: new files land there; teammates' folders are read-only. Prefer Jarvis's tools for email, calendar, reminders, board, lessons, recordings and teammates; Bash (Python) for exact maths or converting files. If refused, say so and adapt.
 - A message may start with [your notes about the user]. Use them quietly; never recite them.`;
 }
 
@@ -64,7 +65,8 @@ const ROLE_CORE = CORE_RULES.split('\n')
  * The system prompt for a role. It only changes when the user renames someone,
  * so prompt caching still reuses it request after request.
  */
-export function rolePrompt(role: RoleId, people: Record<RoleId, string> = peopleNames()): string {
+/** @param claudeTools the expert also has Claude Code's own tools (Settings; on by default). */
+export function rolePrompt(role: RoleId, people: Record<RoleId, string> = peopleNames(), claudeTools = true): string {
   if (role === 'jarvis') return JARVIS_SYSTEM_PROMPT;
   const r = roleById(role);
   return `You are ${people[role]}, ${VOICE[role]} on the user's Jarvis team ("${r.name}"), often speaking aloud.
@@ -77,6 +79,6 @@ ${EXPERT_METHOD}
 
 ${skillIndex(role)}
 
-${teamRules(role, people)}
-`;
+${teamRules(role, people, claudeTools)}
+`.replace(/__NO_TOOLS__[^\n]*\n/, '');
 }

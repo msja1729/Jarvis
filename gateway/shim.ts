@@ -30,13 +30,18 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 // Supervisor mode: this shim is the permission-prompt tool of a coding session
 // (claude --permission-prompt-tool). Every request goes to Jarvis, which decides
 // or asks the user, and replies {behavior: "allow" | "deny", ...}.
-if (process.env.JARVIS_SHIM_MODE === 'supervisor') {
-  const sup = new Server({ name: 'jarvis_supervisor', version: '0.1.0' }, { capabilities: { tools: {} } });
+// Expert mode: the same, for a team member using Claude Code's own tools in their folder.
+const mode = process.env.JARVIS_SHIM_MODE;
+if (mode === 'supervisor' || mode === 'expert') {
+  const expert = mode === 'expert';
+  const sup = new Server({ name: expert ? 'jarvis_approve' : 'jarvis_supervisor', version: '0.1.0' }, { capabilities: { tools: {} } });
   sup.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
       {
         name: 'approve',
-        description: 'Jarvis decides permission prompts for this coding session, asking the user when needed.',
+        description: expert
+          ? 'Used by Claude Code for permission prompts only (Jarvis decides or asks the user). Never call it yourself.'
+          : 'Jarvis decides permission prompts for this coding session, asking the user when needed.',
         inputSchema: { type: 'object', properties: { tool_name: { type: 'string' }, input: { type: 'object' }, tool_use_id: { type: 'string' } }, required: ['tool_name'] },
       },
     ],
@@ -45,7 +50,9 @@ if (process.env.JARVIS_SHIM_MODE === 'supervisor') {
     const args = (req.params.arguments ?? {}) as { tool_name?: string; input?: Record<string, unknown> };
     let reply: unknown;
     try {
-      reply = await post('/sup/approve', { runId: process.env.JARVIS_RUN_ID ?? '', tool_name: args.tool_name, input: args.input ?? {} });
+      reply = expert
+        ? await post('/expert/approve', { role, consult, tool_name: args.tool_name, input: args.input ?? {} })
+        : await post('/sup/approve', { runId: process.env.JARVIS_RUN_ID ?? '', tool_name: args.tool_name, input: args.input ?? {} });
     } catch (err) {
       reply = { behavior: 'deny', message: `Jarvis could not be reached (${String(err)}). Stop and wait for the user.` };
     }

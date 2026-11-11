@@ -7,7 +7,7 @@
 Talk to a personal assistant, a project manager, a doctor and a finance expert, by typing or by voice.
 They work in the apps you allow, remember what matters to you, and run on **your own Claude Pro or Max plan**.
 
-[**Download for Windows**](https://github.com/msja1729/Jarvis/releases/latest/download/Jarvis-Setup-0.3.2.exe) · [All releases](https://github.com/msja1729/Jarvis/releases) · [What Jarvis can do (PDF)](docs/Jarvis-Capabilities.pdf)
+[**Download for Windows**](https://github.com/msja1729/Jarvis/releases/latest/download/Jarvis-Setup-0.4.0.exe) · [All releases](https://github.com/msja1729/Jarvis/releases) · [What Jarvis can do (PDF)](docs/Jarvis-Capabilities.pdf)
 
 <img src="docs/images/chat.png" alt="Chatting with Sara, the doctor" width="860" />
 
@@ -30,6 +30,7 @@ Start a message with a name, like *"Sara, …"*, and you stay with her until you
 
 - **Talk or type.** Press **Ctrl+Alt+Space** in any app, speak, and the answer is read aloud in a small card above the taskbar. Speech recognition and voices run on your computer.
 - **Real expertise.** Each member follows detailed playbooks for their field (Sara's symptom check with red flags, Ryan's meeting minutes and project briefs, Victor's budgets and debt payoff, Maya's inbox triage and daily plan) and keeps a profile of you in their own folder.
+- **Claude Code's own tools too.** Every expert can read and write files, search, read web pages and run commands (for example Python for exact sums or charts), working in their own folder, so what they make is saved there and you can open it from the Team page. Reading the team folders, saving in their own folder and the web are allowed; running a command or touching anything outside the team folders asks you first; nobody writes in a teammate's folder. Turn it off in Settings.
 - **Email and calendar.** Gmail, Google Calendar, Outlook mail and Outlook Calendar. Anything that sends, changes or deletes asks you first.
 - **Web search** for everyone, steered to trusted sources (medical authorities for Sara, official sites for Victor, official docs for Ryan), with sources named.
 - **Lessons.** Ask to learn something and a narrated, step-by-step lesson plays beside your work: diagrams, animated graphs, equations and notes.
@@ -53,7 +54,7 @@ Start a message with a name, like *"Sara, …"*, and you stay with her until you
 
 ## Install (Windows 10/11)
 
-1. **[Download Jarvis-Setup-0.3.2.exe](https://github.com/msja1729/Jarvis/releases/latest/download/Jarvis-Setup-0.3.2.exe)** and run it.
+1. **[Download Jarvis-Setup-0.4.0.exe](https://github.com/msja1729/Jarvis/releases/latest/download/Jarvis-Setup-0.4.0.exe)** and run it.
    Windows may say *"Windows protected your PC"* because the installer is not code-signed yet: click **More info → Run anyway**.
 2. Jarvis opens and sets itself up with you: your name (and how to say it), connecting your Claude (it installs Claude Code and signs you in if needed), tools and microphone, the natural voices, and then the team introduces itself.
 

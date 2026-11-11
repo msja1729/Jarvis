@@ -8,7 +8,7 @@ import { startCapture, stopCapture, CaptureKind } from './audio.js';
 interface Ability { name: string; title: string; description: string; group: string; setting: string; options: string[] }
 interface HubApp { id: string; name: string; description: string; kind: string; enabled: boolean; connected: boolean; account: string | null; auth: string | null; abilities: Ability[]; members: string[]; everyone: boolean; membersChanged: boolean }
 interface Account { id: string; name: string; configured: boolean; connected: boolean; email: string | null; needsSecret: boolean }
-interface ConfirmReq { id: string; appName: string; abilityTitle: string; group: string; summary: string }
+interface ConfirmReq { id: string; appName: string; abilityTitle: string; group: string; summary: string; title?: string }
 
 declare global {
   interface Window {
@@ -1006,7 +1006,7 @@ j.onConfirm((req) => {
   const badge = $('confirm-badge');
   badge.textContent = req.group;
   badge.className = `badge ${req.group}`;
-  $('confirm-title').textContent = `Allow Jarvis to ${req.abilityTitle.toLowerCase()} in ${req.appName}?`;
+  $('confirm-title').textContent = req.title || `Allow Jarvis to ${req.abilityTitle.toLowerCase()} in ${req.appName}?`;
   $('confirm-body').textContent = req.summary;
   $('confirm').classList.remove('hidden');
   $('confirm-no').focus();
@@ -1235,7 +1235,13 @@ function dayLabel(d: Date): string {
   return days === 0 ? `Today · ${date}` : days === 1 ? `Yesterday · ${date}` : date;
 }
 
+/** Claude Code's own tools, in plain words. */
+const CLAUDE_TOOL: Record<string, string> = {
+  Write: 'Save a file', Edit: 'Edit a file', MultiEdit: 'Edit a file', NotebookEdit: 'Edit a notebook', Read: 'Read a file',
+  Glob: 'Look for files', Grep: 'Search in files', Bash: 'Run a command', PowerShell: 'Run a command', WebFetch: 'Read a web page', WebSearch: 'Search the web',
+};
 function abilityName(e: ActivityItem): string {
+  if (e.appId === 'claude') return CLAUDE_TOOL[e.ability] ?? `Use ${e.ability}`;
   return e.ability.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
 }
 
@@ -1257,7 +1263,7 @@ function syncActivityBar() {
 async function renderActivity() {
   const [list, apps] = await Promise.all([j.activityList(), j.hubList().catch(() => [] as HubApp[])]);
   if (!teamCache) teamCache = await j.teamList().catch(() => null);
-  appNames = Object.fromEntries(apps.map((a) => [a.id, a.name]));
+  appNames = { ...Object.fromEntries(apps.map((a) => [a.id, a.name])), claude: 'Claude Code' };
   activityItems = [...list].reverse();
   for (const id of [...activitySelected]) if (!activityItems.some((e) => e.id === id)) activitySelected.delete(id);
   const root = $('activity-list');
@@ -1466,6 +1472,7 @@ async function renderSettings(s?: any) {
   $<HTMLInputElement>('voice-output').checked = snap.voiceOutput;
   $<HTMLInputElement>('pause-media').checked = snap.pauseMedia !== false;
   $<HTMLInputElement>('record-screen').checked = snap.recordScreen !== false;
+  $<HTMLInputElement>('claude-tools').checked = snap.claudeTools !== false;
   $<HTMLInputElement>('keep-meeting-media').checked = snap.keepMeetingMedia === true;
   $<HTMLInputElement>('keep-history').checked = snap.keepHistory !== false;
   $<HTMLSelectElement>('explain-level').value = snap.explainLevel ?? 'auto';
@@ -1477,6 +1484,9 @@ $('model-override').addEventListener('change', async (e) => {
 });
 $('pause-media').addEventListener('change', async (e) => {
   renderSettings(await j.settingsSet({ pauseMedia: (e.target as HTMLInputElement).checked }));
+});
+$('claude-tools').addEventListener('change', async (e) => {
+  renderSettings(await j.settingsSet({ claudeTools: (e.target as HTMLInputElement).checked }));
 });
 $('record-screen').addEventListener('change', async (e) => {
   renderSettings(await j.settingsSet({ recordScreen: (e.target as HTMLInputElement).checked }));
