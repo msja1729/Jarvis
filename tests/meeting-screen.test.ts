@@ -103,6 +103,36 @@ describe('the recording on disk', () => {
   });
 });
 
+describe('after the notes are written', () => {
+  it('the video and pictures are deleted (only that meeting, only inside Jarvis Meetings); the transcript stays', async () => {
+    const root = tmp();
+    const tr = path.join(root, 'tr');
+    const store = new ScreenStore(path.join(root, 'Jarvis Meetings'), tr);
+    const keep = path.join(root, 'Jarvis Meetings', 'other meeting');
+    fs.mkdirSync(keep, { recursive: true });
+    store.start('2026-11-12_10-00-00');
+    store.video(Uint8Array.from([1]), 'video/mp4');
+    store.frame(JPEG, 3);
+    const ix = (await store.stop())!;
+    fs.writeFileSync(path.join(tr, '2026-11-12_10-00-00.txt'), 'transcript');
+    expect(store.discard(ix)).toBe(true);
+    expect(fs.existsSync(ix.folder)).toBe(false);
+    expect(readIndex(tr, ix.id)).toBeNull();
+    expect(fs.existsSync(path.join(tr, '2026-11-12_10-00-00.txt'))).toBe(true);
+    expect(fs.existsSync(keep)).toBe(true);
+    // a folder outside Jarvis Meetings is never deleted
+    const outside = path.join(root, 'Documents');
+    fs.mkdirSync(outside);
+    expect(store.discard({ ...ix, folder: outside })).toBe(false);
+    expect(fs.existsSync(outside)).toBe(true);
+    expect(store.discard({ ...ix, folder: path.join(root, 'Jarvis Meetings') })).toBe(false);
+  });
+
+  it('the note-taker is told to write down what was shown, because the pictures go afterwards', () => {
+    expect(notesRequest('pm', 'Ryan')).toMatch(/deleted after your notes/);
+  });
+});
+
 describe('the team sees what was shown', () => {
   it('view_screens returns up to 4 pictures with their times, as untrusted content', async () => {
     const root = tmp();

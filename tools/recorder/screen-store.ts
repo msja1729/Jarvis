@@ -76,6 +76,19 @@ export class ScreenStore {
     return n;
   }
 
+  /**
+   * Deletes a finished meeting's video and pictures (its folder) and their index, once the notes are written.
+   * Only ever deletes a folder inside Jarvis Meetings. Returns true if something was deleted.
+   */
+  discard(ix: ScreenIndex): boolean {
+    const root = path.resolve(this.root);
+    const folder = path.resolve(ix.folder);
+    if (path.dirname(folder) !== root) return false;
+    fs.rmSync(folder, { recursive: true, force: true });
+    fs.rmSync(indexPath(this.transcripts, ix.id), { force: true });
+    return true;
+  }
+
   /** Closes the video file and writes the index. */
   async stop(): Promise<ScreenIndex | null> {
     const ix = this.index;

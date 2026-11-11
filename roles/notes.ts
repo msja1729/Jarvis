@@ -19,5 +19,5 @@ const WHAT: Record<RoleId, string> = {
 /** The request sent to that member when the recording stops. Starts with their name so it reaches them. */
 export function notesRequest(role: RoleId, name: string): string {
   const r = noteTaker(role);
-  return `${name}, the recording I asked you to take has just ended. Read the latest transcript (all parts), and if the screen was recorded look at its screen pictures (view_screens: slides, whiteboard, anything shown) and include what they showed. ${WHAT[r]} Save the notes in your folder "${ROLE_FOLDER[r]}" (${r === 'doctor' ? 'Health notes' : 'Meetings'}/<date> <title>.md), then tell me briefly what matters most and what I need to do.`;
+  return `${name}, the recording I asked you to take has just ended. Read the latest transcript (all parts), and if the screen was recorded look at its screen pictures (view_screens: slides, whiteboard, anything shown) and write down everything important they showed: the pictures and video are deleted after your notes. ${WHAT[r]} Save the notes in your folder "${ROLE_FOLDER[r]}" (${r === 'doctor' ? 'Health notes' : 'Meetings'}/<date> <title>.md), then tell me briefly what matters most and what I need to do.`;
 }

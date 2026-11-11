@@ -91,6 +91,8 @@ export interface JarvisSettings {
   pauseMedia?: boolean;
   /** Meeting recordings also record the screen (video + pictures of what was shown). Default on. */
   recordScreen?: boolean;
+  /** Keep a meeting's video and pictures after its notes are written. Default off (they are deleted). */
+  keepMeetingMedia?: boolean;
   /** First-run welcome finished (setup, tools, voices, meeting the team). */
   onboarded?: boolean;
   /** How names should sound when spoken (name → "say it like" spelling), e.g. the user's own name. */

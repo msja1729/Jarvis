@@ -7,7 +7,7 @@
 Talk to a personal assistant, a project manager, a doctor and a finance expert, by typing or by voice.
 They work in the apps you allow, remember what matters to you, and run on **your own Claude Pro or Max plan**.
 
-[**Download for Windows**](https://github.com/msja1729/Jarvis/releases/latest/download/Jarvis-Setup-0.3.0.exe) · [All releases](https://github.com/msja1729/Jarvis/releases) · [What Jarvis can do (PDF)](docs/Jarvis-Capabilities.pdf)
+[**Download for Windows**](https://github.com/msja1729/Jarvis/releases/latest/download/Jarvis-Setup-0.3.1.exe) · [All releases](https://github.com/msja1729/Jarvis/releases) · [What Jarvis can do (PDF)](docs/Jarvis-Capabilities.pdf)
 
 <img src="docs/images/chat.png" alt="Chatting with Sara, the doctor" width="860" />
 
@@ -35,7 +35,7 @@ Start a message with a name, like *"Sara, …"*, and you stay with her until you
 - **Lessons.** Ask to learn something and a narrated, step-by-step lesson plays beside your work: diagrams, animated graphs, equations and notes.
 - **Documents & code.** They read a PDF, text file or code folder you pick, and quote the exact page or line.
 - **Coding supervisor.** "Ryan, add a login page to my project": Claude Code works in the background; you get its questions with a recommendation, and risky steps always wait for you.
-- **Meetings, with what was shown.** "Ryan, record this meeting and note my tasks": Jarvis records your microphone, your computer's sound (the call, a video you play) and the screen as a video, and takes a picture whenever a new slide or board appears. You get a transcript, minutes that include what was on the slides, and your tasks on the board with reminders. Videos are saved in **Videos → Jarvis Meetings**.
+- **Meetings, with what was shown.** "Ryan, record this meeting and note my tasks": Jarvis records your microphone, your computer's sound (the call, a video you play) and the screen as a video, and takes a picture whenever a new slide or board appears. You get a transcript, minutes that include what was on the slides, and your tasks on the board with reminders. Once the notes are written, the video and pictures are deleted so they don't pile up (you can choose to keep them in **Videos → Jarvis Meetings**).
 - **Reminders, morning plan and a project board** shared by Maya and Ryan.
 - **They work together.** Members ask each other for help and read each other's notes.
 - **Conversations** organised by day, searchable, and you can continue any of them.
@@ -53,7 +53,7 @@ Start a message with a name, like *"Sara, …"*, and you stay with her until you
 
 ## Install (Windows 10/11)
 
-1. **[Download Jarvis-Setup-0.3.0.exe](https://github.com/msja1729/Jarvis/releases/latest/download/Jarvis-Setup-0.3.0.exe)** and run it.
+1. **[Download Jarvis-Setup-0.3.1.exe](https://github.com/msja1729/Jarvis/releases/latest/download/Jarvis-Setup-0.3.1.exe)** and run it.
    Windows may say *"Windows protected your PC"* because the installer is not code-signed yet: click **More info → Run anyway**.
 2. Jarvis opens and sets itself up with you: your name (and how to say it), connecting your Claude (it installs Claude Code and signs you in if needed), tools and microphone, the natural voices, and then the team introduces itself.
 
@@ -72,7 +72,7 @@ To connect email and calendar, follow the one-time guides: [Google](docs/connect
 
 ## Uninstall
 
-Settings → **Uninstall Jarvis**, or Windows Settings → Apps → Jarvis. This removes the app and everything it kept on your computer: settings, chats, memory, team folders, voices, saved sign-ins and the Claude Code hooks it added. Claude Code itself, your own projects and your meeting videos (Videos → Jarvis Meetings) are not touched. Updating to a newer version keeps your data.
+Settings → **Uninstall Jarvis**, or Windows Settings → Apps → Jarvis. This removes the app and everything it kept on your computer: settings, chats, memory, team folders, voices, saved sign-ins and the Claude Code hooks it added. Claude Code itself, your own projects and any meeting videos you chose to keep (Videos → Jarvis Meetings) are not touched. Updating to a newer version keeps your data.
 
 ## Build from source
 

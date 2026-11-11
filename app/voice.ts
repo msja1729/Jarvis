@@ -12,7 +12,7 @@ import { prepareSpeech, wavHeader } from '../speech/pcm.js';
 import { PushToTalk, PttState } from '../speech/ptt.js';
 import { WhisperEngine } from '../speech/whisper.js';
 import { MeetingRecorder } from '../tools/recorder/recorder.js';
-import { ScreenStore } from '../tools/recorder/screen-store.js';
+import { ScreenIndex, ScreenStore } from '../tools/recorder/screen-store.js';
 import { glassOptions } from './glass.js';
 
 export const DEFAULT_PTT_HOTKEY = process.platform === 'darwin' ? 'Alt+Space' : 'Control+Alt+Space';
@@ -26,6 +26,8 @@ export interface VoiceDeps {
   videosDir: string;
   /** Record the screen too (video and pictures of what was shown) when recording a meeting. */
   recordScreen: () => boolean;
+  /** Keep the video and pictures after the notes are written (default: they are deleted). */
+  keepScreens: () => boolean;
   preloadPath: string;
   rendererDir: string;
   /** Request to the main window's renderer (created hidden if needed; not focused). */
@@ -50,6 +52,8 @@ export class VoiceController {
   readonly recorder: MeetingRecorder;
   readonly screens: ScreenStore;
   private recScreen = false;
+  /** The video and pictures of the recording that just ended (for deleting once its notes are written). */
+  finishedScreens: ScreenIndex | null = null;
   readonly ptt: PushToTalk;
   private capture: Kind | null = null;
   private pttBuf: Buffer[] = [];
@@ -261,12 +265,16 @@ export class VoiceController {
     this.deps.progress('Finishing the transcript…');
     try {
       const shots = await this.screens.stop().catch(() => null);
+      this.finishedScreens = shots;
       const r = await this.recorder.stop(shots?.video ?? null);
       const mins = Math.max(1, Math.round(r.seconds / 60));
       const pics = shots?.frames.length ?? 0;
-      const saved = shots
-        ? `\nScreen recording: ${shots.video ?? '(the video could not be saved)'}${pics ? `\n${pics} picture${pics === 1 ? '' : 's'} of the screen: ${path.join(shots.folder, 'Screens')}` : ''}`
-        : '';
+      const where = shots ? `${shots.video ?? '(the video could not be saved)'}${pics ? ` and ${pics} picture${pics === 1 ? '' : 's'} of the screen` : ''}` : '';
+      const saved = !shots
+        ? ''
+        : this.deps.keepScreens() || (!r.text && !pics)
+          ? `\nScreen recording: ${where} (in ${shots.folder}).`
+          : `\nThe screen recording (${where}) is deleted as soon as the notes are written, to save space.`;
       if (!r.text && !pics) {
         return { reply: `Recording stopped (${mins} min). No speech was detected, so there is nothing to summarize. Transcript file: ${r.transcriptPath}${saved}` };
       }

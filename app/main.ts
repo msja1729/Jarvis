@@ -47,6 +47,7 @@ import { ensureRoleFolders, ROLE_FOLDER, roleFolder } from '../roles/folders.js'
 import { casebookContext, seedCasebook } from '../roles/casebook.js';
 import { SKILLS } from '../roles/skills/index.js';
 import { noteTaker, notesRequest } from '../roles/notes.js';
+import type { ScreenIndex } from '../tools/recorder/screen-store.js';
 import { FilesExecutor } from '../tools/files/executor.js';
 import { SkillsExecutor } from '../tools/skills/executor.js';
 import { WebExecutor } from '../tools/web/executor.js';
@@ -718,6 +719,33 @@ function prepareConversation() {
 /** The team member who takes notes when the current recording ends. */
 let recordingFor: RoleId = 'pm';
 
+/**
+ * A finished meeting's video and pictures, deleted once its notes are written (they are only needed
+ * to write them, and pile up otherwise). `after`: the notes request to wait for; null = the request
+ * that is running now (a member stopped the recording and writes the notes in the same turn).
+ * If the notes fail, nothing is deleted.
+ */
+let clearAfterNotes: { ix: ScreenIndex; after: string | null } | null = null;
+function clearScreensLater(after: string | null) {
+  const ix = voice.finishedScreens;
+  voice.finishedScreens = null;
+  clearAfterNotes = ix && store.snapshot().keepMeetingMedia !== true ? { ix, after } : null;
+}
+function notesFinished(text: string, res: { isError?: boolean; command?: string }) {
+  const c = clearAfterNotes;
+  if (!c || res.command === 'stop_recording' || (c.after !== null && c.after !== text)) return;
+  clearAfterNotes = null;
+  if (res.isError) {
+    send('notice', `The notes could not be written, so the meeting video was kept: ${c.ix.folder}`);
+    return;
+  }
+  try {
+    voice.screens.discard(c.ix);
+  } catch {
+    /* in use (e.g. open in a player): it stays; nothing else to do */
+  }
+}
+
 async function startRecordingFor(asked: RoleId) {
   const r = await voice.startRecording();
   if (!voice.recorder.recording) return r;
@@ -728,7 +756,13 @@ async function startRecordingFor(asked: RoleId) {
 
 async function stopRecordingWithNotes() {
   const r = await voice.stopRecording();
-  return r.followUp ? { ...r, followUp: notesRequest(recordingFor, people()[recordingFor]) } : r;
+  if (!r.followUp) {
+    voice.finishedScreens = null; // nothing to write notes about: the recording is kept
+    return r;
+  }
+  const followUp = notesRequest(recordingFor, people()[recordingFor]);
+  clearScreensLater(followUp);
+  return { ...r, followUp };
 }
 
 async function runLocal(cmd: LocalCommand, role: RoleId = 'jarvis'): Promise<string | { reply: string; followUp?: string }> {
@@ -955,7 +989,9 @@ function registerIpc() {
   // the user's music stays paused from when they spoke until the answer has started (main releases 'reply')
   ipcMain.handle('ask', async (e, text: string, picked?: string, opts?: { stream?: boolean }) => {
     try {
-      return await askInner(e, text, picked, opts);
+      const res = await askInner(e, text, picked, opts);
+      notesFinished(String(text), res);
+      return res;
     } finally {
       setTimeout(() => media?.hold('reply', false), 1500);
     }
@@ -1164,7 +1200,7 @@ function registerIpc() {
     fs.mkdirSync(dir, { recursive: true });
     await shell.openPath(dir);
   });
-  ipcMain.handle('settings:set', (_e, patch: { modelOverride?: 'haiku' | 'sonnet' | null; voiceOutput?: boolean; pauseMedia?: boolean; recordScreen?: boolean; ttsVoice?: string; ttsSpeed?: number; explainLevel?: ExplainLevel }) => {
+  ipcMain.handle('settings:set', (_e, patch: { modelOverride?: 'haiku' | 'sonnet' | null; voiceOutput?: boolean; pauseMedia?: boolean; recordScreen?: boolean; keepMeetingMedia?: boolean; ttsVoice?: string; ttsSpeed?: number; explainLevel?: ExplainLevel }) => {
     if (patch.modelOverride !== undefined) store.setModelOverride(patch.modelOverride);
     if (patch.voiceOutput !== undefined) store.setVoiceOutput(patch.voiceOutput);
     if (patch.pauseMedia !== undefined) {
@@ -1172,6 +1208,7 @@ function registerIpc() {
       if (!patch.pauseMedia) void media?.releaseAll();
     }
     if (patch.recordScreen !== undefined) store.setRecordScreen(patch.recordScreen === true);
+    if (patch.keepMeetingMedia !== undefined) store.setKeepMeetingMedia(patch.keepMeetingMedia === true);
     if (patch.explainLevel !== undefined) store.setExplainLevel(patch.explainLevel);
     if (patch.ttsVoice !== undefined || patch.ttsSpeed !== undefined) {
       const v = isVoice(patch.ttsVoice) ? patch.ttsVoice : undefined;
@@ -1367,6 +1404,7 @@ app.whenReady().then(async () => {
     dataDir: app.getPath('userData'),
     videosDir: app.getPath('videos'),
     recordScreen: () => store.snapshot().recordScreen !== false,
+    keepScreens: () => store.snapshot().keepMeetingMedia === true,
     preloadPath: preloadPath(),
     rendererDir: path.join(__dirname, '..', 'renderer'),
     askRenderer: (channel, payload, timeoutMs) => askRenderer(channel, payload, timeoutMs, false),
@@ -1403,7 +1441,12 @@ app.whenReady().then(async () => {
   const transcripts = new TranscriptExecutor(path.join(app.getPath('userData'), 'transcripts'), {
     start: async (role) => (await startRecordingFor(isRole(role) ? role : 'jarvis')).reply,
     // asked by a member mid-conversation: they read the transcript themselves, so no follow-up request
-    stop: async () => (await voice.stopRecording()).reply,
+    stop: async () => {
+      const r = await voice.stopRecording();
+      if (r.followUp) clearScreensLater(null);
+      else voice.finishedScreens = null;
+      return r.reply;
+    },
   });
   const files = new FilesExecutor({
     jarvisDir: app.getPath('userData'),

@@ -1466,6 +1466,7 @@ async function renderSettings(s?: any) {
   $<HTMLInputElement>('voice-output').checked = snap.voiceOutput;
   $<HTMLInputElement>('pause-media').checked = snap.pauseMedia !== false;
   $<HTMLInputElement>('record-screen').checked = snap.recordScreen !== false;
+  $<HTMLInputElement>('keep-meeting-media').checked = snap.keepMeetingMedia === true;
   $<HTMLInputElement>('keep-history').checked = snap.keepHistory !== false;
   $<HTMLSelectElement>('explain-level').value = snap.explainLevel ?? 'auto';
   voiceOn = snap.voiceOutput;
@@ -1479,6 +1480,9 @@ $('pause-media').addEventListener('change', async (e) => {
 });
 $('record-screen').addEventListener('change', async (e) => {
   renderSettings(await j.settingsSet({ recordScreen: (e.target as HTMLInputElement).checked }));
+});
+$('keep-meeting-media').addEventListener('change', async (e) => {
+  renderSettings(await j.settingsSet({ keepMeetingMedia: (e.target as HTMLInputElement).checked }));
 });
 $('meetings-folder').addEventListener('click', () => void j.openMeetingsFolder());
 $('voice-output').addEventListener('change', async (e) => {

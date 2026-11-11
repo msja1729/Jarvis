@@ -168,6 +168,11 @@ export class SettingsStore {
     this.save();
   }
 
+  setKeepMeetingMedia(on: boolean): void {
+    this.data.keepMeetingMedia = on;
+    this.save();
+  }
+
   setOnboarded(on: boolean): void {
     this.data.onboarded = on;
     this.save();
