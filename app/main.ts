@@ -1159,13 +1159,19 @@ function registerIpc() {
     if (err) throw new Error(err);
   });
   ipcMain.handle('settings:get', () => store.snapshot());
-  ipcMain.handle('settings:set', (_e, patch: { modelOverride?: 'haiku' | 'sonnet' | null; voiceOutput?: boolean; pauseMedia?: boolean; ttsVoice?: string; ttsSpeed?: number; explainLevel?: ExplainLevel }) => {
+  ipcMain.handle('meetings:openFolder', async () => {
+    const dir = path.join(app.getPath('videos'), 'Jarvis Meetings');
+    fs.mkdirSync(dir, { recursive: true });
+    await shell.openPath(dir);
+  });
+  ipcMain.handle('settings:set', (_e, patch: { modelOverride?: 'haiku' | 'sonnet' | null; voiceOutput?: boolean; pauseMedia?: boolean; recordScreen?: boolean; ttsVoice?: string; ttsSpeed?: number; explainLevel?: ExplainLevel }) => {
     if (patch.modelOverride !== undefined) store.setModelOverride(patch.modelOverride);
     if (patch.voiceOutput !== undefined) store.setVoiceOutput(patch.voiceOutput);
     if (patch.pauseMedia !== undefined) {
       store.setPauseMedia(patch.pauseMedia === true);
       if (!patch.pauseMedia) void media?.releaseAll();
     }
+    if (patch.recordScreen !== undefined) store.setRecordScreen(patch.recordScreen === true);
     if (patch.explainLevel !== undefined) store.setExplainLevel(patch.explainLevel);
     if (patch.ttsVoice !== undefined || patch.ttsSpeed !== undefined) {
       const v = isVoice(patch.ttsVoice) ? patch.ttsVoice : undefined;
@@ -1359,6 +1365,8 @@ app.whenReady().then(async () => {
   stopMediaHelper = () => mediaBackend.dispose?.();
   voice = new VoiceController({
     dataDir: app.getPath('userData'),
+    videosDir: app.getPath('videos'),
+    recordScreen: () => store.snapshot().recordScreen !== false,
     preloadPath: preloadPath(),
     rendererDir: path.join(__dirname, '..', 'renderer'),
     askRenderer: (channel, payload, timeoutMs) => askRenderer(channel, payload, timeoutMs, false),

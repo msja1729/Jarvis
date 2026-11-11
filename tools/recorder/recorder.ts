@@ -51,6 +51,8 @@ export class MeetingRecorder {
   private totalBytes = 0;
   private segments: Segment[] = [];
   private queue: Promise<void> = Promise.resolve();
+  /** Things that happened on screen, by time ("picture 3 of the screen"). */
+  private notes: { at: number; text: string }[] = [];
 
   constructor(
     private readonly dirs: { work: string; transcripts: string },
@@ -79,8 +81,21 @@ export class MeetingRecorder {
     this.bufferBytes = 0;
     this.totalBytes = 0;
     this.segments = [];
+    this.notes = [];
     this.queue = Promise.resolve();
     return this.id;
+  }
+
+  /** Abandons a recording that never got going (nothing is written). */
+  cancel(): void {
+    if (!this.id) return;
+    this.id = null;
+    fs.rmSync(this.workDir, { recursive: true, force: true });
+  }
+
+  /** Notes something at the current point of the recording (shown in the transcript at that time). */
+  note(text: string): void {
+    if (this.id) this.notes.push({ at: this.elapsedSeconds, text });
   }
 
   /** Append PCM (Int16 LE, 16 kHz mono). Full 30-second segments are queued for transcription. */
@@ -119,8 +134,8 @@ export class MeetingRecorder {
     });
   }
 
-  /** Stops, waits for all segments, writes the transcript file. */
-  async stop(): Promise<RecordingResult> {
+  /** Stops, waits for all segments, writes the transcript file. `video`: where the screen recording was saved, if any. */
+  async stop(video?: string | null): Promise<RecordingResult> {
     if (!this.id) throw new Error('Not recording.');
     if (this.bufferBytes >= SAMPLE_RATE) this.cut(this.bufferBytes); // keep tails of 0.5 s or more
     const id = this.id;
@@ -128,12 +143,18 @@ export class MeetingRecorder {
     this.id = null;
     await this.queue;
 
-    const lines = this.segments.filter((s) => s.text).map((s) => `[${clock(s.startSec)}] ${s.text}`);
+    const lines = [
+      ...this.segments.filter((s) => s.text).map((s) => ({ at: s.startSec, line: `[${clock(s.startSec)}] ${s.text}` })),
+      ...this.notes.map((n) => ({ at: n.at, line: `[${clock(n.at)}] (${n.text})` })),
+    ]
+      .sort((a, b) => a.at - b.at)
+      .map((x) => x.line);
     const failed = this.segments.filter((s) => s.error).length;
     const header =
       `Meeting transcript — ${new Date(this.started).toLocaleString()} — ${clock(seconds)} long\n` +
-      `(Transcribed on this computer. Audio is not kept.${failed ? ` ${failed} part(s) could not be transcribed.` : ''})\n\n`;
-    const text = lines.join('\n');
+      `(Transcribed on this computer. ${video ? `Video with sound: ${video}` : 'Audio is not kept.'}${failed ? ` ${failed} part(s) could not be transcribed.` : ''})\n\n`;
+    // pictures alone are not "speech": with no words, say so (the pictures are still listed in the index)
+    const text = this.segments.some((s) => s.text) ? lines.join('\n') : '';
     fs.mkdirSync(this.dirs.transcripts, { recursive: true });
     const transcriptPath = path.join(this.dirs.transcripts, `${id}.txt`);
     fs.writeFileSync(transcriptPath, header + (text || '(No speech was detected.)') + '\n');

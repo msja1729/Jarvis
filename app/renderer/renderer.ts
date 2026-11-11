@@ -69,10 +69,13 @@ declare global {
       screenPickReply(id: string, choice: unknown): void;
       onScreenArea(cb: (req: any) => void): void;
       screenAreaReply(id: string, rect: unknown): void;
-      onAudioStart(cb: (req: { id: string; kind: CaptureKind }) => void): void;
+      onAudioStart(cb: (req: { id: string; kind: CaptureKind; screen?: boolean }) => void): void;
       onAudioStop(cb: (req: { id: string }) => void): void;
       audioReply(channel: string, id: string, value: unknown): void;
       sendPcm(kind: string, data: Uint8Array, level: number): void;
+      sendMeetingVideo(chunk: Uint8Array, mimeType: string): void;
+      sendMeetingFrame(jpeg: Uint8Array): void;
+      openMeetingsFolder(): Promise<void>;
       voiceToggle(): void;
       onVoiceAsk(cb: (text: string) => void): void;
       speechStatus(): Promise<{ engine: boolean; model: boolean; ready: boolean; help?: string; hotkey: string | null }>;
@@ -887,10 +890,11 @@ function submitText(text: string) {
 }
 
 /* ---------- voice: capture requests from the main process ---------- */
-j.onAudioStart(async ({ id, kind }) => {
+j.onAudioStart(async ({ id, kind, screen }) => {
   try {
-    const r = await startCapture(kind, (pcm, level) => j.sendPcm(kind, pcm, level));
-    j.audioReply('audio:start', id, { ok: true, systemAudio: r.systemAudio });
+    const meeting = kind === 'meeting' ? { screen: screen !== false, sinks: { video: (c: Uint8Array, t: string) => j.sendMeetingVideo(c, t), frame: (f: Uint8Array) => j.sendMeetingFrame(f) } } : undefined;
+    const r = await startCapture(kind, (pcm, level) => j.sendPcm(kind, pcm, level), meeting);
+    j.audioReply('audio:start', id, { ok: true, systemAudio: r.systemAudio, screen: r.screen });
     if (kind === 'ptt') $('mic').classList.add('live');
   } catch (err) {
     j.audioReply('audio:start', id, { ok: false, error: err instanceof Error ? err.message : String(err) });
@@ -1461,6 +1465,7 @@ async function renderSettings(s?: any) {
   $<HTMLSelectElement>('model-override').value = snap.modelOverride ?? '';
   $<HTMLInputElement>('voice-output').checked = snap.voiceOutput;
   $<HTMLInputElement>('pause-media').checked = snap.pauseMedia !== false;
+  $<HTMLInputElement>('record-screen').checked = snap.recordScreen !== false;
   $<HTMLInputElement>('keep-history').checked = snap.keepHistory !== false;
   $<HTMLSelectElement>('explain-level').value = snap.explainLevel ?? 'auto';
   voiceOn = snap.voiceOutput;
@@ -1472,6 +1477,10 @@ $('model-override').addEventListener('change', async (e) => {
 $('pause-media').addEventListener('change', async (e) => {
   renderSettings(await j.settingsSet({ pauseMedia: (e.target as HTMLInputElement).checked }));
 });
+$('record-screen').addEventListener('change', async (e) => {
+  renderSettings(await j.settingsSet({ recordScreen: (e.target as HTMLInputElement).checked }));
+});
+$('meetings-folder').addEventListener('click', () => void j.openMeetingsFolder());
 $('voice-output').addEventListener('change', async (e) => {
   renderSettings(await j.settingsSet({ voiceOutput: (e.target as HTMLInputElement).checked }));
 });

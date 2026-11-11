@@ -89,6 +89,8 @@ export interface JarvisSettings {
   roleNames?: Record<string, string>;
   /** Pause music and videos while you talk to the team and while they speak (default on). */
   pauseMedia?: boolean;
+  /** Meeting recordings also record the screen (video + pictures of what was shown). Default on. */
+  recordScreen?: boolean;
   /** First-run welcome finished (setup, tools, voices, meeting the team). */
   onboarded?: boolean;
   /** How names should sound when spoken (name → "say it like" spelling), e.g. the user's own name. */

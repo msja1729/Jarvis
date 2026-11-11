@@ -163,6 +163,11 @@ export class SettingsStore {
     this.save();
   }
 
+  setRecordScreen(on: boolean): void {
+    this.data.recordScreen = on;
+    this.save();
+  }
+
   setOnboarded(on: boolean): void {
     this.data.onboarded = on;
     this.save();

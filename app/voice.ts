@@ -12,6 +12,7 @@ import { prepareSpeech, wavHeader } from '../speech/pcm.js';
 import { PushToTalk, PttState } from '../speech/ptt.js';
 import { WhisperEngine } from '../speech/whisper.js';
 import { MeetingRecorder } from '../tools/recorder/recorder.js';
+import { ScreenStore } from '../tools/recorder/screen-store.js';
 import { glassOptions } from './glass.js';
 
 export const DEFAULT_PTT_HOTKEY = process.platform === 'darwin' ? 'Alt+Space' : 'Control+Alt+Space';
@@ -21,6 +22,10 @@ type Badge = 'rec' | 'ptt';
 
 export interface VoiceDeps {
   dataDir: string;
+  /** The user's Videos folder: meeting videos and screen pictures go to <videos>/Jarvis Meetings. */
+  videosDir: string;
+  /** Record the screen too (video and pictures of what was shown) when recording a meeting. */
+  recordScreen: () => boolean;
   preloadPath: string;
   rendererDir: string;
   /** Request to the main window's renderer (created hidden if needed; not focused). */
@@ -43,6 +48,8 @@ export interface LocalReply {
 export class VoiceController {
   readonly engine: WhisperEngine;
   readonly recorder: MeetingRecorder;
+  readonly screens: ScreenStore;
+  private recScreen = false;
   readonly ptt: PushToTalk;
   private capture: Kind | null = null;
   private pttBuf: Buffer[] = [];
@@ -66,6 +73,7 @@ export class VoiceController {
         if (!this.recorder.recording) deps.progress(`Transcribing the meeting… ${done}/${total}`);
       },
     );
+    this.screens = new ScreenStore(path.join(deps.videosDir, 'Jarvis Meetings'), path.join(deps.dataDir, 'transcripts'));
     this.ptt = new PushToTalk({
       startCapture: async () => {
         if (this.recorder.recording) throw new Error('a meeting is being recorded; push-to-talk is paused');
@@ -98,12 +106,16 @@ export class VoiceController {
       callback(own && audioOnly);
     });
     ses.setPermissionCheckHandler((_wc, permission, origin) => permission === 'media' && origin.startsWith('file://'));
-    // Meeting audio: the computer's own sound (Windows loopback). No picker is shown.
+    // Meetings: the screen the mouse is on, with the computer's own sound (Windows loopback). No picker is shown.
     ses.setDisplayMediaRequestHandler(
       (_req, callback) => {
+        const here = String(screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).id);
         desktopCapturer
           .getSources({ types: ['screen'] })
-          .then((sources) => callback(process.platform === 'win32' ? { video: sources[0], audio: 'loopback' } : { video: sources[0] }))
+          .then((sources) => {
+            const video = sources.find((s) => s.display_id === here) ?? sources[0];
+            callback(process.platform === 'win32' ? { video, audio: 'loopback' } : { video });
+          })
           .catch(() => callback({}));
       },
       { useSystemPicker: false },
@@ -123,6 +135,15 @@ export class VoiceController {
           this.badge('ptt', { mode: 'ptt', state: 'listening', label: 'Listening', level, action: 'Done' });
         }
       }
+    });
+    // the screen recording: pieces of the video file, and a picture each time the screen changed
+    ipcMain.on('meeting:video', (_e, chunk: Uint8Array, mimeType: string) => {
+      if (this.capture === 'meeting' && this.screens.active) this.screens.video(chunk, String(mimeType));
+    });
+    ipcMain.on('meeting:frame', (_e, jpeg: Uint8Array) => {
+      if (this.capture !== 'meeting' || !this.screens.active || !this.recorder.recording) return;
+      const n = this.screens.frame(jpeg, this.recorder.elapsedSeconds);
+      if (n) this.recorder.note(`screen picture ${n}`);
     });
     ipcMain.on('indicator:action', (_e, mode: Badge) => {
       if (mode === 'rec') void this.deps.deliver('stop recording', null);
@@ -170,17 +191,17 @@ export class VoiceController {
 
   /* ---------- capture ---------- */
 
-  private async startCapture(kind: Kind): Promise<{ systemAudio: boolean }> {
+  private async startCapture(kind: Kind, screen = false): Promise<{ systemAudio: boolean; screen: boolean }> {
     if (process.platform === 'darwin' && !(await systemPreferences.askForMediaAccess('microphone'))) {
       throw new Error('microphone access is off. Turn it on in System Settings → Privacy & Security → Microphone.');
     }
     this.capture = kind;
-    const res = await this.deps.askRenderer<{ ok: boolean; systemAudio?: boolean; error?: string }>('audio:start', { kind }, 8000);
+    const res = await this.deps.askRenderer<{ ok: boolean; systemAudio?: boolean; screen?: boolean; error?: string }>('audio:start', { kind, screen }, 10000);
     if (!res?.ok) {
       this.capture = null;
       throw new Error(res?.error ?? 'the microphone did not start');
     }
-    return { systemAudio: Boolean(res.systemAudio) };
+    return { systemAudio: Boolean(res.systemAudio), screen: Boolean(res.screen) };
   }
 
   private async stopCapture(): Promise<void> {
@@ -205,17 +226,25 @@ export class VoiceController {
   async startRecording(): Promise<LocalReply> {
     if (this.recorder.recording) return { reply: 'Already recording. Say "stop recording" when the meeting ends.' };
     if (this.ptt.state !== 'idle') await this.ptt.toggle();
+    // the recording (and its folder) exist before capture starts, so the first picture has somewhere to go
+    const id = this.recorder.start();
+    const wantScreen = this.deps.recordScreen();
+    if (wantScreen) this.screens.start(id);
     let systemAudio = false;
+    let screenOn = false;
     try {
-      ({ systemAudio } = await this.startCapture('meeting'));
+      ({ systemAudio, screen: screenOn } = await this.startCapture('meeting', wantScreen));
     } catch (err) {
+      this.recorder.cancel();
+      await this.screens.stop().catch(() => undefined);
       return { reply: `I couldn't start recording: ${err instanceof Error ? err.message : String(err)}` };
     }
-    this.recorder.start();
     this.recSystemAudio = systemAudio;
+    this.recScreen = screenOn;
     this.showRecBadge();
     if (!this.engine.status().ready) void this.ensureEngine().catch((e) => this.deps.notify(`Speech engine: ${e.message}`));
-    const what = systemAudio ? 'your microphone and your computer’s sound' : 'your microphone (computer sound is not available here)';
+    const sound = systemAudio ? 'your microphone and your computer’s sound' : 'your microphone (computer sound is not available here)';
+    const what = screenOn ? `the screen, ${sound}` : sound;
     return {
       reply:
         `Recording started (${what}). Please tell everyone in the meeting that it is being recorded — recording laws differ between countries.\n` +
@@ -231,15 +260,22 @@ export class VoiceController {
     this.recTimer = null;
     this.deps.progress('Finishing the transcript…');
     try {
-      const r = await this.recorder.stop();
+      const shots = await this.screens.stop().catch(() => null);
+      const r = await this.recorder.stop(shots?.video ?? null);
       const mins = Math.max(1, Math.round(r.seconds / 60));
-      if (!r.text) {
-        return { reply: `Recording stopped (${mins} min). No speech was detected, so there is nothing to summarize. Transcript file: ${r.transcriptPath}` };
+      const pics = shots?.frames.length ?? 0;
+      const saved = shots
+        ? `\nScreen recording: ${shots.video ?? '(the video could not be saved)'}${pics ? `\n${pics} picture${pics === 1 ? '' : 's'} of the screen: ${path.join(shots.folder, 'Screens')}` : ''}`
+        : '';
+      if (!r.text && !pics) {
+        return { reply: `Recording stopped (${mins} min). No speech was detected, so there is nothing to summarize. Transcript file: ${r.transcriptPath}${saved}` };
       }
       const warn = r.failedSegments ? ` (${r.failedSegments} part(s) could not be transcribed)` : '';
       return {
-        reply: `Recording stopped (${mins} min). The transcript (id ${r.id}) is saved on this computer${warn}:\n${r.transcriptPath}`,
-        followUp: 'Summarize the meeting I just recorded: key points, decisions, and action items with owners.',
+        reply: `Recording stopped (${mins} min). The transcript (id ${r.id}) is saved on this computer${warn}:\n${r.transcriptPath}${saved}`,
+        followUp: pics
+          ? 'Summarize the meeting I just recorded: key points, decisions, and action items with owners. Look at the screen pictures too (slides, whiteboard, anything shown) and include what they showed.'
+          : 'Summarize the meeting I just recorded: key points, decisions, and action items with owners.',
       };
     } finally {
       this.deps.progress(null);
@@ -255,7 +291,7 @@ export class VoiceController {
         state: 'recording',
         label: 'REC',
         seconds: this.recorder.elapsedSeconds,
-        sub: this.recSystemAudio ? 'Mic + computer sound · tell others' : 'Microphone · tell others',
+        sub: `${this.recScreen ? 'Screen, ' : ''}${this.recSystemAudio ? 'mic + computer sound' : 'microphone'} · tell others`.replace(/^[a-z]/, (c) => c.toUpperCase()),
         action: 'Stop',
       });
     update();

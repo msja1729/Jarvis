@@ -2,12 +2,13 @@ import type { AppDef } from '../../gateway/types.js';
 
 /**
  * Starting and stopping a recording are local commands (0 tokens, SPEC T1).
- * Claude only reads finished transcripts, in parts (SPEC T8).
+ * Claude only reads finished transcripts, in parts (SPEC T8), and, when the screen was recorded,
+ * looks at the pictures taken whenever the screen changed (slides, a whiteboard, anything shown).
  */
 export const RECORDER_APP: AppDef = {
   id: 'recorder',
   name: 'Meeting recorder',
-  description: 'Records meetings on this computer and lets Jarvis read the text transcripts.',
+  description: 'Records meetings on this computer (your microphone, the computer\'s sound and, if you like, the screen as a video) and lets your team read the transcript and see the slides or board that were shown.',
   kind: 'builtin',
   defaultEnabled: true,
   abilities: [
@@ -47,6 +48,22 @@ export const RECORDER_APP: AppDef = {
         properties: {
           id: { type: 'string', description: '"latest" or an id from list_transcripts' },
           part: { type: 'integer', minimum: 1 },
+        },
+      },
+    },
+    {
+      name: 'view_screens',
+      title: 'See what was on screen',
+      description:
+        'See the pictures of the screen taken during a recorded meeting each time it changed (slides, a whiteboard, a shared document), up to 4 at a time with the time each was shown. The transcript marks them as "(screen picture N)" at the moment they appeared.',
+      group: 'read',
+      progress: 'Looking at the meeting slides',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: '"latest" or an id from list_transcripts' },
+          from: { type: 'integer', minimum: 1, description: 'first picture number (default 1)' },
+          count: { type: 'integer', minimum: 1, maximum: 4, description: 'how many pictures (default 4)' },
         },
       },
     },

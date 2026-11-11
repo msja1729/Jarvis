@@ -214,6 +214,14 @@
               </div>
 
               <div class="card settings-card">
+                <h3 class="card-title">Meeting recorder</h3>
+                <p class="help">Say "Ryan, record this meeting" (or "Sara, record this appointment"). Jarvis records your microphone and your computer's sound, and transcribes it on this computer.</p>
+                <label class="switch-row"><span>Also record the screen: a video of the meeting, and a picture each time the screen changes (slides, a whiteboard, anything shown), so your team can see what was presented</span><input type="checkbox" id="record-screen" class="switch" /></label>
+                <p class="help">Videos and pictures are saved in your Videos folder, under Jarvis Meetings (about 14 MB a minute), and stay there if you uninstall Jarvis. Always tell people when you record them.</p>
+                <div class="row-buttons"><button id="meetings-folder" type="button">Open the meetings folder</button></div>
+              </div>
+
+              <div class="card settings-card">
                 <h3 class="card-title">You</h3>
                 <label>Your name (your team uses it)
                   <div class="row-buttons"><input id="you-name" maxlength="30" autocomplete="off" placeholder="Your name" /><button id="you-save" type="button">Save</button></div>
@@ -254,7 +262,7 @@
                   <button id="setup-again" type="button">Run the setup again</button>
                 </div>
                 <div class="divider"></div>
-                <p class="help">Uninstalling removes Jarvis and everything it kept on this computer: settings, chats, memory, team folders, voices, saved sign-ins and the Claude Code hooks it added. Claude Code itself and your own projects are not touched.</p>
+                <p class="help">Uninstalling removes Jarvis and everything it kept on this computer: settings, chats, memory, team folders, voices, saved sign-ins and the Claude Code hooks it added. Claude Code itself, your own projects and your meeting videos are not touched.</p>
                 <div class="row-buttons"><button id="uninstall" type="button" class="chip danger">Uninstall Jarvis</button><span id="uninstall-msg" class="muted"></span></div>
               </div>
             </div>

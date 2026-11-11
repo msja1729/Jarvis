@@ -6,6 +6,7 @@ export const PM_SKILLS: Skill[] = [
     when: 'after a recorded meeting, or the user asks for meeting notes',
     body: `Meeting minutes from a transcript:
 1. Read the whole transcript (recorder tool, every part). Fix obvious mis-hearings from context; mark unclear parts with (?) rather than guessing.
+   If it marks "(screen picture N)", the screen was recorded: look at the pictures (recorder view_screens, 4 at a time) and use what was shown (slide titles, figures, diagrams, what was written on the board) in the minutes, at the point it was shown. Say which picture a fact came from when it matters.
 2. Write the minutes: title and date; attendees; summary (3-5 sentences); key points by topic; decisions (one line each, who decided); action items as a table (Task | Owner | Due | Notes) with the USER's own tasks marked clearly; open questions and risks; next meeting.
 3. Save to Meetings/<YYYY-MM-DD> <title>.md.
 4. For every task given to the user: add it to the board (project, due date as YYYY-MM-DD, turning "by Friday" into a real date) and a reminder the day before at 09:00.
