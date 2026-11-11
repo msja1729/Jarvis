@@ -42,8 +42,6 @@
         <header id="topbar" class="glass">
           <div class="hero"><h1 id="page-title">Chat</h1><p id="page-sub">Ask anything, by typing or with your voice</p></div>
           <div class="spacer"></div>
-          <div class="chip" title="Jarvis status"><span id="status-dot" class="dot ok"></span><span id="status-text">Ready</span></div>
-          <div class="chip" title="Connected apps"><span class="chip-label">Apps</span><b id="chip-apps">–</b></div>
         </header>
 
         <main>
@@ -80,11 +78,11 @@
               <div id="empty" class="empty">
                 <div class="orb" id="orb"><span>AI</span></div>
                 <p class="empty-title">Who would you like to talk to?</p>
-                <p class="empty-sub">Ask anything and Jarvis passes it to the right expert, or start with a name: “Doctor, …”, “PA, …”</p>
+                <p class="empty-sub">Start with a name, like “Sara, …” or “Ryan, …”. You stay with them until you say another name.</p>
                 <div id="suggestions" class="suggestions"></div>
               </div>
             </div>
-            <div id="progress" class="progress hidden"><span class="mini-orb"></span><span id="progress-text"></span></div>
+            <div id="progress" class="progress hidden" aria-label="Replying"><span class="dots"><i></i><i></i><i></i></span></div>
             <div id="role-chips" class="role-chips" role="radiogroup" aria-label="Talk to"></div>
             <form id="composer" class="glass">
               <button type="button" id="mic" class="mic" title="Talk to Jarvis (or press the push-to-talk shortcut from any app)" aria-label="Talk">
@@ -105,8 +103,10 @@
           <section id="view-team" class="view">
             <p class="lead">Your team of experts. Each one has its own skills, apps, voice and memory, and they ask each other for help when needed.</p>
             <div id="team-grid" class="team-grid"></div>
-            <h2>Project board</h2>
-            <p class="muted">Shared by your PA and Project Manager. Coding jobs appear here on their own; you can also ask "Maya, add 'finish the report' due Friday".</p>
+            <div class="section-head">
+              <h2>Project board</h2>
+              <p>Shared by Maya and Ryan. Coding jobs appear here on their own; you can also say "Maya, add 'finish the report' due Friday".</p>
+            </div>
             <form id="board-add" class="board-add glass">
               <input id="board-title" placeholder="New task…" autocomplete="off" />
               <input id="board-project" placeholder="Project" autocomplete="off" />
@@ -118,35 +118,29 @@
           </section>
 
           <section id="view-hub" class="view">
-            <p class="lead">Choose which apps Jarvis can use and what it may do in each. Changes apply on the next request.</p>
-            <h2>Accounts</h2>
-            <p class="muted">Sign in once per account. Google covers Gmail and Google Calendar; Microsoft covers Outlook mail and calendar.</p>
-            <div id="accounts" class="grid"></div>
+            <div class="section-head">
+              <h2>Accounts</h2>
+              <p>Sign in once per account. Google covers Gmail and Google Calendar; Microsoft covers Outlook mail and calendar.</p>
+            </div>
+            <div id="accounts" class="grid accounts-grid"></div>
             <div id="signin-wait" class="card wait hidden">
-              <b>Finish signing in in your browser…</b>
+              <b>Finish signing in in your browser&hellip;</b>
               <span class="muted">A browser tab has opened. When you are done there, come back here.</span>
               <div><button id="signin-cancel">Cancel</button></div>
             </div>
             <div id="hub-error" class="error"></div>
 
-            <h2>Your apps</h2>
-            <div id="hub-list" class="stack-list"></div>
+            <div class="section-head">
+              <h2>Email &amp; calendar</h2>
+              <p>They work once the matching account above is signed in. Anything that sends, changes or deletes asks you first.</p>
+            </div>
+            <div id="hub-mail" class="hub-grid"></div>
 
-            <h2>Add more apps</h2>
-            <div id="suggested" class="grid"></div>
-            <details class="card add-app">
-              <summary>Add another app by address (MCP server)</summary>
-              <form id="add-app">
-                <label>Name <input name="name" required placeholder="My tool" /></label>
-                <label>Server address <input name="url" placeholder="https://example.com/mcp" /></label>
-                <label>…or a command to start it <input name="command" placeholder="npx -y some-mcp-server" /></label>
-                <label>API key, if the app gave you one (kept in your system keychain) <input name="apiKey" type="password" autocomplete="off" /></label>
-                <p class="muted">No key? Leave it empty. If the app needs you to sign in, your browser opens.</p>
-                <div class="add-who"><span class="muted">Who can use it</span><div id="add-members"></div></div>
-                <button type="submit" class="primary">Add app</button>
-                <div id="add-error" class="error"></div>
-              </form>
-            </details>
+            <div class="section-head">
+              <h2>Team tools</h2>
+              <p>Built into Jarvis. Turn on what you want your team to use, and choose who can use each one.</p>
+            </div>
+            <div id="hub-list" class="hub-grid"></div>
           </section>
 
           <section id="view-activity" class="view">
@@ -162,116 +156,107 @@
           </section>
 
           <section id="view-settings" class="view">
-            <div class="card settings-card">
-              <label>Model
-                <select id="model-override">
-                  <option value="">Automatic (haiku for look-ups, sonnet for drafting, Opus 5.5 for the Project Manager)</option>
-                  <option value="haiku">Always haiku</option>
-                  <option value="sonnet">Always sonnet</option>
-                </select>
-              </label>
-              <label class="switch-row">
-                <span>Speak replies aloud</span>
-                <input type="checkbox" id="voice-output" class="switch" />
-              </label>
-              <label class="switch-row">
-                <span>Keep chat history on this computer (chat, voice and floating box together)</span>
-                <input type="checkbox" id="keep-history" class="switch" />
-              </label>
-              <div class="row-buttons"><button id="clear-history" type="button">Clear chat history</button><span id="history-status" class="muted"></span></div>
-              <label>How Jarvis explains things
-                <select id="explain-level">
-                  <option value="auto">Automatic (Jarvis picks from your question)</option>
-                  <option value="eli5">Like I'm five (simplest words, everyday examples)</option>
-                  <option value="student">Student (clear, friendly, explains terms)</option>
-                  <option value="professional">Professional (precise, technical, real code and trade-offs)</option>
-                </select>
-              </label>
-              <p class="help">You can also just say it, for example "explain like I'm five" or "explain at an expert level".</p>
-            </div>
-            <h2>Coding supervisor</h2>
-            <div class="card settings-card">
-              <p class="help">When the Coding supervisor app is on (Tool Hub), you can say "Jarvis, add a login page to my project". Jarvis runs Claude Code on the folder you pick, in the background, brings you its questions with its own recommendation, and gives you updates.</p>
-              <label>What Jarvis may approve on its own
-                <select id="sup-autonomy">
-                  <option value="careful">Careful: only reading; everything else comes to you</option>
-                  <option value="balanced">Balanced: reading, editing project files, running tests and builds (recommended)</option>
-                  <option value="handsoff">Hands-off: also other commands; only risky things come to you</option>
-                </select>
-              </label>
-              <p class="help">At every level these always come to you: deleting files, git push, installing software, using the network, anything outside the project folder, and files with keys or passwords.</p>
-              <label>Progress updates
-                <select id="sup-updates">
-                  <option value="0">Only at the start, questions and the end</option>
-                  <option value="3">Every 3 minutes (if something happened)</option>
-                  <option value="5">Every 5 minutes (if something happened)</option>
-                  <option value="10">Every 10 minutes (if something happened)</option>
-                  <option value="15">Every 15 minutes (if something happened)</option>
-                </select>
-              </label>
-              <label class="switch-row">
-                <span>Speak questions and updates aloud</span>
-                <input type="checkbox" id="sup-speak" class="switch" />
-              </label>
-              <label class="switch-row">
-                <span>Also tell me when Claude Code sessions I start myself (VS Code, terminal) finish or need me</span>
-                <input type="checkbox" id="sup-watch" class="switch" />
-              </label>
-              <p class="help" id="sup-watch-help">This adds two small entries (marked "jarvis-claude-hook") to your Claude Code settings file; turning it off removes exactly those. A copy of the original file is kept next to it.</p>
-              <div id="sup-watch-error" class="error"></div>
-            </div>
-            <h2>Natural voice</h2>
-            <div class="card settings-card">
-              <div class="app-head"><h3>Jarvis's voice (runs on this computer)</h3><span id="tts-pill" class="pill">Checking...</span></div>
-              <p class="help">A realistic neural voice (Kokoro). Replies are turned into speech on your computer; nothing is sent anywhere.</p>
-              <div class="row-buttons"><button id="tts-install" class="primary hidden">Download natural voice (about 326 MB)</button></div>
-              <div id="tts-progress" class="meter-bar hidden"><i></i><span></span></div>
-              <label>Jarvis's voice <span class="muted">(each team member's voice is chosen on the Team page)</span><select id="tts-voice"></select></label>
-              <label>Speed <span id="tts-speed-label" class="muted"></span><input id="tts-speed" type="range" min="0.8" max="1.3" step="0.05" /></label>
-              <div class="row-buttons"><button id="tts-sample">Play sample</button><span class="help">Grades are Kokoro's own quality ratings (A is the most natural).</span></div>
-              <div id="tts-error" class="error"></div>
-            </div>
-            <h2>Voice</h2>
-            <div class="card settings-card">
-              <div class="app-head"><h3>Speech engine (runs on this computer)</h3><span id="speech-pill" class="pill">Checking...</span></div>
-              <p class="help">Speech is turned into text with whisper.cpp on your computer. Your voice is never sent to Claude, only the text.</p>
-              <div id="speech-help" class="help hidden"></div>
-              <div class="row-buttons">
-                <button id="speech-install" class="primary hidden">Download speech engine (about 155 MB)</button>
-                <button id="speech-check">Check again</button>
+            <div class="settings-grid">
+              <div class="card settings-card">
+                <h3 class="card-title">Conversation</h3>
+                <label>Model
+                  <select id="model-override">
+                    <option value="">Automatic (Haiku for look-ups, Sonnet for most answers, Opus 5.5 for the Project Manager)</option>
+                    <option value="haiku">Always Haiku (fastest)</option>
+                    <option value="sonnet">Always Sonnet</option>
+                  </select>
+                </label>
+                <label>How your team explains things
+                  <select id="explain-level">
+                    <option value="auto">Automatic (picked from your question)</option>
+                    <option value="eli5">Like I'm five (simplest words, everyday examples)</option>
+                    <option value="student">Student (clear, friendly, explains terms)</option>
+                    <option value="professional">Professional (precise, technical, real code and trade-offs)</option>
+                  </select>
+                </label>
+                <p class="help">You can also just say it: "explain like I'm five" or "explain at an expert level".</p>
+                <div class="divider"></div>
+                <label class="switch-row"><span>Speak replies aloud</span><input type="checkbox" id="voice-output" class="switch" /></label>
+                <label class="switch-row"><span>Pause music and videos while you talk and while your team speaks</span><input type="checkbox" id="pause-media" class="switch" /></label>
+                <label class="switch-row"><span>Keep chat history on this computer</span><input type="checkbox" id="keep-history" class="switch" /></label>
+                <div class="row-buttons"><button id="clear-history" type="button">Clear chat history</button><span id="history-status" class="muted"></span></div>
               </div>
-              <div id="speech-progress" class="meter-bar hidden"><i></i><span></span></div>
-              <label>Push-to-talk shortcut (works in any app)
+
+              <div class="card settings-card">
+                <div class="app-head"><h3 class="card-title">Voice input</h3><span id="speech-pill" class="pill">Checking&hellip;</span></div>
+                <p class="help">Speech is turned into text on this computer (whisper.cpp). Your voice is never sent anywhere, only the text.</p>
+                <div id="speech-help" class="help hidden"></div>
                 <div class="row-buttons">
-                  <input id="ptt-hotkey" placeholder="Control+Alt+Space" autocomplete="off" />
-                  <button id="ptt-save">Save</button>
+                  <button id="speech-install" class="primary hidden">Download speech recognition</button>
+                  <button id="speech-check">Check again</button>
                 </div>
-              </label>
-              <p class="help">Press the shortcut, speak, and Jarvis stops listening after a short pause (or press it again). Jarvis answers out loud.</p>
-              <label>Show / hide the answer card (works in any app)
-                <div class="row-buttons">
-                  <input id="card-hotkey" placeholder="Control+Alt+J" autocomplete="off" />
-                  <button id="card-save">Save</button>
-                </div>
-              </label>
-              <p class="help">The written answer stays hidden while Jarvis speaks. Press this shortcut to see it, and again to hide it. Hiding it does not stop the speech. The ✕ on the card stops it.</p>
-              <div id="ptt-error" class="error"></div>
-            </div>
-            <h2>You</h2>
-            <div class="card settings-card">
-              <label>Your name (your team uses it)
-                <div class="row-buttons"><input id="you-name" maxlength="30" autocomplete="off" placeholder="Your name" /><button id="you-save" type="button">Save</button></div>
-              </label>
-              <div id="you-say"></div>
-            </div>
-            <h2>Welcome &amp; uninstall</h2>
-            <div class="card settings-card">
-              <div class="row-buttons">
-                <button id="meet-again" type="button">Meet the team again</button>
-                <button id="setup-again" type="button">Run the setup again</button>
+                <div id="speech-progress" class="meter-bar hidden"><i></i><span></span></div>
+                <label>Push-to-talk shortcut (works in any app)
+                  <div class="row-buttons"><input id="ptt-hotkey" placeholder="Control+Alt+Space" autocomplete="off" /><button id="ptt-save">Save</button></div>
+                </label>
+                <p class="help">Press it, speak, and your team answers out loud. Listening stops after a short pause (or press it again).</p>
+                <label>Show or hide the answer card (works in any app)
+                  <div class="row-buttons"><input id="card-hotkey" placeholder="Control+Alt+J" autocomplete="off" /><button id="card-save">Save</button></div>
+                </label>
+                <p class="help">The written answer stays hidden while it is spoken. Press this shortcut to see it. The &times; on the card stops the speech.</p>
+                <div id="ptt-error" class="error"></div>
               </div>
-              <p class="help">Uninstalling removes Jarvis and everything it kept on this computer: settings, chats, memory, team folders, voices, saved sign-ins and the Claude Code hooks it added. Claude Code itself and your own projects are not touched.</p>
-              <div class="row-buttons"><button id="uninstall" type="button" class="chip danger">Uninstall Jarvis</button><span id="uninstall-msg" class="muted"></span></div>
+
+              <div class="card settings-card">
+                <div class="app-head"><h3 class="card-title">Natural voice</h3><span id="tts-pill" class="pill">Checking&hellip;</span></div>
+                <p class="help">A realistic voice (Kokoro) made on this computer; nothing is sent anywhere. Each team member's voice is chosen on the Team page.</p>
+                <div class="row-buttons"><button id="tts-install" class="primary hidden">Download natural voice (about 326 MB)</button></div>
+                <div id="tts-progress" class="meter-bar hidden"><i></i><span></span></div>
+                <label>Jarvis's voice<select id="tts-voice"></select></label>
+                <label>Speed <span id="tts-speed-label" class="muted"></span><input id="tts-speed" type="range" min="0.8" max="1.3" step="0.05" /></label>
+                <div class="row-buttons"><button id="tts-sample">Play sample</button><span class="help">Grades are Kokoro's quality ratings (A is the most natural).</span></div>
+                <div id="tts-error" class="error"></div>
+              </div>
+
+              <div class="card settings-card">
+                <h3 class="card-title">You</h3>
+                <label>Your name (your team uses it)
+                  <div class="row-buttons"><input id="you-name" maxlength="30" autocomplete="off" placeholder="Your name" /><button id="you-save" type="button">Save</button></div>
+                </label>
+                <div id="you-say"></div>
+              </div>
+
+              <div class="card settings-card">
+                <h3 class="card-title">Coding supervisor</h3>
+                <p class="help">With the Coding supervisor on (Tool Hub), say "Ryan, add a login page to my project". Claude Code works on the folder you pick, in the background; you get its questions with a recommendation, and updates.</p>
+                <label>What may be approved without asking you
+                  <select id="sup-autonomy">
+                    <option value="careful">Careful: only reading; everything else comes to you</option>
+                    <option value="balanced">Balanced: reading, editing project files, running tests and builds (recommended)</option>
+                    <option value="handsoff">Hands-off: also other commands; only risky things come to you</option>
+                  </select>
+                </label>
+                <p class="help">Always asked, at every level: deleting files, git push, installing software, using the network, anything outside the project folder, and files with keys or passwords.</p>
+                <label>Progress updates
+                  <select id="sup-updates">
+                    <option value="0">Only at the start, questions and the end</option>
+                    <option value="3">Every 3 minutes (if something happened)</option>
+                    <option value="5">Every 5 minutes (if something happened)</option>
+                    <option value="10">Every 10 minutes (if something happened)</option>
+                    <option value="15">Every 15 minutes (if something happened)</option>
+                  </select>
+                </label>
+                <label class="switch-row"><span>Speak questions and updates aloud</span><input type="checkbox" id="sup-speak" class="switch" /></label>
+                <label class="switch-row"><span>Also tell me when Claude Code sessions I start myself (VS Code, terminal) finish or need me</span><input type="checkbox" id="sup-watch" class="switch" /></label>
+                <p class="help" id="sup-watch-help">This adds two small entries (marked "jarvis-claude-hook") to your Claude Code settings; turning it off removes exactly those.</p>
+                <div id="sup-watch-error" class="error"></div>
+              </div>
+
+              <div class="card settings-card">
+                <h3 class="card-title">Setup &amp; uninstall</h3>
+                <div class="row-buttons">
+                  <button id="meet-again" type="button">Meet the team again</button>
+                  <button id="setup-again" type="button">Run the setup again</button>
+                </div>
+                <div class="divider"></div>
+                <p class="help">Uninstalling removes Jarvis and everything it kept on this computer: settings, chats, memory, team folders, voices, saved sign-ins and the Claude Code hooks it added. Claude Code itself and your own projects are not touched.</p>
+                <div class="row-buttons"><button id="uninstall" type="button" class="chip danger">Uninstall Jarvis</button><span id="uninstall-msg" class="muted"></span></div>
+              </div>
             </div>
           </section>
         </main>
@@ -286,7 +271,7 @@
         <button id="vc-close" class="vc-x" type="button" aria-label="Close">×</button>
       </div>
       <div class="vc-you"><span class="muted">You said</span> <span id="vc-you"></span></div>
-      <div id="vc-status" class="vc-status hidden"><span class="dots"><i></i><i></i><i></i></span><span id="vc-status-text"></span></div>
+      <div id="vc-status" class="vc-status hidden" aria-label="Replying"><span class="dots"><i></i><i></i><i></i></span></div>
       <div id="vc-answer" class="vc-answer"></div>
     </div>
 

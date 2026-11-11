@@ -8,7 +8,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { wavHeader } from '../speech/pcm.js';
+import { prepareSpeech, wavHeader } from '../speech/pcm.js';
 import { PushToTalk, PttState } from '../speech/ptt.js';
 import { WhisperEngine } from '../speech/whisper.js';
 import { MeetingRecorder } from '../tools/recorder/recorder.js';
@@ -31,6 +31,8 @@ export interface VoiceDeps {
   progress(label: string | null): void;
   /** Stop any reply being spoken (you are about to talk). */
   stopSpeaking(): void;
+  /** Pause / resume the user's music: while listening, and until the reply has been spoken. */
+  media?: { hold(key: string, on: boolean, maxMs?: number): void };
 }
 
 export interface LocalReply {
@@ -133,6 +135,7 @@ export class VoiceController {
     ipcMain.handle('speech:status', () => ({ ...this.engine.status(), hotkey: this.hotkey }));
     ipcMain.handle('speech:install', async (e) => {
       await this.engine.install((label, f) => e.sender.send('speech:progress', { label, fraction: f }));
+      void this.engine.warmUp();
       return this.engine.status();
     });
   }
@@ -157,10 +160,12 @@ export class VoiceController {
   /** Downloads the speech engine if needed (Windows), with progress in the chat. */
   async ensureEngine(): Promise<void> {
     if (this.engine.status().ready) return;
-    this.deps.notify('Setting up the local speech engine (one-time download, about 155 MB)…');
+    const mb = Math.round(this.engine.status().downloadBytes / 1e6);
+    this.deps.notify(`Setting up speech recognition on this computer (one-time download, about ${mb.toLocaleString()} MB)…`);
     await this.engine.install((label, f) => this.deps.progress(`${label}… ${Math.round(f * 100)}%`));
     this.deps.progress(null);
-    this.deps.notify('The speech engine is ready.');
+    this.deps.notify('Speech recognition is ready.');
+    void this.engine.warmUp();
   }
 
   /* ---------- capture ---------- */
@@ -183,7 +188,9 @@ export class VoiceController {
     this.capture = null;
   }
 
-  private async transcribePcm(pcm: Uint8Array): Promise<string> {
+  private async transcribePcm(raw: Uint8Array): Promise<string> {
+    // trim the silence around the words and even out the volume (soft or rushed speech)
+    const pcm = prepareSpeech(raw);
     const wav = path.join(os.tmpdir(), `jarvis-ptt-${crypto.randomBytes(6).toString('hex')}.wav`);
     fs.writeFileSync(wav, Buffer.concat([Buffer.from(wavHeader(pcm.length)), Buffer.from(pcm)]));
     try {
@@ -256,6 +263,13 @@ export class VoiceController {
   }
 
   private pttIndicate(state: PttState | 'error' | 'nothing', message?: string) {
+    const media = this.deps.media;
+    if (state === 'listening') media?.hold('listening', true, 60_000);
+    else if (state === 'idle') {
+      // you finished and your words go to the team: stay quiet until they have answered (released by main)
+      media?.hold('reply', true, 90_000);
+      media?.hold('listening', false);
+    } else if (state !== 'transcribing') media?.hold('listening', false);
     if (state === 'listening') this.badge('ptt', { mode: 'ptt', state: 'listening', label: 'Listening', level: 0, action: 'Done' });
     else if (state === 'transcribing') this.badge('ptt', { mode: 'ptt', state: 'transcribing', label: 'Got it', sub: 'Turning speech into text…', action: null });
     else if (state === 'idle') this.hideBadge('ptt');
@@ -307,6 +321,7 @@ export class VoiceController {
   }
 
   dispose(): void {
+    this.engine.stopServer();
     if (this.hotkey) globalShortcut.unregister(this.hotkey);
     for (const w of this.badges.values()) if (!w.isDestroyed()) w.close();
   }

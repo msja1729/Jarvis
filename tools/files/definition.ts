@@ -2,7 +2,7 @@ import type { AppDef } from '../../gateway/types.js';
 
 const OWNER = {
   type: 'string',
-  enum: ['jarvis', 'pa', 'educator', 'pm', 'doctor', 'finance'],
+  enum: ['jarvis', 'pa', 'pm', 'doctor', 'finance'],
   description: "a teammate's folder to look in (read only); leave out for your own",
 };
 

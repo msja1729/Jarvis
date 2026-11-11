@@ -27,6 +27,8 @@ export interface HandleResult {
   followUp?: string;
   /** Which team member answered. */
   role?: RoleId;
+  /** For a local command: the member the user is talking to (who the reply is shown from). */
+  speaker?: RoleId;
   /** The Claude session that answered (saved with the conversation so it can be continued). */
   sessionId?: string | null;
 }
@@ -100,14 +102,15 @@ export class Orchestrator {
     const routed = routeRole(input, picked, this.last, (this.deps.now?.() ?? new Date()).getTime(), this.deps.people?.() ?? {});
     const role = routed.role;
     const text = routed.text;
+    if (routed.how === 'named' || routed.how === 'picked') this.last = { role, at: (this.deps.now?.() ?? new Date()).getTime() };
     const cmd = matchLocalCommand(text);
     if (cmd) {
       if (cmd === 'new_conversation') this.resetSessions();
-      // a local command belongs to a member only if the user named or picked them ("Alan, record this lecture")
+      // a local command belongs to a member only if the user named or picked them ("Sara, record this appointment")
       const asked: RoleId = routed.how === 'named' || routed.how === 'picked' ? role : 'jarvis';
       const out = await this.deps.runLocal(cmd, asked);
       const { reply, followUp } = typeof out === 'string' ? { reply: out, followUp: undefined } : out;
-      return { kind: 'local', command: cmd, reply, followUp, newConversation: cmd === 'new_conversation', role: asked };
+      return { kind: 'local', command: cmd, reply, followUp, newConversation: cmd === 'new_conversation', role: asked, speaker: role };
     }
 
     const model = modelFor(role, text, this.deps.modelOverride());
@@ -123,7 +126,7 @@ export class Orchestrator {
       // a role's notes about the user go in front of the first message of a new conversation
       const notes = !decision.sessionId && role !== 'jarvis' ? this.deps.memory?.prefix(role) : '';
       // spoken questions get spoken-length answers: shorter to write, and to listen to
-      const spoken = live.spoken ? ' [spoken: answer in at most 3 short, plain sentences; no lists or headings, unless asked for detail]' : '';
+      const spoken = live.spoken ? ' [spoken: the words come from speech recognition and may have small mistakes, so read for meaning; answer in at most 3 short, plain sentences; no lists or headings, unless asked for detail]' : '';
       const base = `${timePrefix(now)}${level ? ` [level: ${level}]` : ''}${spoken}`;
       const withNotes = (n: string | undefined) => `${n ? `${n}\n` : ''}${base} ${text}`;
       const opts = { onProgress: this.deps.onProgress, role, onText: live.onText };

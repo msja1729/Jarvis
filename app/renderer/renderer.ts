@@ -1,13 +1,13 @@
 /** Renderer UI. All untrusted text is inserted with textContent, never innerHTML. */
-import { initTts, speak, speakStream, stopSpeaking } from '../../speech/tts.js';
+import { initTts, isSpeaking, speak, speakStream, stopSpeaking } from '../../speech/tts.js';
 import { startWorldMap } from './worldmap.js';
 import { Onboarding, sayMyName } from './onboard.js';
+import { renderMarkdown } from './markdown.js';
 import { startCapture, stopCapture, CaptureKind } from './audio.js';
 
 interface Ability { name: string; title: string; description: string; group: string; setting: string; options: string[] }
 interface HubApp { id: string; name: string; description: string; kind: string; enabled: boolean; connected: boolean; account: string | null; auth: string | null; abilities: Ability[]; members: string[]; everyone: boolean; membersChanged: boolean }
 interface Account { id: string; name: string; configured: boolean; connected: boolean; email: string | null; needsSecret: boolean }
-interface Suggested { id: string; name: string; description: string; url: string; auth: 'oauth' | 'key' | 'none'; keyHelp?: string; added: boolean }
 interface ConfirmReq { id: string; appName: string; abilityTitle: string; group: string; summary: string }
 
 declare global {
@@ -19,6 +19,7 @@ declare global {
       onboardSetName(name: string): Promise<string>;
       nameGet(): Promise<{ name: string; sayAs: string }>;
       appUninstall(): Promise<boolean>;
+      mediaSpeaking(on: boolean): void;
       ask(text: string, role?: string | null, opts?: { stream?: boolean }): Promise<any>;
       onAskStart(cb: (s: { roleName: string; roleColor: string; voice: string }) => void): void;
       onAskPartial(cb: (d: string) => void): void;
@@ -43,10 +44,6 @@ declare global {
       hubList(): Promise<HubApp[]>;
       hubSetEnabled(appId: string, on: boolean): Promise<HubApp[]>;
       hubSetAbility(appId: string, ability: string, setting: string): Promise<HubApp[]>;
-      hubAddMcp(input: unknown): Promise<HubApp[]>;
-      hubRemove(appId: string): Promise<HubApp[]>;
-      hubSuggested(): Promise<Suggested[]>;
-      hubSignIn(appId: string): Promise<HubApp[]>;
       accountsList(): Promise<Account[]>;
       accountsSetup(id: string, clientId: string, clientSecret?: string): Promise<Account[]>;
       accountsConnect(id: string): Promise<Account[]>;
@@ -63,7 +60,6 @@ declare global {
       settingsGet(): Promise<any>;
       settingsSet(patch: unknown): Promise<any>;
       toggleBox(): void;
-      onProgress(cb: (label: string) => void): void;
       onConfirm(cb: (req: ConfirmReq) => void): void;
       onConfirmCancel(cb: (id: string) => void): void;
       onNavigate(cb: (view: string) => void): void;
@@ -125,6 +121,11 @@ const SETTING_LABEL: Record<string, string> = { off: 'Off', ask: 'Ask me first',
 let voiceOn = false;
 
 const MODE = new URLSearchParams(location.search).get('mode') ?? 'main';
+// first run: cover the app with the welcome's backdrop before the first frame is painted
+if (MODE === 'main' && new URLSearchParams(location.search).get('welcome') === '1') {
+  document.body.classList.add('onboarding');
+  document.getElementById('onboard')?.classList.remove('hidden');
+}
 document.body.classList.add(MODE);
 if (MODE === 'main') startWorldMap(document.getElementById('worldmap') as HTMLCanvasElement);
 
@@ -202,7 +203,6 @@ function show(view: string) {
   if (view === 'hub') {
     void renderAccounts();
     void renderHub();
-    void renderSuggested();
   }
   if (view === 'team') void renderTeam();
   if (view === 'activity') void renderActivity();
@@ -217,19 +217,9 @@ $('open-box').addEventListener('click', () => j.toggleBox());
 j.onNavigate(show);
 
 /* ---------- status chips ---------- */
-function setStatus(state: 'ok' | 'busy' | 'err', text: string) {
-  $('status-dot').className = `dot ${state}`;
-  $('status-text').textContent = text;
+function setStatus(state: 'ok' | 'busy' | 'err') {
   $('orb').classList.toggle('thinking', state === 'busy');
   document.body.classList.toggle('busy', state === 'busy');
-}
-async function refreshChips() {
-  try {
-    const apps = await j.hubList();
-    $('chip-apps').textContent = String(apps.filter((a) => a.enabled && a.connected).length);
-  } catch {
-    /* chips are informational */
-  }
 }
 
 /* ---------- live replies: speak while Claude is still writing ---------- */
@@ -252,7 +242,7 @@ j.onAskPartial((d: string) => {
   liveText += d;
   liveSpeech?.push(d);
   if (MODE === 'voice' && liveText.trim()) {
-    setVoiceStatus(null);
+    setVoiceStatus(false);
     $('vc-answer').textContent = liveText.trim();
     fitVoice();
   }
@@ -318,7 +308,7 @@ function renderRoleChips() {
   const box = $('role-chips');
   if (!box || !teamCache) return;
   box.replaceChildren();
-  const auto = roleChip('Auto', '#f0efec', pickedRole === null, 'Jarvis passes it to the right expert');
+  const auto = roleChip('Auto', '#f0efec', pickedRole === null, 'Say a name to talk to someone; you stay with them until you name someone else');
   auto.addEventListener('click', () => pickRole(null));
   box.append(auto);
   // Jarvis is the front desk, not someone you talk to: only the experts are here
@@ -348,7 +338,6 @@ function renderSuggestions() {
 const ROLE_SAMPLE: Record<string, string> = {
   jarvis: "Hello, I'm Jarvis. Ask me anything and I'll bring in the right expert.",
   pa: "Hi, I'm {name}, your personal assistant. You have a light morning, so let's put the report first.",
-  educator: "Hello! I'm {name}, your teacher. Let's start with a picture, and the formula will make sense.",
   pm: "Hey, I'm {name}, your project manager. The login page is done and the tests are green.",
   doctor: "Hello, I'm {name}, your doctor. Let's talk about what you're eating and how you're sleeping.",
   finance: "Hi, I'm {name}. Let's look at where your money goes each month.",
@@ -553,9 +542,17 @@ async function renderTeam() {
 
 /* ---------- chat ---------- */
 const messages = $('messages');
+/** A reply, formatted (bold, lists, code, links); links open in the browser. */
+function mdBlock(text: string): HTMLElement {
+  const box = el('div', { className: 'md' });
+  box.innerHTML = renderMarkdown(text);
+  return box;
+}
 function addMsg(who: 'user' | 'jarvis', text: string, meta?: string, isError = false, from?: { name: string; color: string }) {
   $('empty').classList.add('hidden');
-  const m = el('div', { className: `msg ${who}${isError ? ' error' : ''}` }, text);
+  const m = el('div', { className: `msg ${who}${isError ? ' error' : ''}` });
+  if (who === 'jarvis' && !isError) m.append(mdBlock(text));
+  else m.append(el('div', { className: 'md plain' }, text));
   if (from) {
     const badge = el('span', { className: 'who' }, el('i', {}), from.name);
     badge.style.setProperty('--c', from.color);
@@ -813,19 +810,12 @@ function addNote(text: string) {
   messages.append(el('div', { className: 'note' }, text));
 }
 
+/** A quiet "typing" indicator while a reply is on its way (no step-by-step labels: they lagged behind). */
 const progress = $('progress');
-function setProgress(label: string | null) {
-  $('progress-text').textContent = label ?? '';
-  progress.classList.toggle('hidden', label === null);
-  if (label) setStatus('busy', label.replace(/…$/, ''));
+function setProgress(working: boolean) {
+  progress.classList.toggle('hidden', !working);
+  if (working) setStatus('busy');
 }
-j.onProgress((label) => {
-  if (MODE === 'voice') {
-    if (label && voiceBusy) setVoiceStatus(label);
-    return;
-  }
-  setProgress(label);
-});
 
 j.onNotice((text) => showNotice(text));
 
@@ -856,7 +846,7 @@ $('composer').addEventListener('submit', async (e) => {
   addMsg('user', text);
   const send = $<HTMLButtonElement>('send');
   send.disabled = true;
-  setProgress('Thinking…');
+  setProgress(true);
   try {
     awaitingLive = voiceOn;
     const r = await j.ask(text, pickedRole, { stream: voiceOn });
@@ -869,18 +859,19 @@ $('composer').addEventListener('submit', async (e) => {
     if (r.kind === 'brain') meta = `${r.model} · ${r.tokens?.toLocaleString() ?? 0} tokens${r.expensive ? ' · ▲ 3× more than usual' : ''}`;
     else meta = 'handled locally · 0 tokens';
     addMsg('jarvis', r.reply, meta, Boolean(r.isError), r.roleName ? { name: r.roleName, color: r.roleColor } : undefined);
+    // you named someone else: the chip moves to them, so the next messages stay with them too
+    if (pickedRole !== null && r.role && r.role !== 'jarvis' && r.role !== pickedRole) pickRole(r.role);
     if (r.limitReached) showNotice('Usage limit reached on your Claude plan. Jarvis will work again when the limit resets.');
     if (voiceOn) finishLive(r, true);
-    setStatus(r.isError ? 'err' : 'ok', r.isError ? 'Problem' : 'Ready');
+    setStatus(r.isError ? 'err' : 'ok');
     if (r.followUp) pendingFollowUp = r.followUp;
   } catch (err) {
     finishLive({ reply: '', isError: true }, false);
     addMsg('jarvis', String(err), undefined, true);
-    setStatus('err', 'Problem');
+    setStatus('err');
   } finally {
     send.disabled = false;
-    setProgress(null);
-    void refreshChips();
+    setProgress(false);
     if (pendingFollowUp) {
       const next = pendingFollowUp;
       pendingFollowUp = null;
@@ -926,9 +917,8 @@ const card = $('voice-card');
 function fitVoice() {
   requestAnimationFrame(() => j.voiceResize(Math.ceil(card.getBoundingClientRect().height)));
 }
-function setVoiceStatus(text: string | null) {
-  $('vc-status-text').textContent = text ?? '';
-  $('vc-status').classList.toggle('hidden', text === null);
+function setVoiceStatus(working: boolean) {
+  $('vc-status').classList.toggle('hidden', !working);
   fitVoice();
 }
 function hideVoiceSoon(ms: number) {
@@ -950,8 +940,8 @@ j.onAnnounce((a) => {
   ($('vc-orb') as HTMLElement).style.setProperty('--c', a.color);
   (document.querySelector('.vc-you .muted') as HTMLElement).textContent = a.title;
   $('vc-you').textContent = '';
-  $('vc-answer').textContent = a.text;
-  setVoiceStatus(null);
+  $('vc-answer').replaceChildren(mdBlock(a.text));
+  setVoiceStatus(false);
   speak(a.text, () => hideVoiceSoon(10_000), { voice: a.voice });
 });
 
@@ -963,18 +953,18 @@ async function voiceAsk(text: string): Promise<void> {
   (document.querySelector('.vc-you .muted') as HTMLElement).textContent = 'You said';
   $('vc-you').textContent = text;
   $('vc-answer').textContent = '';
-  setVoiceStatus('Thinking…');
+  setVoiceStatus(true);
   let followUp: string | undefined;
   try {
     awaitingLive = true;
     const r = await j.ask(text, null, { stream: true });
-    $('vc-answer').textContent = r.reply;
+    $('vc-answer').replaceChildren(mdBlock(r.reply));
     $('vc-name').textContent = r.roleName ?? 'Jarvis';
     ($('vc-orb') as HTMLElement).style.setProperty('--c', r.roleColor ?? '');
     card.classList.toggle('error', Boolean(r.isError));
     followUp = r.followUp;
     voiceBusy = false;
-    setVoiceStatus(null);
+    setVoiceStatus(false);
     // Spoken requests are always answered out loud (usually already speaking while the reply was written).
     if (!r.isError && !followUp) finishLive(r, !r.lessonShown, () => hideVoiceSoon(6000)); // a lesson narrates itself
     else {
@@ -986,7 +976,7 @@ async function voiceAsk(text: string): Promise<void> {
     voiceBusy = false;
     card.classList.add('error');
     $('vc-answer').textContent = cleanError(err);
-    setVoiceStatus(null);
+    setVoiceStatus(false);
     hideVoiceSoon(12000);
   }
   if (followUp) await voiceAsk(followUp);
@@ -1155,36 +1145,19 @@ function memberChips(members: TeamRole[], on: Set<string>, onToggle: (id: string
 async function renderHub(list?: HubApp[]) {
   const apps = list ?? (await j.hubList());
   const team = await teamMembers();
-  const root = $('hub-list');
-  root.replaceChildren();
+  // email & calendar (need an account) first, then the tools built into Jarvis
+  const mail = $('hub-mail');
+  const tools = $('hub-list');
+  mail.replaceChildren();
+  tools.replaceChildren();
   for (const a of apps) {
+    const root = a.account ? mail : tools;
     const toggle = el('input', { type: 'checkbox', checked: a.enabled, className: 'switch', title: a.enabled ? 'On' : 'Off' });
     toggle.addEventListener('change', async () => renderHub(await j.hubSetEnabled(a.id, toggle.checked)));
-    let status = a.connected ? 'Connected' : 'Not connected';
-    if (!a.connected && a.account) status = `Sign in to ${ACCOUNT_NAME[a.account]} above`;
-    const head = el(
-      'div',
-      { className: 'app-head' },
-      el('h3', {}, a.name),
-      el('span', { className: `pill${a.connected ? ' ok' : ''}` }, status),
-      toggle,
-    );
-    if (a.auth === 'oauth') {
-      const signIn = el('button', {}, a.connected ? 'Sign in again' : 'Sign in');
-      signIn.addEventListener('click', async () => {
-        const res = await duringSignIn(() => j.hubSignIn(a.id));
-        if (res) renderHub(res);
-      });
-      head.append(signIn);
-    }
-    if (a.kind === 'mcp') {
-      const rm = el('button', {}, 'Remove');
-      rm.addEventListener('click', async () => {
-        await renderHub(await j.hubRemove(a.id));
-        renderSuggested();
-      });
-      head.append(rm);
-    }
+    // only apps that need an account say whether they are connected
+    const head = el('div', { className: 'app-head' }, el('h3', {}, a.name));
+    if (a.account) head.append(el('span', { className: `pill${a.connected ? ' ok' : ''}` }, a.connected ? 'Connected' : `Sign in to ${ACCOUNT_NAME[a.account]} first`));
+    head.append(toggle);
     const table = el('table', { className: 'abilities' });
     for (const ab of a.abilities) {
       const select = el('select');
@@ -1207,7 +1180,7 @@ async function renderHub(list?: HubApp[]) {
         ),
       );
     }
-    const details = el('details', {}, el('summary', {}, `What Jarvis may do (${a.abilities.length})`), table);
+    const details = el('details', {}, el('summary', {}, `What it may do (${a.abilities.length})`), table);
     // who can use it: the user picks members; Jarvis (front desk) always can
     const who = el('div', { className: 'who-uses' }, el('span', { className: 'who-label muted small' }, 'Who can use it'));
     if (a.everyone) {
@@ -1230,7 +1203,7 @@ async function renderHub(list?: HubApp[]) {
       );
       if (a.membersChanged) {
         const reset = el('button', { type: 'button', className: 'link-btn small' }, 'Reset');
-        reset.title = a.kind === 'mcp' ? 'Back to the suggested members' : 'Back to the usual members';
+        reset.title = 'Back to the usual members';
         reset.addEventListener('click', async () => {
           teamCache = null;
           renderHub(await j.hubSetMembers(a.id, null));
@@ -1238,91 +1211,9 @@ async function renderHub(list?: HubApp[]) {
         who.append(reset);
       }
     }
-    root.append(el('div', { className: 'card' }, head, el('div', { className: 'muted' }, a.description), who, details));
+    root.append(el('div', { className: `card app-card${a.enabled ? '' : ' off'}` }, head, el('div', { className: 'muted app-desc' }, a.description), who, details));
   }
 }
-
-async function renderSuggested() {
-  const list = await j.hubSuggested();
-  const root = $('suggested');
-  root.replaceChildren();
-  for (const s of list) {
-    const card = el(
-      'div',
-      { className: 'card' },
-      el('div', { className: 'app-head' }, el('h3', {}, s.name)),
-      el('div', { className: 'muted' }, s.description),
-    );
-    if (s.added) {
-      card.append(el('div', {}, el('span', { className: 'pill ok' }, 'Added')));
-    } else if (s.auth === 'key') {
-      const key = el('input', { type: 'password', placeholder: 'Access token', autocomplete: 'off' });
-      const add = el('button', { className: 'primary' }, 'Add');
-      add.addEventListener('click', async () => {
-        if (!key.value.trim()) return showHubError(`Paste your ${s.name} access token first.`);
-        try {
-          showHubError(null);
-          add.disabled = true;
-          await renderHub(await j.hubAddMcp({ id: s.id, name: s.name, url: s.url, apiKey: key.value.trim() }));
-          renderSuggested();
-        } catch (err) {
-          showHubError(err);
-        } finally {
-          add.disabled = false;
-        }
-      });
-      card.append(el('div', { className: 'help' }, s.keyHelp ?? ''), key, el('div', { className: 'row-buttons' }, add));
-    } else {
-      const add = el('button', { className: 'primary' }, s.auth === 'none' ? 'Add' : 'Add and sign in');
-      add.addEventListener('click', async () => {
-        const res = await duringSignIn(() => j.hubAddMcp({ id: s.id, name: s.name, url: s.url }));
-        if (res) {
-          await renderHub(res);
-          renderSuggested();
-        }
-      });
-      card.append(el('div', { className: 'row-buttons' }, add));
-    }
-    root.append(card);
-  }
-}
-
-/** Members picked for an app being added; none = Jarvis suggests them from what the app does. */
-const addMembers = new Set<string>();
-async function renderAddMembers() {
-  const team = await teamMembers();
-  const box = $('add-members');
-  const hint = el('span', { className: 'muted small' }, addMembers.size ? '+ Jarvis' : 'None picked: Jarvis suggests members from what the app does. You can change it later.');
-  box.replaceChildren(
-    memberChips(team, addMembers, (id) => {
-      if (addMembers.has(id)) addMembers.delete(id);
-      else addMembers.add(id);
-      void renderAddMembers();
-    }),
-    hint,
-  );
-}
-if (MODE === 'main') void renderAddMembers();
-
-$('add-app').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const f = e.target as HTMLFormElement;
-  const data = Object.fromEntries(new FormData(f).entries()) as Record<string, string>;
-  const [command, ...args] = (data.command ?? '').trim().split(/\s+/).filter(Boolean);
-  $('add-error').textContent = '';
-  const res = await duringSignIn(() =>
-    j.hubAddMcp({ name: data.name, url: data.url || undefined, command, args, apiKey: data.apiKey || undefined, members: [...addMembers] }),
-  );
-  if (res) {
-    f.reset();
-    addMembers.clear();
-    void renderAddMembers();
-    teamCache = null;
-    renderHub(res);
-  } else {
-    $('add-error').textContent = $('hub-error').textContent;
-  }
-});
 
 /* ---------- activity ---------- */
 interface ActivityItem { id: string; ts: string; role?: string; appId: string; ability: string; outcome: 'done' | 'blocked' | 'declined' | 'error'; detail: string }
@@ -1569,6 +1460,7 @@ async function renderSettings(s?: any) {
   const snap = s ?? (await j.settingsGet());
   $<HTMLSelectElement>('model-override').value = snap.modelOverride ?? '';
   $<HTMLInputElement>('voice-output').checked = snap.voiceOutput;
+  $<HTMLInputElement>('pause-media').checked = snap.pauseMedia !== false;
   $<HTMLInputElement>('keep-history').checked = snap.keepHistory !== false;
   $<HTMLSelectElement>('explain-level').value = snap.explainLevel ?? 'auto';
   voiceOn = snap.voiceOutput;
@@ -1576,6 +1468,9 @@ async function renderSettings(s?: any) {
 $('model-override').addEventListener('change', async (e) => {
   const v = (e.target as HTMLSelectElement).value;
   renderSettings(await j.settingsSet({ modelOverride: v || null }));
+});
+$('pause-media').addEventListener('change', async (e) => {
+  renderSettings(await j.settingsSet({ pauseMedia: (e.target as HTMLInputElement).checked }));
 });
 $('voice-output').addEventListener('change', async (e) => {
   renderSettings(await j.settingsSet({ voiceOutput: (e.target as HTMLInputElement).checked }));
@@ -1742,4 +1637,15 @@ if (MODE === 'main') {
 
 void renderSettings();
 if (MODE === 'main') void checkWelcome();
-void refreshChips();
+
+/* ---------- pause the user's music while this window speaks ---------- */
+{
+  let was = false;
+  setInterval(() => {
+    const now = isSpeaking();
+    if (now !== was) {
+      was = now;
+      j.mediaSpeaking(now);
+    }
+  }, 200);
+}

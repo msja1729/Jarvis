@@ -276,11 +276,9 @@ describe('usage: "unusually large" compares like with like', () => {
 
 describe('web search', () => {
   it('is built in (no account) and every member has it', async () => {
-    const { SUGGESTED_APPS } = await import('../gateway/suggested.js');
     const { BUILTIN_APPS } = await import('../app/apps.js');
     const { WEB_APP, WEB_SEARCH_URL } = await import('../tools/web/definition.js');
     const { roleById, roleUsesApp, ROLE_IDS } = await import('../roles/roles.js');
-    expect(SUGGESTED_APPS.find((a) => a.id === 'web')).toBeUndefined();
     expect(BUILTIN_APPS).toContain(WEB_APP);
     expect(WEB_SEARCH_URL).toBe('https://mcp.exa.ai/mcp');
     expect(WEB_APP.defaultEnabled).toBe(true);

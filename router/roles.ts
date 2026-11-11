@@ -1,20 +1,19 @@
 /**
- * Which team member answers (0 tokens, on this computer). Jarvis is only the front desk:
- * it never answers itself, it passes every request to a member.
+ * Who answers is decided only by names (0 tokens, on this computer):
  *  1. a member called by name: "Sara, what should I eat?" (also when speech recognition
  *     spells the name a little differently: "Sarah", "Allen", "Viktor")
- *  2. else the member picked in the chat (if not "Auto")
- *  3. else by topic words
- *  4. else the member you were just talking to (follow-ups like "and tomorrow?")
- *  5. else Maya, the PA, who covers everything personal no one else does
- * "Jarvis, …" just means "front desk": the name is dropped and the request is routed as usual.
+ *  2. else the member picked with a chip above the chat
+ *  3. else whoever you last talked to: you stay with them until you say another name
+ *  4. else (the very first message) Maya, the PA
+ * Jarvis never answers: "Jarvis, …" just drops the name and the request goes on as above.
  */
 import { RoleId, ROLES } from '../roles/roles.js';
 
 /** Who answers when nothing else decides. */
 export const FALLBACK_ROLE: RoleId = 'pa';
 
-export const STICKY_MS = 5 * 60 * 1000;
+/** Kept for older callers: staying with a member no longer times out. */
+export const STICKY_MS = Number.POSITIVE_INFINITY;
 
 export interface Routed {
   role: RoleId;
@@ -81,29 +80,19 @@ export function routeRole(
   input: string,
   picked: RoleId | null,
   last: { role: RoleId; at: number } | null,
-  now = Date.now(),
+  _now = Date.now(),
   people: Partial<Record<RoleId, string>> = {},
 ): Routed {
   let text = input.trim();
   // 1. called by name at the start: "Sara, …", "Doctor, …", "hey PA …", "ask the teacher …"
   const named = calledByName(text, people);
   if (named && named.role !== 'jarvis') return { role: named.role, text: named.rest || text, how: 'named' };
-  // "Jarvis, …": the front desk, so route what follows
+  // "Jarvis, …" is the front desk: drop the name, the rest goes on as usual
   if (named?.role === 'jarvis' && named.rest) text = named.rest;
-  // 2. picked in the chat (Jarvis is not a member you can pick)
+  // 2. picked with a chip in the chat (Jarvis is not a member you can pick)
   if (picked && picked !== 'jarvis') return { role: picked, text, how: 'picked' };
-  // 3. by topic: the member with the most matching words
-  let best: { role: RoleId; score: number } | null = null;
-  for (const r of ROLES) {
-    if (r.id === 'jarvis') continue;
-    const strong = text.match(new RegExp(r.topics.source, 'gi'))?.length ?? 0;
-    const weak = r.weak ? (text.match(new RegExp(r.weak.source, 'gi'))?.length ?? 0) : 0;
-    const hits = strong + weak / 2;
-    if (hits && (!best || hits > best.score)) best = { role: r.id, score: hits };
-  }
-  if (best) return { role: best.role, text, how: 'topic' };
-  // 4. a follow-up to the conversation you were just having
-  if (last && now - last.at < STICKY_MS && last.role !== 'jarvis') return { role: last.role, text, how: 'follow-up' };
-  // 5. nobody in particular: the PA takes it
+  // 3. stay with the person you were talking to until you name someone else (no time limit, no topic guessing)
+  if (last && last.role !== 'jarvis') return { role: last.role, text, how: 'follow-up' };
+  // 4. nobody named yet: the PA takes it
   return { role: FALLBACK_ROLE, text, how: 'default' };
 }

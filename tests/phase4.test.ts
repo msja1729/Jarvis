@@ -14,7 +14,7 @@ import { MeetingRecorder, SEGMENT_SECONDS } from '../tools/recorder/recorder.js'
 import { PART_CHARS, splitParts, TranscriptExecutor } from '../tools/recorder/executor.js';
 import { RECORDER_APP } from '../tools/recorder/definition.js';
 import { MAX_RESULT_CHARS } from '../gateway/trim.js';
-import { makeCore, tmpDir } from './helpers.js';
+import { makeCore, ROOT, tmpDir } from './helpers.js';
 
 const SECOND = 16000 * 2; // bytes of 16 kHz mono 16-bit audio
 const silence = (sec: number) => new Uint8Array(Math.round(sec * SECOND));
@@ -282,4 +282,139 @@ describe('speech engine (whisper.cpp)', () => {
     const text = await engine.transcribe(path.join(realDir!, 'test.wav'));
     expect(text.toLowerCase()).toContain('schedule a meeting with asha tomorrow');
   });
+});
+
+describe('better speech recognition', () => {
+  it('uses Whisper large-v3-turbo, pinned and checked, and the right engine for the computer', async () => {
+    const { WHISPER_BUILDS, WHISPER_MODEL: M, WhisperEngine: E } = await import('../speech/whisper.js');
+    expect(M.name).toBe('ggml-large-v3-turbo-q5_0.bin');
+    expect(M.url).toMatch(/resolve\/[0-9a-f]{40}\//); // a fixed revision, not "main"
+    expect(M.sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(WHISPER_BUILDS.gpu.url).toMatch(/cuda-12/);
+    expect(WHISPER_BUILDS.cpu.url).toMatch(/blas/);
+    const gpu = new E(tmpDir(), { platform: 'win32', device: 'gpu' }).status();
+    expect(gpu).toMatchObject({ ready: false, device: 'gpu', downloadBytes: WHISPER_BUILDS.gpu.bytes + M.bytes });
+    expect(new E(tmpDir(), { platform: 'win32', device: 'cpu' }).status().device).toBe('cpu');
+  });
+
+  it('removes the old model and engine after upgrading', async () => {
+    const { WhisperEngine: E } = await import('../speech/whisper.js');
+    const dir = tmpDir();
+    fs.mkdirSync(path.join(dir, 'models'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'models', 'ggml-base.en.bin'), 'old');
+    fs.mkdirSync(path.join(dir, 'whisper', 'Release'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'whisper-b5454-cpu'), { recursive: true });
+    new E(dir, { platform: 'win32', device: 'gpu' }).removeOldFiles();
+    expect(fs.existsSync(path.join(dir, 'models', 'ggml-base.en.bin'))).toBe(false);
+    expect(fs.existsSync(path.join(dir, 'whisper'))).toBe(false);
+    expect(fs.existsSync(path.join(dir, 'whisper-b5454-cpu'))).toBe(false); // the other build
+  });
+
+  it('trims the silence around the words and evens out quiet speech', async () => {
+    const { prepareSpeech, SAMPLE_RATE } = await import('../speech/pcm.js');
+    const sec = (s: number) => Math.round(s * SAMPLE_RATE);
+    const n = sec(3);
+    const pcm = new Uint8Array(n * 2);
+    const v = new DataView(pcm.buffer);
+    // 1 s of faint room noise, 1 s of soft "speech", 1 s of faint noise
+    for (let i = 0; i < n; i++) {
+      const speech = i >= sec(1) && i < sec(2);
+      const x = speech ? Math.sin(i / 8) * 2000 : (Math.random() - 0.5) * 30;
+      v.setInt16(i * 2, Math.round(x), true);
+    }
+    const out = prepareSpeech(pcm);
+    const secondsOut = out.length / 2 / SAMPLE_RATE;
+    expect(secondsOut).toBeGreaterThan(1.3);
+    expect(secondsOut).toBeLessThan(1.8); // the speech plus about 0.25 s each side
+    const ov = new DataView(out.buffer);
+    let peak = 0;
+    for (let i = 0; i < out.length / 2; i++) peak = Math.max(peak, Math.abs(ov.getInt16(i * 2, true)));
+    expect(peak).toBeGreaterThan(14000); // soft speech raised (from 2000)
+    expect(peak).toBeLessThanOrEqual(32767);
+    // silence only: left as it is
+    const quiet = new Uint8Array(sec(1) * 2);
+    expect(prepareSpeech(quiet)).toBe(quiet);
+  });
+
+  it('the team is told spoken words may have recognition slips', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'app', 'orchestrator.ts'), 'utf8');
+    expect(src).toMatch(/speech recognition and may have small mistakes/);
+  });
+});
+
+describe('music pauses while you talk and while the team speaks', () => {
+  function fake() {
+    const log: string[] = [];
+    let playing = ['Spotify'];
+    return {
+      log,
+      setPlaying: (p: string[]) => (playing = p),
+      backend: {
+        pause: async () => {
+          const was = playing;
+          log.push(`pause:${was.join(',')}`);
+          playing = [];
+          return was;
+        },
+        resume: async (ids: string[]) => {
+          log.push(`resume:${ids.join(',')}`);
+          playing = ids;
+        },
+      },
+    };
+  }
+  const tick = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  it('pauses once, stays paused from your speaking until the team has answered, then resumes', async () => {
+    const { MediaHolds } = await import('../speech/media.js');
+    const f = fake();
+    const h = new MediaHolds(f.backend, () => true, 50);
+    h.hold('listening', true);
+    await tick(10);
+    h.hold('reply', true); // you finished; your words went to the team
+    h.hold('listening', false);
+    await tick(80); // the gap while Claude thinks: no resume
+    h.hold('speak:1', true); // the answer is spoken
+    h.hold('reply', false);
+    await tick(80);
+    expect(f.log).toEqual(['pause:Spotify']);
+    h.hold('speak:1', false);
+    await tick(80);
+    expect(f.log).toEqual(['pause:Spotify', 'resume:Spotify']);
+  });
+
+  it('only resumes what it paused, does nothing when nothing plays, and can be switched off', async () => {
+    const { MediaHolds } = await import('../speech/media.js');
+    const f = fake();
+    f.setPlaying([]);
+    const h = new MediaHolds(f.backend, () => true, 20);
+    h.hold('speak:1', true);
+    await tick(5);
+    h.hold('speak:1', false);
+    await tick(40);
+    expect(f.log).toEqual(['pause:']); // nothing was playing, so nothing is resumed
+    const off = fake();
+    const h2 = new MediaHolds(off.backend, () => false, 20);
+    h2.hold('listening', true);
+    await tick(30);
+    expect(off.log).toEqual([]);
+  });
+
+  it('always lets the music come back, even if a hold is never released', async () => {
+    const { MediaHolds } = await import('../speech/media.js');
+    const f = fake();
+    const h = new MediaHolds(f.backend, () => true, 10);
+    h.hold('reply', true, 40);
+    await tick(80);
+    expect(f.log).toEqual(['pause:Spotify', 'resume:Spotify']);
+  });
+
+  it('an app that reports a failure as text is treated as a failure', async () => {
+    const { looksLikeError } = await import('../gateway/mcp-proxy.js');
+    expect(looksLikeError('Error 404: Not found. Player command failed: No active device found')).toBe(true);
+    expect(looksLikeError('Error: something broke')).toBe(true);
+    expect(looksLikeError('Playback started.')).toBe(false);
+    expect(looksLikeError('Errors in your essay: none')).toBe(false);
+  });
+
 });

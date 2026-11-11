@@ -130,7 +130,11 @@ describe('C07 single brain entry point', () => {
     const files = sourceFiles(['app', 'router', 'gateway', 'tools', 'speech', 'security', 'brain'], ['.ts']);
     const spawners = files.filter((f) => /from ['"](node:)?child_process['"]/.test(fs.readFileSync(f, 'utf8')));
     const rel = spawners.map((f) => path.relative(ROOT, f).replace(/\\/g, '/')).sort();
-    expect(rel).toEqual(['brain/claude-cli.ts', 'brain/coder.ts', 'brain/setup.ts', 'speech/whisper.ts']);
+    expect(rel).toEqual(['brain/claude-cli.ts', 'brain/coder.ts', 'brain/setup.ts', 'speech/media.ts', 'speech/whisper.ts']);
+    // The media helper only runs PowerShell (Windows media controls) or osascript, never claude.
+    const media = fs.readFileSync(path.join(ROOT, 'speech', 'media.ts'), 'utf8');
+    expect(media).not.toMatch(/findClaude|from ['"]\.\.\/brain|['"]claude(\.exe)?['"]/);
+    expect([...media.matchAll(/spawn\('([^']+)'/g)].map((m) => m[1]).sort()).toEqual(['osascript', 'powershell.exe']);
     // The speech engine only ever runs whisper-cli, never claude.
     const stt = fs.readFileSync(path.join(ROOT, 'speech', 'whisper.ts'), 'utf8');
     expect(stt).not.toMatch(/findClaude|from ['"]\.\.\/brain|['"]claude(\.exe)?['"]/);

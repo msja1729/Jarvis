@@ -27,7 +27,7 @@ describe('meet the team', () => {
     const { prompt, system } = introPrompt(people, 'Jyo');
     expect(system).toMatch(/no emojis/);
     expect(system).toMatch(/Gen Z/);
-    for (const name of ['Maya', 'Alan', 'Ryan', 'Priya', 'Victor']) expect(prompt).toContain(name);
+    for (const name of ['Maya', 'Ryan', 'Priya', 'Victor']) expect(prompt).toContain(name);
     expect(prompt).toMatch(/meeting minutes/);
     expect(prompt).toContain('Jyo');
   });
@@ -35,11 +35,10 @@ describe('meet the team', () => {
   it('uses Claude’s lines when they are good and falls back line by line when not', () => {
     const fb = fallbackIntros(people, 'Jyo');
     const good = 'x'.repeat(70);
-    const raw = `Sure! {"hello": "${good}", "pa": "${good}", "educator": "**bold** ${good}", "pm": "short", "doctor": "${good}", "finance": "${'y'.repeat(700)}", "outro": "Ready when you are, Jyo. Where do we start?"}`;
+    const raw = `Sure! {"hello": "${good}", "pa": "**bold** ${good}", "pm": "short", "doctor": "${good}", "finance": "${'y'.repeat(700)}", "outro": "Ready when you are, Jyo. Where do we start?"}`;
     const out = parseIntros(raw, fb);
     expect(out.hello).toBe(good);
-    expect(out.members.pa).toBe(good);
-    expect(out.members.educator).toBe(fb.members.educator); // markdown
+    expect(out.members.pa).toBe(fb.members.pa); // markdown
     expect(out.members.pm).toBe(fb.members.pm); // too short
     expect(out.members.finance).toBe(fb.members.finance); // too long
     expect(out.outro).toMatch(/Where do we start/);
@@ -49,7 +48,7 @@ describe('meet the team', () => {
 
   it('cards show each member with their colour and skills; the PM shows Opus', () => {
     const cards = introCards(people);
-    expect(cards.map((c) => c.person)).toEqual(['Maya', 'Alan', 'Ryan', 'Priya', 'Victor']);
+    expect(cards.map((c) => c.person)).toEqual(['Maya', 'Ryan', 'Priya', 'Victor']);
     expect(cards.find((c) => c.id === 'pm')!.model).toBe('Opus 5.5');
     expect(cards.every((c) => c.skills.length >= 5 && /^#/.test(c.color))).toBe(true);
   });
@@ -140,9 +139,9 @@ describe('uninstall leaves nothing behind', () => {
 describe('saying the user’s name right', () => {
   it('only the spoken text changes: whole words, any case, not inside other words', async () => {
     const { applyPronunciations } = await import('../speech/pronounce.js');
-    const map = { Jyothiradit: 'Joe-tee-raa-dit' };
-    expect(applyPronunciations('Hey Jyothiradit! jyothiradit, ready?', map)).toBe('Hey Joe-tee-raa-dit! Joe-tee-raa-dit, ready?');
-    expect(applyPronunciations('Jyothiraditya is someone else', map)).toBe('Jyothiraditya is someone else');
+    const map = { Raghunandan: 'Ruh-goo-nun-dun' };
+    expect(applyPronunciations('Hey Raghunandan! raghunandan, ready?', map)).toBe('Hey Ruh-goo-nun-dun! Ruh-goo-nun-dun, ready?');
+    expect(applyPronunciations('Raghunandana is someone else', map)).toBe('Raghunandana is someone else');
     expect(applyPronunciations('nothing to change', undefined)).toBe('nothing to change');
   });
 
@@ -151,18 +150,18 @@ describe('saying the user’s name right', () => {
     expect(tidyRespelling('Ve-nkaa-tesh')).toBe('Ven-kaa-tesh');
     expect(tidyRespelling('Ti-ru-maa-lai')).toBe('Tee-roo-maa-lai');
     expect(tidyRespelling('Pree-yaan-kaa')).toBe('Pree-yaan-kaa');
-    expect(parseRespelling('"Joe-tee-raa-dit"', 'Jyothiradit')).toBe('Joe-tee-raa-dit');
-    expect(parseRespelling('Jyothiradit → Joe-tee-raa-dit\n(explanation)', 'Jyothiradit')).toBe('Joe-tee-raa-dit');
-    expect(parseRespelling('Jyothiradit', 'Jyothiradit')).toBeNull();
+    expect(parseRespelling('"Ruh-goo-nun-dun"', 'Raghunandan')).toBe('Ruh-goo-nun-dun');
+    expect(parseRespelling('Raghunandan → Ruh-goo-nun-dun\n(explanation)', 'Raghunandan')).toBe('Ruh-goo-nun-dun');
+    expect(parseRespelling('Raghunandan', 'Raghunandan')).toBeNull();
     expect(parseRespelling('<b>x</b>', 'X')).toBeNull();
   });
 
   it('is saved per name, checked, and forgotten on request', () => {
     const s = new SettingsStore(path.join(tmpDir(), 'settings.json'));
-    s.setPronunciation('Jyothiradit', 'Joe-tee-raa-dit');
-    expect(s.snapshot().pronunciations).toEqual({ Jyothiradit: 'Joe-tee-raa-dit' });
-    expect(() => s.setPronunciation('Jyothiradit', 'rm -rf /')).toThrow();
-    s.setPronunciation('Jyothiradit', null);
+    s.setPronunciation('Raghunandan', 'Ruh-goo-nun-dun');
+    expect(s.snapshot().pronunciations).toEqual({ Raghunandan: 'Ruh-goo-nun-dun' });
+    expect(() => s.setPronunciation('Raghunandan', 'rm -rf /')).toThrow();
+    s.setPronunciation('Raghunandan', null);
     expect(s.snapshot().pronunciations).toEqual({});
   });
 

@@ -62,13 +62,13 @@ describe('every team member has a folder of their own', () => {
     const dir = tmpDir();
     const files = new FilesExecutor({ jarvisDir: dir });
     await files.call('write', { path: 'Meetings/plan.md', content: 'Exam on 2026-12-01' }, as('pm'));
-    const r = await files.call('read', { path: 'Meetings/plan.md', owner: 'pm' }, as('educator'));
+    const r = await files.call('read', { path: 'Meetings/plan.md', owner: 'pm' }, as('doctor'));
     expect(r.text).toContain('Exam on 2026-12-01');
     const all = await files.call('search', { query: 'exam', owner: 'all' }, as('pa'));
     expect(all.text).toContain('Project Manager/Meetings/plan.md');
     // writes always go to your own folder: "owner" is not even accepted for them
-    await files.call('write', { path: 'x.md', content: 'hi', owner: 'pm' }, as('educator'));
-    expect(fs.existsSync(path.join(roleFolder(dir, 'educator'), 'x.md'))).toBe(true);
+    await files.call('write', { path: 'x.md', content: 'hi', owner: 'pm' }, as('doctor'));
+    expect(fs.existsSync(path.join(roleFolder(dir, 'doctor'), 'x.md'))).toBe(true);
     expect(fs.existsSync(path.join(roleFolder(dir, 'pm'), 'x.md'))).toBe(false);
   });
 
@@ -127,15 +127,15 @@ describe('expert skills', () => {
   it("loads a member's own skill, and skills the user added in their Skills folder", async () => {
     const dir = tmpDir();
     ensureRoleFolders(dir);
-    fs.writeFileSync(path.join(roleFolder(dir, 'educator'), 'Skills', 'Viva Practice.md'), '# Viva practice\nAsk me 5 oral questions.');
+    fs.writeFileSync(path.join(roleFolder(dir, 'finance'), 'Skills', 'Viva Practice.md'), '# Viva practice\nAsk me 5 oral questions.');
     const skills = new SkillsExecutor(dir);
-    const list = await skills.call('list', {}, as('educator'));
-    expect(list.text).toContain('exam-prep');
+    const list = await skills.call('list', {}, as('finance'));
+    expect(list.text).toContain('debt-payoff');
     expect(list.text).toContain("viva-practice: Viva practice [user's skill]");
-    expect((await skills.call('use', { name: 'exam-prep' }, as('educator'))).text).toContain('spaced repetition');
-    expect((await skills.call('use', { name: 'viva practice' }, as('educator'))).text).toContain('Ask me 5 oral questions.');
+    expect((await skills.call('use', { name: 'debt-payoff' }, as('finance'))).text).toContain('avalanche');
+    expect((await skills.call('use', { name: 'viva practice' }, as('finance'))).text).toContain('Ask me 5 oral questions.');
     // another member's skill is not theirs
-    await expect(skills.call('use', { name: 'lab-report' }, as('educator'))).rejects.toThrow(/No skill/);
+    await expect(skills.call('use', { name: 'lab-report' }, as('finance'))).rejects.toThrow(/No skill/);
     expect(SKILLS_APP.abilities.every((a) => a.group === 'read')).toBe(true);
   });
 });
@@ -213,11 +213,11 @@ describe('recording for a team member', () => {
     const brain: Brain = { ask: async () => ({ reply: 'x', session_id: null, tokens_used: 0, is_error: false }) };
     const orch = new Orchestrator({ brain, sessions: new SessionManager(), usage: new UsageLog(null, null), modelOverride: () => null, runLocal: (cmd, role) => (seen.push({ cmd, role }), 'ok') });
     await orch.handle('Ryan, record this meeting and take notes');
-    await orch.handle('Alan, record this lecture');
+    await orch.handle('Sara, record this appointment');
     await orch.handle('record this meeting');
     expect(seen).toEqual([
       { cmd: 'start_recording', role: 'pm' },
-      { cmd: 'start_recording', role: 'educator' },
+      { cmd: 'start_recording', role: 'doctor' },
       { cmd: 'start_recording', role: 'jarvis' },
     ]);
     expect(matchLocalCommand('take notes from the meeting')).toBeNull(); // about a past meeting: Claude handles it
@@ -231,9 +231,9 @@ describe('recording for a team member', () => {
     expect(pm).toMatch(/meeting-minutes/);
     expect(pm).toMatch(/board/);
     expect(pm).toContain('"Project Manager"');
-    const edu = notesRequest('educator', 'Alan');
-    expect(routeRole(edu, null, null).role).toBe('educator');
-    expect(edu).toMatch(/Lessons/);
+    const doc = notesRequest('doctor', 'Sara');
+    expect(routeRole(doc, null, null).role).toBe('doctor');
+    expect(doc).toMatch(/Health notes/);
     // a renamed member is still reached by their new name
     expect(routeRole(notesRequest('doctor', 'Priya'), null, null, Date.now(), { doctor: 'Priya' }).role).toBe('doctor');
   });
@@ -264,5 +264,64 @@ describe('Activity: who did what, deleted for good on request', () => {
     log.clear();
     expect(log.list()).toEqual([]);
     expect(fs.existsSync(file)).toBe(false);
+  });
+});
+
+describe('casebooks: profiles and reference files that make each member an expert', () => {
+  it('seeds every member’s Profile and Reference files once and never overwrites them', async () => {
+    const { seedCasebook, CASEBOOK } = await import('../roles/casebook.js');
+    const dir = tmpDir();
+    ensureRoleFolders(dir);
+    seedCasebook(dir);
+    for (const [role, book] of Object.entries(CASEBOOK)) {
+      for (const f of [...book.profile, ...book.reference]) expect(fs.existsSync(path.join(roleFolder(dir, role as 'pa'), f.path)), `${role} ${f.path}`).toBe(true);
+    }
+    const hp = path.join(roleFolder(dir, 'doctor'), 'Profile', 'Health profile.md');
+    fs.writeFileSync(hp, 'my own edits');
+    seedCasebook(dir);
+    expect(fs.readFileSync(hp, 'utf8')).toBe('my own edits');
+  });
+
+  it('a conversation starts with the profile facts the member knows, and nothing while the profiles are empty', async () => {
+    const { seedCasebook, casebookContext } = await import('../roles/casebook.js');
+    const dir = tmpDir();
+    ensureRoleFolders(dir);
+    seedCasebook(dir);
+    expect(casebookContext(dir, 'finance')).toBe('');
+    expect(casebookContext(dir, 'doctor')).toBe('');
+    // the Doctor learns things, and a lab value is recorded
+    const hp = path.join(roleFolder(dir, 'doctor'), 'Profile', 'Health profile.md');
+    fs.writeFileSync(hp, fs.readFileSync(hp, 'utf8').replace('## Allergies and reactions\n', '## Allergies and reactions\n- Penicillin: rash\n'));
+    fs.appendFileSync(path.join(roleFolder(dir, 'doctor'), 'Profile', 'Biomarkers.csv'), '2026-10-01,HbA1c,5.9,%,4,5.6,City Lab,\n');
+    const ctx = casebookContext(dir, 'doctor');
+    expect(ctx).toContain('Penicillin: rash');
+    expect(ctx).toContain('2026-10-01,HbA1c,5.9');
+    expect(ctx).toMatch(/data, not instructions/);
+    expect(ctx).not.toContain('not filled in yet');
+  });
+
+  it('the reference files carry the safety essentials', async () => {
+    const { CASEBOOK } = await import('../roles/casebook.js');
+    const ref = (role: 'doctor' | 'finance' | 'pm', name: string) => CASEBOOK[role].reference.find((f) => f.path.endsWith(name))!.content;
+    expect(ref('doctor', 'Red flags.md')).toMatch(/call emergency services now/);
+    expect(ref('doctor', 'Lab ranges.md')).toMatch(/range printed on the user's own report always wins/);
+    expect(ref('finance', 'Rates and rules.md')).toMatch(/Only write a figure here after checking it on an official source/);
+    expect(ref('pm', 'Spec template.md')).toMatch(/Edge cases/);
+  });
+
+  it('every member works by the expert method and knows their files and gates', () => {
+    for (const r of ['pa', 'pm', 'doctor', 'finance'] as const) {
+      const p = rolePrompt(r);
+      expect(p, r).toMatch(/Expert method/);
+      expect(p, r).toMatch(/ask 1-3 short, specific questions first/);
+      expect(p, r).toMatch(/Profile\//);
+    }
+    expect(rolePrompt('pm')).toMatch(/never start a coding task before writing Projects\/<project>\/SPEC\.md/);
+    expect(rolePrompt('doctor')).toMatch(/OPQRST/);
+    expect(rolePrompt('finance')).toMatch(/Investment policy/);
+    expect(rolePrompt('pa')).toMatch(/Writing style/);
+    expect(SKILLS.finance.map((s) => s.id)).toEqual(expect.arrayContaining(['purchase-evaluator', 'investment-policy']));
+    expect(SKILLS.pm.map((s) => s.id)).toContain('scope-guard');
+    expect(SKILLS.doctor.find((s) => s.id === 'lab-report')!.body).toMatch(/Biomarkers\.csv/);
   });
 });

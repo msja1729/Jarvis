@@ -39,9 +39,21 @@ export class AppCatalog {
     private readonly local: Record<string, AppExecutor> = {},
   ) {}
 
+  /** The built-in apps only: adding your own apps (MCP servers) is not offered in this version. */
   all(): AppDef[] {
-    // an app the user added earlier under a name that is now built in (e.g. "web") gives way to the built-in one
-    return [...BUILTIN_APPS, ...this.settings.snapshot().customApps.filter((a) => !BUILTIN_IDS.has(a.id))];
+    return BUILTIN_APPS;
+  }
+
+  /** Apps added in an earlier version are removed, with any key or sign-in they kept. */
+  async dropAddedApps(): Promise<string[]> {
+    const added = this.settings.snapshot().customApps.filter((a) => !BUILTIN_IDS.has(a.id));
+    for (const a of added) {
+      await this.forget(a.id);
+      await this.secrets.delete(secretKeyForApp(a.id)).catch(() => undefined);
+      await (await JarvisMcpAuth.load(a.id, a.name, this.secrets)).forget().catch(() => undefined);
+      this.settings.removeCustomApp(a.id);
+    }
+    return added.map((a) => a.id);
   }
 
   find(id: string): AppDef | undefined {

@@ -18,7 +18,7 @@ interface State {
   platform: string;
   claude: 'install' | 'login' | 'ready';
   voice: { installed: boolean; downloadBytes?: number };
-  speech: { ready: boolean; engine?: boolean; model?: boolean };
+  speech: { ready: boolean; engine?: boolean; model?: boolean; downloadBytes?: number; device?: string };
   mic: string;
   tools: Tool[];
   cards: Card[];
@@ -258,6 +258,7 @@ export class Onboarding {
     this.root.classList.remove('hidden', 'leaving');
     document.body.classList.add('onboarding');
     this.only = only;
+    this.current = null;
     void this.go(from);
   }
   private only = false;
@@ -268,8 +269,14 @@ export class Onboarding {
     return this.go(order[order.indexOf(from) + 1]);
   }
 
+  /** The scene being shown or on its way in; a second click while it changes is ignored. */
+  private current: Step | null = null;
+
   private async go(step: Step) {
+    if (this.current === step && step !== 'meet') return;
+    this.current = step;
     this.run++;
+    const run = this.run;
     for (const c of this.cleanups.splice(0)) c();
     window.clearInterval(this.poll);
     stopSpeaking();
@@ -278,15 +285,18 @@ export class Onboarding {
     const old = this.stage.firstElementChild as HTMLElement | null;
     if (old) {
       old.classList.add('out');
-      await wait(260);
+      await wait(240);
+      if (run !== this.run) return; // another step was chosen meanwhile
     }
     const scene = this[step]();
     scene.classList.add('ob-scene', `ob-${step}`);
     this.stage.replaceChildren(scene);
-    requestAnimationFrame(() => scene.classList.add('in'));
+    // two frames: the scene is laid out first, so its entrance always animates
+    requestAnimationFrame(() => requestAnimationFrame(() => scene.classList.add('in')));
   }
 
   private close() {
+    this.current = null;
     this.run++;
     for (const c of this.cleanups.splice(0)) c();
     window.clearInterval(this.poll);
@@ -459,7 +469,9 @@ export class Onboarding {
   /* ---------- 5. voices ---------- */
   private voices(): HTMLElement {
     const voiceBar = this.bar('Natural voices', 'Real, human-sounding voices for your whole team (about 326 MB, once).', this.st.voice.installed);
-    const earBar = this.bar('Speech recognition', 'So your team understands you when you talk (about 160 MB, once).', this.st.speech.ready);
+    const earMb = Math.round((this.st.speech.downloadBytes ?? 0) / 1e6);
+    const earSub = `So your team understands you, even when you talk fast or casually${this.st.speech.device === 'gpu' ? ', using your graphics card' : ''}${earMb ? ` (about ${earMb.toLocaleString()} MB, once)` : ''}.`;
+    const earBar = this.bar('Speech recognition', earSub, this.st.speech.ready);
     const get = h('button', { className: 'ob-cta', type: 'button' }, 'Download both');
     const skip = h('button', { className: 'ob-ghost', type: 'button', onclick: () => void this.next('voices') }, 'Skip for now');
     const meet = h('button', { className: 'ob-cta ob-meetbtn', type: 'button', onclick: () => void this.next('voices') }, 'Meet your team', h('span', { className: 'ob-arrow' }, '→'));
@@ -607,7 +619,7 @@ export class Onboarding {
       await say(intros.hello, voices.jarvis);
       if (run !== this.run) return;
       // the roster arrives
-      setWho('Your team', 'Five experts, one front desk', JARVIS_COLOR);
+      setWho('Your team', 'Four experts, one front desk', JARVIS_COLOR);
       caption.classList.remove('show');
       const slots = new Map<string, HTMLElement>();
       (cards as Card[]).forEach((c, k) => {
@@ -662,7 +674,7 @@ export class Onboarding {
  * Exported so Settings can show the same control.
  */
 export function sayMyName(name: string, opts: { compact?: boolean } = {}): HTMLElement {
-  const field = h('input', { className: 'ob-sayas', placeholder: 'e.g. Jyo-thee-raa-dith', maxLength: 60, autocomplete: 'off', spellcheck: false });
+  const field = h('input', { className: 'ob-sayas', placeholder: 'e.g. Pree-yaan-kaa', maxLength: 60, autocomplete: 'off', spellcheck: false });
   const note = h('span', { className: 'ob-sub small' }, 'Asking Claude how to say it…');
   const play = h('button', { className: 'ob-ghost small', type: 'button' }, '▶  Hear it');
   const suggest = h('button', { className: 'ob-ghost small', type: 'button' }, 'Suggest again');

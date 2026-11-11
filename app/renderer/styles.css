@@ -12,8 +12,8 @@
   --line-strong: rgb(255 255 255 / 0.12);
   --pill: rgb(255 255 255 / 0.05);
   --pill-hover: rgb(255 255 255 / 0.09);
-  --card: linear-gradient(155deg, rgb(255 255 255 / 0.085) 0%, rgb(255 255 255 / 0.035) 38%, rgb(255 255 255 / 0.015) 70%, rgb(255 255 255 / 0.04) 100%), rgb(30 30 30 / 0.55);
-  --card-raised: linear-gradient(155deg, rgb(255 255 255 / 0.13) 0%, rgb(255 255 255 / 0.05) 50%, rgb(255 255 255 / 0.03) 100%), rgb(36 36 36 / 0.6);
+  --card: linear-gradient(155deg, rgb(255 255 255 / 0.085) 0%, rgb(255 255 255 / 0.035) 38%, rgb(255 255 255 / 0.015) 70%, rgb(255 255 255 / 0.04) 100%), rgb(27 27 27 / 0.88);
+  --card-raised: linear-gradient(155deg, rgb(255 255 255 / 0.13) 0%, rgb(255 255 255 / 0.05) 50%, rgb(255 255 255 / 0.03) 100%), rgb(34 34 34 / 0.9);
   --card-solid: linear-gradient(155deg, #2b2b2b 0%, #212121 45%, #1c1c1c 100%);
   --card-shadow: 0 28px 60px -24px rgb(0 0 0 / 0.75), 0 10px 22px -12px rgb(0 0 0 / 0.5), inset 0 1px 0 rgb(255 255 255 / 0.10), inset 0 -1px 0 rgb(0 0 0 / 0.25);
   --frost: blur(20px) saturate(140%);
@@ -118,8 +118,7 @@ main { flex: 1; min-height: 0; display: flex; }
   border-top-color: rgb(255 255 255 / 0.15);
   border-radius: var(--r-card);
   box-shadow: var(--card-shadow);
-  backdrop-filter: var(--frost);
-  -webkit-backdrop-filter: var(--frost);
+  /* no live blur of the moving map behind: solid cards keep scrolling and animations smooth */
 }
 
 /* ---------- controls ---------- */
@@ -137,7 +136,10 @@ select option { background: #222; }
 .hidden { display: none !important; }
 .error { color: var(--red); }
 .spacer { flex: 1; }
-h2 { font-size: 11px; font-weight: 400; color: var(--muted); margin: 22px 0 10px 4px; }
+h2 { font-size: 15px; font-weight: 400; color: var(--text); margin: 0; letter-spacing: .02em; }
+.section-head { display: flex; flex-direction: column; gap: 4px; margin: 26px 4px 12px; }
+.section-head:first-child { margin-top: 4px; }
+.section-head p { margin: 0; font-size: 12px; color: var(--muted); max-width: 760px; }
 h3 { margin: 0; font-size: 13px; font-weight: 400; }
 
 input.switch { appearance: none; -webkit-appearance: none; width: 40px; height: 22px; padding: 0; border-radius: 999px; background: rgb(255 255 255 / 0.08); border: 1px solid var(--line); position: relative; cursor: pointer; flex: none; transition: background .2s; }
@@ -149,7 +151,22 @@ input.switch:checked::after { transform: translateX(18px); background: var(--ink
 /* ---------- chat ---------- */
 #view-chat { padding: 0; overflow: hidden; }
 #messages { flex: 1; overflow: auto; padding: 4px 4px 14px; display: flex; flex-direction: column; gap: 12px; scroll-behavior: smooth; }
-.msg { max-width: min(74ch, 78%); padding: 14px 18px; border-radius: 22px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+.msg { max-width: min(74ch, 78%); padding: 14px 18px; border-radius: 22px; overflow-wrap: anywhere; font-size: 13px; line-height: 1.6; }
+.md { white-space: normal; }
+.md.plain { white-space: pre-wrap; }
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p { margin: 0 0 10px; }
+.md ul, .md ol { margin: 0 0 10px; padding-left: 20px; }
+.md li { margin: 3px 0; }
+.md li::marker { color: var(--muted); }
+.md h4 { margin: 14px 0 6px; font-size: 13.5px; font-weight: 600; }
+.md strong { font-weight: 600; color: #fff; }
+.md code { font-family: "Cascadia Mono", Consolas, ui-monospace, monospace; font-size: 12px; padding: 1px 6px; border-radius: 6px; background: rgb(255 255 255 / 0.08); }
+.md pre { margin: 0 0 10px; padding: 12px 14px; border-radius: 12px; background: rgb(0 0 0 / 0.35); border: 1px solid var(--line); overflow-x: auto; white-space: pre; }
+.md pre code { padding: 0; background: none; }
+.md a { color: #9cc3ff; text-decoration: none; border-bottom: 1px solid rgb(156 195 255 / 0.35); }
+.md a:hover { border-bottom-color: #9cc3ff; }
 .msg.user { align-self: flex-end; background: var(--card-raised); border: 1px solid var(--line-strong); border-bottom-right-radius: 8px; box-shadow: var(--card-shadow); }
 .msg.jarvis { align-self: flex-start; border-bottom-left-radius: 8px; }
 .msg.error { border-color: rgb(255 77 77 / 0.5); }
@@ -205,7 +222,16 @@ input.switch:checked::after { transform: translateX(18px); background: var(--ink
 button.link { background: none; border: none; padding: 0; color: var(--text); text-decoration: underline; text-underline-offset: 3px; border-radius: 0; }
 .help { font-size: 12px; color: var(--muted); }
 .stack { display: flex; flex-direction: column; gap: 8px; }
-.settings-card { max-width: 580px; }
+.settings-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 430px), 1fr)); gap: 16px; align-items: start; padding-top: 4px; }
+.settings-card { gap: 12px; }
+.card-title { font-size: 15px !important; font-weight: 400; color: var(--text); margin: 0 0 2px; }
+.app-head .card-title { margin: 0; }
+.divider { height: 1px; background: var(--line); margin: 2px 0; }
+.accounts-grid { align-items: start; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); }
+.hub-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 440px), 1fr)); gap: 14px; align-items: start; }
+.app-card { gap: 12px; }
+.app-desc { font-size: 12px; line-height: 1.55; }
+.app-card.off .app-desc, .app-card.off .who-uses, .app-card.off details { opacity: .55; }
 .meter-bar { position: relative; height: 22px; border-radius: 999px; background: rgb(255 255 255 / 0.05); overflow: hidden; border: 1px solid var(--line); }
 .meter-bar i { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--light); transition: width .2s; }
 .meter-bar span { position: relative; display: block; text-align: center; font-size: 11px; line-height: 20px; mix-blend-mode: difference; }
@@ -424,7 +450,7 @@ input[type=range] { accent-color: var(--light); padding: 0; border: none; backgr
 .chat-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .chat-main > * { flex-shrink: 0; }
 .chat-main #messages { flex: 1 1 auto; min-height: 0; }
-.chats { width: 272px; flex: none; display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: var(--r-card); min-height: 0; background: var(--card); border: 1px solid var(--line); box-shadow: var(--card-shadow); backdrop-filter: var(--frost); margin-bottom: 8px; }
+.chats { width: 272px; flex: none; display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: var(--r-card); min-height: 0; background: var(--card); border: 1px solid var(--line); box-shadow: var(--card-shadow); margin-bottom: 8px; }
 .chats-head { display: flex; align-items: center; gap: 6px; }
 .chats-head .chats-new { flex: 1; height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 12.5px; }
 .chats-head .chats-new svg, .chats-icon svg, .chats-show svg, .chats-search svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }

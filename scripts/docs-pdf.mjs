@@ -7,4 +7,4 @@ import electron from 'electron';
 const env = { ...process.env };
 delete env.ELECTRON_RUN_AS_NODE;
 const script = path.join(path.dirname(fileURLToPath(import.meta.url)), 'docs-pdf.cjs');
-spawn(electron, [script], { stdio: 'inherit', env }).on('close', (code) => process.exit(code ?? 0));
+spawn(electron, [script, ...process.argv.slice(2)], { stdio: 'inherit', env }).on('close', (code) => process.exit(code ?? 0));

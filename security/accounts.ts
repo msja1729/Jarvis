@@ -227,7 +227,7 @@ export class AccountManager {
   private async lookupEmail(id: AccountId, token: string): Promise<string | null> {
     const res = await this.fetchImpl(this.provider(id).profileUrl, { headers: { Authorization: `Bearer ${token}` } });
     if (!res.ok) return null;
-    const j = (await res.json()) as { emailAddress?: string; mail?: string; userPrincipalName?: string };
-    return j.emailAddress ?? j.mail ?? j.userPrincipalName ?? null;
+    const j = (await res.json()) as { emailAddress?: string; mail?: string; userPrincipalName?: string; email?: string; display_name?: string };
+    return j.emailAddress ?? j.mail ?? j.userPrincipalName ?? j.email ?? j.display_name ?? null;
   }
 }

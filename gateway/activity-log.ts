@@ -9,7 +9,7 @@ export interface ActivityEntry {
   /** Stable id, so the user can select and delete entries. Old entries get one when read. */
   id: string;
   ts: string;
-  /** The team member who used the tool (jarvis, pa, educator…). */
+  /** The team member who used the tool (jarvis, pa, doctor…). */
   role?: string;
   appId: string;
   ability: string;

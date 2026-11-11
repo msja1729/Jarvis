@@ -105,7 +105,7 @@ describe('Documents & code app', () => {
   });
 
   it('reads the text of a real PDF with pdf.js', async () => {
-    const pages = await pdfPages(new Uint8Array(fs.readFileSync(path.join(ROOT, 'docs', 'How-Jarvis-Works.pdf'))));
+    const pages = await pdfPages(new Uint8Array(fs.readFileSync(path.join(ROOT, 'docs', 'Jarvis-Capabilities.pdf'))));
     expect(pages.length).toBeGreaterThan(5);
     expect(pages.join(' ')).toMatch(/Jarvis/);
   }, 30_000);

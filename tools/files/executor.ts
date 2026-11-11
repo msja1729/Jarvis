@@ -60,7 +60,7 @@ export class FilesExecutor implements AppExecutor {
     const self = this.self(ctx);
     let role: RoleId = self;
     if (owner !== undefined && owner !== '' && owner !== null) {
-      if (!isRole(owner)) throw new Error(`Unknown teammate "${String(owner)}". Use one of: jarvis, pa, educator, pm, doctor, finance.`);
+      if (!isRole(owner)) throw new Error(`Unknown teammate "${String(owner)}". Use one of: jarvis, pa, pm, doctor, finance.`);
       role = owner;
     }
     if (writing && role !== self) throw new Error(`You can only change files in your own folder. Ask ${roleById(role).name} to change their files with the team tool.`);

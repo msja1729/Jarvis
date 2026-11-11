@@ -188,6 +188,11 @@ export class Narrator {
     speechSynthesis.speak(u);
   }
 
+  /** True while a step is being narrated (natural voice or the OS voice). */
+  get speaking(): boolean {
+    return this.playing !== null || this.sources.length > 0 || (typeof speechSynthesis !== 'undefined' && speechSynthesis.speaking);
+  }
+
   /** Stops what is playing; prepared voice is kept for replay. */
   stop(): void {
     this.seq++;

@@ -1,0 +1,715 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Jarvis: Capabilities Report</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm 18mm 15mm; }
+  :root {
+    --ink: #17181c; --muted: #5d6270; --faint: #8b90a0; --line: #e3e5eb; --soft: #f5f6f9;
+    --blue: #3b6fb6; --amber: #b8692a; --green: #2f9e5f; --red: #c7443b; --violet: #6a4fc4;
+    --maya: #3987e5; --ryan: #199e70; --sara: #d55181; --victor: #c98500; --jarvis: #6f7480;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { margin: 0; color: var(--ink); font: 10.2pt/1.58 "Segoe UI", system-ui, sans-serif; }
+  h1, h2, h3, h4 { line-height: 1.25; margin: 0; }
+  h2 { font-size: 15.5pt; font-weight: 600; margin: 9mm 0 3mm; padding-bottom: 1.6mm; border-bottom: 1.5px solid var(--ink); break-after: avoid; }
+  h2 .num { color: var(--faint); font-weight: 400; margin-right: 2mm; }
+  h3 { font-size: 11.6pt; font-weight: 600; margin: 5mm 0 2mm; break-after: avoid; }
+  h4 { font-size: 10.2pt; font-weight: 600; margin: 3.5mm 0 1.5mm; break-after: avoid; }
+  p { margin: 0 0 2.4mm; }
+  ul, ol { margin: 0 0 2.8mm; padding-left: 5.5mm; }
+  ul { list-style-type: "\2022\00a0\00a0"; }
+  ul ul { list-style-type: "\2013\00a0\00a0"; }
+  li { margin: 0 0 1.1mm; }
+  b, strong { font-weight: 600; }
+  .muted { color: var(--muted); }
+  .small { font-size: 8.9pt; }
+  code, .k { font-family: "Segoe UI", system-ui, sans-serif; font-weight: 600; font-size: 8.8pt; background: #f4f5f8; border: 1px solid #cfd3dc; border-bottom-width: 2px; padding: 0 1.4mm; border-radius: 1.2mm; white-space: nowrap; }
+  .say { font-style: italic; color: #2b3a55; }
+  table { width: 100%; border-collapse: collapse; margin: 1mm 0 3.8mm; font-size: 9.2pt; }
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; }
+  th { text-align: left; font-weight: 600; background: var(--soft); border-bottom: 1.5px solid #cfd3dc; padding: 1.7mm 2.2mm; }
+  td { border-bottom: 1px solid var(--line); padding: 1.6mm 2.2mm; vertical-align: top; }
+  .callout { border-left: 3px solid var(--blue); background: #f1f5fb; padding: 2.6mm 3.6mm; margin: 2mm 0 3.8mm; border-radius: 0 2mm 2mm 0; break-inside: avoid; }
+  .callout.amber { border-color: var(--amber); background: #fbf5ef; }
+  .callout.green { border-color: var(--green); background: #eff8f2; }
+  .callout.red { border-color: var(--red); background: #fbf0ef; }
+  .callout p:last-child, .callout ul:last-child { margin-bottom: 0; }
+  .card { border: 1px solid var(--line); border-radius: 2.5mm; padding: 3.2mm 3.8mm; margin: 0 0 3.5mm; break-inside: avoid; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 3.2mm; margin: 0 0 3.5mm; }
+  .grid2 .card { margin: 0; }
+  .member { border: 1px solid var(--line); border-left: 4px solid var(--c); border-radius: 0 2.5mm 2.5mm 0; padding: 3.2mm 4mm 1mm; margin: 0 0 3mm; }
+  .member table { font-size: 8.9pt; margin-bottom: 2.4mm; }
+  .member td { padding: 1.2mm 2mm; }
+  .member p { margin-bottom: 1.8mm; }
+  .member h4 { margin: 2.6mm 0 1.2mm; }
+  .member .callout { margin: 1.5mm 0 2.5mm; }
+  .member h3 { margin-top: 0; display: flex; align-items: baseline; gap: 2.5mm; }
+  .member h3 .role { font-size: 9.5pt; font-weight: 400; color: var(--muted); }
+  .dot { color: var(--c); font-family: "Segoe UI Symbol", "Segoe UI", sans-serif; font-size: 1.05em; line-height: 1; }
+  .tag { display: inline-block; font-size: 8.3pt; padding: .4mm 2mm; border-radius: 3mm; border: 1px solid var(--line); background: var(--soft); margin: 0 1mm 1mm 0; }
+  .steps { counter-reset: s; list-style: none; padding-left: 0; }
+  .steps > li { counter-increment: s; position: relative; padding-left: 8mm; margin-bottom: 1.8mm; }
+  .steps > li::before { content: counter(s); position: absolute; left: 0; top: .2mm; width: 5mm; height: 5mm; border-radius: 50%; background: var(--ink); color: #fff; font-size: 8pt; display: grid; place-items: center; font-weight: 600; }
+  .lead { font-size: 11pt; color: #333744; }
+
+  /* cover */
+  .cover { height: 263mm; display: flex; flex-direction: column; justify-content: space-between; break-after: page; padding: 6mm 2mm 0; }
+  .cover .brand { display: flex; align-items: center; gap: 4mm; }
+  .orb { width: 16mm; height: 16mm; border-radius: 50%; position: relative; background: radial-gradient(circle at 35% 30%, #fff, #c9d6ef 40%, #7d93c2 75%, #4c5f8c); box-shadow: 0 0 9mm rgba(110,140,210,.45); }
+  .orb::after { content: ""; position: absolute; inset: -3mm; border-radius: 50%; border: .5mm dotted #9aa8c8; }
+  .cover .word { font-size: 13pt; letter-spacing: .5em; font-weight: 300; }
+  .cover h1 { font-size: 34pt; font-weight: 300; letter-spacing: -.01em; margin: 0 0 4mm; }
+  .cover .sub { font-size: 14pt; color: var(--muted); font-weight: 300; max-width: 150mm; }
+  .cover .team { display: flex; gap: 3mm; margin-top: 10mm; flex-wrap: wrap; }
+  .cover .who { border: 1px solid var(--line); border-radius: 3mm; padding: 2.6mm 4mm; min-width: 36mm; }
+  .cover .who b { display: block; font-size: 11pt; }
+  .cover .who span { font-size: 8.8pt; color: var(--muted); }
+  .cover .who .dot { color: var(--c); font-size: 11pt; margin-right: .6mm; }
+
+  .cover .meta { font-size: 9pt; color: var(--faint); border-top: 1px solid var(--line); padding-top: 3mm; display: flex; justify-content: space-between; }
+
+  /* contents */
+  .toc { break-after: page; }
+  .toc h2 { margin-top: 0; }
+  .toc ol { columns: 2; column-gap: 10mm; padding-left: 6mm; font-size: 10.4pt; }
+  .toc li { margin-bottom: 1.6mm; break-inside: avoid; }
+  .toc .note { margin-top: 6mm; }
+  section { break-inside: auto; }
+  .pb { break-before: page; }
+</style>
+</head>
+<body>
+
+<!-- ================= COVER ================= -->
+<div class="cover">
+  <div>
+    <div class="brand"><div class="orb"></div><div class="word">JARVIS</div></div>
+    <div style="margin-top: 52mm">
+      <h1>Jarvis<br />Capabilities Report</h1>
+      <p class="sub">Your own team of AI experts on your desktop. What Jarvis is, what it can do for you, and how to use every feature.</p>
+      <div class="team">
+        <div class="who"><b><span class="dot" style="--c:var(--maya)">●</span> Maya</b><span>Personal assistant</span></div>
+        <div class="who"><b><span class="dot" style="--c:var(--ryan)">●</span> Ryan</b><span>Project manager &amp; tech lead</span></div>
+        <div class="who"><b><span class="dot" style="--c:var(--sara)">●</span> Sara</b><span>Health &amp; nutrition</span></div>
+        <div class="who"><b><span class="dot" style="--c:var(--victor)">●</span> Victor</b><span>Money &amp; business</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="meta"><span>Version 0.1.0 · Windows · November 2026</span><span>github.com/msja1729/Jarvis</span></div>
+</div>
+
+<!-- ================= CONTENTS ================= -->
+<div class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li>Jarvis in one page</li>
+    <li>Getting started</li>
+    <li>Talking to Jarvis</li>
+    <li>Meet the team</li>
+    <li>Maya: personal assistant</li>
+    <li>Ryan: project manager &amp; tech lead</li>
+    <li>Sara: health &amp; nutrition</li>
+    <li>Victor: money &amp; business</li>
+    <li>What makes the team experts</li>
+    <li>Lessons and visual explanations</li>
+    <li>Documents and code</li>
+    <li>Looking at your screen</li>
+    <li>Meetings and recordings</li>
+    <li>Email and calendar</li>
+    <li>Reminders, morning plan and project board</li>
+    <li>Coding supervisor</li>
+    <li>Web search</li>
+    <li>Music, apps and the Tool Hub</li>
+    <li>Conversations and history</li>
+    <li>Activity</li>
+    <li>Safety, permissions and privacy</li>
+    <li>Settings reference</li>
+    <li>Installing, updating and uninstalling</li>
+    <li>Current limits and what's next</li>
+    <li>Quick reference</li>
+  </ol>
+  <div class="callout note">
+    <p><b>How to read this report.</b> Sections 1–3 explain what Jarvis is and how you use it day to day. Sections 4–9 introduce
+    the four team members and what makes them experts. Sections 10–20 cover each capability in detail. Sections 21–25 cover
+    safety, settings, installing and the current limits. Phrases in <span class="say">italics</span> are things you can type or say.</p>
+  </div>
+</div>
+
+<!-- ================= 1 ================= -->
+<section>
+<h2><span class="num">1</span>Jarvis in one page</h2>
+<p class="lead">Jarvis is a desktop app that gives you a small team of AI specialists who know your life in their field. You talk to them by
+typing or by voice, from any app, and they work in the apps you connect, but only in the ways you allow.</p>
+
+<div class="grid2">
+  <div class="card">
+    <h4>Who's on the team</h4>
+    <ul>
+      <li><b>Maya</b>: your schedule, email, deadlines, daily plan, reminders, music, and every personal task.</li>
+      <li><b>Ryan</b>: projects and coding (he runs Claude Code on Opus 5.5), meeting minutes, plans and deadlines.</li>
+      <li><b>Sara</b>: health, food, sleep, exercise, symptoms and medical reports.</li>
+      <li><b>Victor</b>: budgets, debt, investing basics, purchases, tax and business numbers.</li>
+      <li><b>Jarvis</b>: the front desk; welcomes you, introduces the team and passes everything to the right person.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h4>What you can do with them</h4>
+    <ul>
+      <li>Ask questions and get answers based on <b>your</b> numbers and history, not generic advice.</li>
+      <li>Turn emails into deadlines, tasks and reminders; plan your day around your energy.</li>
+      <li>Record a meeting and get minutes plus your action items on a board.</li>
+      <li>Have code written, tested and reviewed on your projects while you do something else.</li>
+      <li>Learn anything with narrated, animated lessons, diagrams and interactive maths.</li>
+    </ul>
+  </div>
+</div>
+
+<h3>What makes Jarvis different from a normal AI chat</h3>
+<table>
+  <thead><tr><th style="width:28%">Jarvis</th><th>What it means for you</th></tr></thead>
+  <tbody>
+    <tr><td><b>Specialists, not one generalist</b></td><td>Each member follows an expert's method and step-by-step playbooks for their field, asks the questions that matter, and pushes back when facts are missing.</td></tr>
+    <tr><td><b>They remember you</b></td><td>Each member keeps structured files about you (Sara: health profile and lab history; Victor: balance sheet, cash flow, investment rules; Ryan: roadmap; Maya: your schedule and writing style) and uses them every time.</td></tr>
+    <tr><td><b>They act, not just talk</b></td><td>Read and draft email, add calendar events, set reminders, manage a project board, record meetings, play music, run coding work, read your documents.</td></tr>
+    <tr><td><b>Always within reach</b></td><td>Push-to-talk from any app, a small voice card above the taskbar, a floating chat box, natural human-sounding voices, and the music pauses while you talk.</td></tr>
+    <tr><td><b>You stay in control</b></td><td>Every action goes through your permission settings (Off / Ask me first / Allowed); anything that sends, deletes or spends always asks; everything is logged.</td></tr>
+    <tr><td><b>Private by design</b></td><td>Your chats, memory, files, voice and sign-ins stay on your computer. It runs on your own Claude Pro or Max plan; no extra AI subscription.</td></tr>
+  </tbody>
+</table>
+</section>
+
+<!-- ================= 2 ================= -->
+<section>
+<h2><span class="num">2</span>Getting started</h2>
+<h3>What you need</h3>
+<table>
+  <tbody>
+    <tr><td style="width:30%"><b>Computer</b></td><td>Windows 10 or 11 (64-bit). A Mac version is planned.</td></tr>
+    <tr><td><b>Claude plan</b></td><td>A Claude <b>Pro</b> or <b>Max</b> plan. Jarvis uses Claude Code with your own sign-in; it helps you install and sign in during setup.</td></tr>
+    <tr><td><b>Graphics card (recommended)</b></td><td>An NVIDIA graphics card makes speech recognition nearly instant (about 0.2 seconds per sentence). Without one, voice still works but is slower.</td></tr>
+    <tr><td><b>Disk space</b></td><td>About 500 MB for the app, plus the voice and speech models you choose to download (natural voices about 326 MB; speech recognition about 1.3 GB on NVIDIA computers), plus Claude Code if you don't have it.</td></tr>
+    <tr><td><b>Microphone</b></td><td>Optional; needed to talk to the team and to record meetings.</td></tr>
+  </tbody>
+</table>
+
+<h3>Installing</h3>
+<ol class="steps">
+  <li>Download <b>Jarvis-Setup-0.1.0.exe</b> from the GitHub releases page and run it.</li>
+  <li>Windows may show "Windows protected your PC" because the installer isn't code-signed yet: click <b>More info → Run anyway</b>.</li>
+  <li>Choose where to install (or keep the default) and click Install. Jarvis opens when it finishes.</li>
+</ol>
+
+<h3>The welcome</h3>
+<p>The first time Jarvis opens, it walks you through setup with a short animated welcome:</p>
+<table>
+  <thead><tr><th style="width:26%">Step</th><th>What happens</th></tr></thead>
+  <tbody>
+    <tr><td><b>Title card</b></td><td>The Jarvis ring forms from particles, the core lights up and the name appears. Click <b>Let's set you up</b>.</td></tr>
+    <tr><td><b>1. Your name</b></td><td>What the team should call you. Every member learns it.</td></tr>
+    <tr><td><b>2. Connect your Claude</b></td><td>Two live checks: <b>Claude Code installed</b> and <b>Signed in</b>. Buttons open a window that installs Claude Code or signs you in through your browser. The page ticks each one by itself. Jarvis never sees or stores your Claude login.</td></tr>
+    <tr><td><b>3. Your team's tools</b></td><td>Switches for web search, lessons, documents, meeting recorder, screen look, reminders, project board and the coding supervisor, plus a <b>microphone test</b> with a live level bar.</td></tr>
+    <tr><td><b>4. Voices</b></td><td>Downloads the natural voices and speech recognition with progress bars (you can skip and do it later), and asks <b>how to say your name</b>: Claude suggests a spelling the voice reads correctly, and you can play it and adjust it.</td></tr>
+    <tr><td><b>Meet your team</b></td><td>Jarvis says hello, then each member introduces themselves in their own voice while their glowing orb follows their speech, their skills appear and their words light up as they're spoken. The introductions are written fresh by Claude for you, warm and a little playful. Mute and Skip are always available.</td></tr>
+  </tbody>
+</table>
+<p class="small muted">You can replay the introductions (Settings → Meet the team again) or run the whole setup again at any time.</p>
+</section>
+
+<!-- ================= 3 ================= -->
+<section>
+<h2><span class="num">3</span>Talking to Jarvis</h2>
+<h3>Four ways to talk</h3>
+<table>
+  <thead><tr><th style="width:24%">Where</th><th style="width:22%">How</th><th>Good for</th></tr></thead>
+  <tbody>
+    <tr><td><b>Main window</b></td><td>Open Jarvis → Chat</td><td>Longer conversations, history, lessons, everything at once.</td></tr>
+    <tr><td><b>Push-to-talk</b></td><td><code>Ctrl+Alt+Space</code> from any app</td><td>Talk without switching windows: press, speak, and it stops listening when you pause (or press again).</td></tr>
+    <tr><td><b>Voice card</b></td><td>Appears above the taskbar; <code>Ctrl+Alt+J</code> shows or hides it</td><td>Hands-free answers: the reply is spoken; the card stays hidden unless you want to read it. Hiding it doesn't stop the speech.</td></tr>
+    <tr><td><b>Floating box</b></td><td><code>Ctrl+Shift+Space</code></td><td>A small chat window that floats over your work.</td></tr>
+  </tbody>
+</table>
+
+<h3>Choosing who you talk to</h3>
+<p>Start your message with a member's name and you stay with them until you name someone else:</p>
+<ul>
+  <li><span class="say">Sara, I've had a headache since yesterday.</span> → Sara answers, and your next messages (<span class="say">it gets worse in the evening</span>) stay with her.</li>
+  <li><span class="say">Victor, can I afford a new laptop?</span> → now you're with Victor.</li>
+  <li>Job titles work too: <span class="say">doctor, …</span>, <span class="say">PA, …</span>, <span class="say">project manager, …</span>, <span class="say">accountant, …</span>.</li>
+  <li>Names misheard by speech recognition still work (<span class="say">Sarah</span> → Sara, <span class="say">Viktor</span> → Victor), and names you change on the Team page work the same way.</li>
+  <li>You can also click a member's chip above the chat box. Your very first message, before you've named anyone, goes to Maya.</li>
+</ul>
+
+<h3>Natural voices</h3>
+<ul>
+  <li>21 natural, human-sounding voices (American and British, male and female) that run on your computer.</li>
+  <li>Each member has their own voice, which you can change on the Team page (with a Play sample button).</li>
+  <li>Replies start speaking while they are still being written, so you hear the first sentence in a few seconds.</li>
+  <li>Spoken questions get short, spoken-style answers; ask for detail and you get more.</li>
+  <li>You can adjust the speaking speed, or switch speech off (Settings, or say <span class="say">mute</span> / <span class="say">unmute</span>).</li>
+</ul>
+
+<h3>Speech recognition that understands everyone</h3>
+<ul>
+  <li>Uses Whisper large-v3-turbo, a strong model that copes with fast, casual speech and many accents (Indian, British, American, European, East Asian and more).</li>
+  <li>On computers with an NVIDIA graphics card, a sentence turns into text in about <b>0.2 seconds</b>. In tests with fast, rough speech in ten accents, it made about 40% fewer mistakes than the previous model.</li>
+  <li>The silence around your words is trimmed and soft or rushed speech is evened out before recognition.</li>
+  <li>The team's names and yours are given as hints, so they're spelled correctly.</li>
+  <li>Everything happens on your computer: your voice is never uploaded.</li>
+</ul>
+
+<h3>Your name, said right</h3>
+<p>Voices read names by English spelling rules, so many names (Indian names especially) come out wrong. Jarvis keeps a "say it like" spelling
+for your name, for example <i>Priyanka → Pree-yaan-kaa</i>. Claude suggests one, you press <b>Hear it</b> and adjust it until it sounds right
+(during setup, or in Settings → You). Only the sound changes; your name is still written correctly.</p>
+
+<h3>Music pauses while you talk</h3>
+<p>When you start talking, anything playing (Spotify, YouTube in your browser, VLC and most media apps) pauses. It stays paused while the team
+answers, then resumes on its own. It also pauses when the team speaks on their own (reminders, the morning plan, lessons, coding updates). Only what
+Jarvis paused is resumed. You can switch this off in Settings.</p>
+
+<h3>Instant commands (no AI needed)</h3>
+<table>
+  <thead><tr><th style="width:45%">Say or type</th><th>What happens</th></tr></thead>
+  <tbody>
+    <tr><td><span class="say">record this meeting</span> (or lecture, call, appointment, interview), <span class="say">… and take notes</span></td><td>Starts recording; the named member (or Ryan) takes notes when it ends.</td></tr>
+    <tr><td><span class="say">stop recording</span>, <span class="say">the meeting is over</span></td><td>Stops, transcribes and hands the notes job to the right member.</td></tr>
+    <tr><td><span class="say">new conversation</span>, <span class="say">new chat</span></td><td>Starts a fresh conversation.</td></tr>
+    <tr><td><span class="say">open Tool Hub</span></td><td>Opens your apps and permissions.</td></tr>
+    <tr><td><span class="say">mute</span>, <span class="say">unmute</span></td><td>Turns spoken replies off or on.</td></tr>
+  </tbody>
+</table>
+</section>
+
+<!-- ================= 4 ================= -->
+<section>
+<h2><span class="num">4</span>Meet the team</h2>
+<p>Jarvis is the front desk. Behind it are four specialists. Each one is a complete expert setup: a role, step-by-step skills, their own apps,
+a memory of you, a folder on your computer, a natural voice and a name you can change.</p>
+<table>
+  <thead><tr><th style="width:17%">Member</th><th style="width:30%">Field</th><th>Typical requests</th></tr></thead>
+  <tbody>
+    <tr><td><span class="dot" style="--c:var(--maya)">●</span> <b>Maya</b><br /><span class="small muted">PA</span></td><td>Schedule, email, deadlines, reminders, daily and weekly planning, errands, travel, bills, music, anything personal</td><td><span class="say">Plan my day.</span> <span class="say">Check my email for deadlines.</span> <span class="say">Remind me to call Mom at 9.</span> <span class="say">Play some lo-fi.</span></td></tr>
+    <tr><td><span class="dot" style="--c:var(--ryan)">●</span> <b>Ryan</b><br /><span class="small muted">Project Manager</span></td><td>Projects, coding with Claude Code, specs, plans, estimates, meeting minutes, code review, status reports</td><td><span class="say">Add a login page to my app.</span> <span class="say">Record this meeting and note down my tasks.</span> <span class="say">How's the project going?</span></td></tr>
+    <tr><td><span class="dot" style="--c:var(--sara)">●</span> <b>Sara</b><br /><span class="small muted">Doctor</span></td><td>Symptoms, lab reports, nutrition, exercise, sleep and stress, medicines, preventive screening</td><td><span class="say">Explain my blood test.</span> <span class="say">What should I eat to lower my HbA1c?</span> <span class="say">I keep waking up at 3 am.</span></td></tr>
+    <tr><td><span class="dot" style="--c:var(--victor)">●</span> <b>Victor</b><br /><span class="small muted">Finance</span></td><td>Budgets, debt and EMIs, investing basics, purchase decisions, tax basics, business analysis</td><td><span class="say">Make me a monthly budget.</span> <span class="say">Should I buy this phone?</span> <span class="say">Is my startup idea profitable?</span></td></tr>
+  </tbody>
+</table>
+
+<h3>Working as a team</h3>
+<ul>
+  <li><b>They consult each other.</b> A member can ask one teammate for facts. Maya asks Ryan about project deadlines before planning your day, or asks Victor about a bill before drafting a reply.</li>
+  <li><b>They read each other's folders</b> (but only write in their own): Maya can see Ryan's roadmap and Sara's health notes when planning.</li>
+  <li><b>Each keeps their own conversation</b>, so a chat with Sara never gets mixed up with your coding work with Ryan.</li>
+  <li><b>You can rename them</b> and choose each one's voice on the Team page.</li>
+</ul>
+</section>
+
+<!-- ================= 5 MAYA ================= -->
+<section class="pb">
+<h2><span class="num">5</span>Maya: personal assistant</h2>
+<div class="member" style="--c:var(--maya)">
+  <h3><span class="dot">●</span> Maya <span class="role">Personal assistant and chief of staff · protects your time and energy</span></h3>
+  <p>Maya looks after your day and everything personal no other member covers: errands, bills, travel, bookings, important dates and forms.
+  She plans around <b>your energy</b>, turns email into action, and makes sure nothing sneaks up on you.</p>
+  <h4>Her skills</h4>
+  <table>
+    <tbody>
+      <tr><td style="width:27%"><b>Inbox triage</b></td><td>Sorts email into four tiers: <b>Act now</b> (she drafts the reply right away), <b>Needs a teammate</b> (she asks Ryan, Victor or Sara for the facts, then drafts), <b>Read later</b> (a short daily digest) and <b>Noise</b> (just counted). Every deadline becomes a board task with reminders; likely phishing is flagged; nothing is sent without your OK.</td></tr>
+      <tr><td><b>Daily plan</b></td><td>Builds your day around your energy: the hardest task in your deep-work window, admin in your low-energy slot, buffers between meetings, meals and breaks, your top 3 priorities. She pushes back when low-value tasks land in your best hours, and adds reminders 10 minutes before meetings.</td></tr>
+      <tr><td><b>Weekly review</b></td><td>What got done, what slipped, the next two weeks (meetings, exams, deadlines, birthdays, bills, travel) and next week's priorities.</td></tr>
+      <tr><td><b>Email writing</b></td><td>Drafts that sound like you, matching your greeting, sign-off, tone and sentence length from your own example emails, and never using AI-sounding phrases ("I hope this email finds you well").</td></tr>
+      <tr><td><b>Personal admin</b></td><td>Running lists (to-do, shopping, renewals, important dates), reminders well ahead of bills and renewals, travel research and packing lists, and the documents you need for forms. She never books, pays or enters passwords for you.</td></tr>
+      <tr><td><b>Meeting prep</b></td><td>A short brief before meetings, calls and interviews: purpose, people, recent emails, questions to raise, what to bring.</td></tr>
+    </tbody>
+  </table>
+  <h4>What she keeps about you</h4>
+  <p><b>About me</b> (working hours, deep-work window, best time for meetings, protected time, recurring commitments, important people, preferences) and
+  <b>Writing style</b> (your example emails, greeting and sign-off, phrases to avoid). Plus her folders: Plans, Inbox notes, Personal lists.</p>
+  <h4>Her apps</h4>
+  <p><span class="tag">Gmail / Outlook</span><span class="tag">Google / Outlook Calendar</span><span class="tag">Reminders</span><span class="tag">Project board</span><span class="tag">Meeting recorder</span><span class="tag">Documents</span><span class="tag">Web search</span><span class="tag">Team folders</span></p>
+  <h4>Proactive</h4>
+  <p>Turn on her <b>morning plan</b> (Team page → set a time) and every day she goes through your new email, puts deadlines on the board, plans the
+  day, saves it, and tells you the shape of your day out loud. She also says your <b>reminders</b> out loud at the right time, even if the main window is closed.</p>
+</div>
+</section>
+
+<!-- ================= 6 RYAN ================= -->
+<section class="pb">
+<h2><span class="num">6</span>Ryan: project manager &amp; tech lead</h2>
+<div class="member" style="--c:var(--ryan)">
+  <h3><span class="dot">●</span> Ryan <span class="role">Project manager and tech lead · ruthless about scope, quality and finishing · thinks with Opus 5.5</span></h3>
+  <p>Ryan runs your projects. He turns ideas into specs and plans, runs the coding with Claude Code in the background, reviews the result, takes
+  meeting minutes, and keeps the roadmap and board current. He uses <b>Opus 5.5</b>, the strongest model for building software.</p>
+  <h4>His skills</h4>
+  <table>
+    <tbody>
+      <tr><td style="width:27%"><b>Spec gate (coding brief)</b></td><td>Before <b>any</b> coding, Ryan writes a SPEC.md for the change (goal, scope, context, design, edge cases, breaking changes and risks, test plan, definition of done, open questions), shows you a summary and waits for your OK. Only then does he start Claude Code, with a brief that includes your coding standards and the tests that must pass.</td></tr>
+      <tr><td><b>Scope guard</b></td><td>When a new idea or change of plans arrives, he scores it (RICE or MoSCoW), checks it against your roadmap and the board's workload, shows what it would push back and by how long, and recommends: do now, schedule next, or park it. He's allowed to say "not now".</td></tr>
+      <tr><td><b>Project brief</b></td><td>A one-page brief for a new project or feature: problem and users, goals and non-goals, must/should/could, user stories with acceptance criteria, approach, milestones, risks.</td></tr>
+      <tr><td><b>Plan breakdown</b></td><td>Splits work into tasks of half a day to two days, orders them by dependencies and risk, estimates with three-point estimates plus a buffer, and puts milestones and tasks on the board.</td></tr>
+      <tr><td><b>Meeting minutes</b></td><td>From a recorded meeting: summary, key points, decisions, an action-item table with owners and dates (your own tasks marked), open questions. Your tasks go on the board with reminders, and the project status and roadmap are updated.</td></tr>
+      <tr><td><b>Status report</b></td><td>Red, amber or green with the reason, then done, in progress, next, blocked, risks and the decisions he needs from you.</td></tr>
+      <tr><td><b>Code review</b></td><td>Correctness, security, tests, design, performance and readability, with findings ranked by severity, each with file and line and a concrete fix.</td></tr>
+    </tbody>
+  </table>
+  <h4>What he keeps</h4>
+  <p><b>Roadmap</b> (now / next / later, decisions made), plus reference files: <b>Coding standards</b> (your preferred stack and rules), <b>Spec template</b> and
+  <b>Definition of done</b>. Folders: Projects (one folder per project, with Brief, Plan, SPEC, Status, Risks) and Meetings.</p>
+  <h4>His apps</h4>
+  <p><span class="tag">Coding supervisor (Claude Code)</span><span class="tag">Documents &amp; code</span><span class="tag">Project board</span><span class="tag">Reminders</span><span class="tag">Calendars</span><span class="tag">Meeting recorder</span><span class="tag">Screen look</span><span class="tag">Web search (official docs)</span><span class="tag">Team folders</span><span class="tag">Apps you add (e.g. GitHub)</span></p>
+</div>
+</section>
+
+<!-- ================= 7 SARA ================= -->
+<section class="pb">
+<h2><span class="num">7</span>Sara: health &amp; nutrition</h2>
+<div class="member" style="--c:var(--sara)">
+  <h3><span class="dot">●</span> Sara <span class="role">Health coach with a careful clinician's method · not a replacement for an in-person doctor</span></h3>
+  <p>Sara gives practical, evidence-based help with food, sleep, exercise, stress, everyday symptoms and medical reports, and she reads every
+  result against <b>your own history</b>, not just population ranges.</p>
+  <h4>Her skills</h4>
+  <table>
+    <tbody>
+      <tr><td style="width:27%"><b>Symptom check</b></td><td>Red flags first (if one fits, she tells you to get emergency help now, before anything else). Then <b>OPQRST</b> questions one or two at a time (onset, what makes it better or worse, what it feels like, where, how bad, how it changes), then 2–4 likely explanations, a clear triage level (emergency / today / within days / self-care), safe self-care, and "get help sooner if…".</td></tr>
+      <tr><td><b>Lab reports</b></td><td>Reads the whole report, records every value in your <b>biomarker table</b> (including values you just tell her), compares with your previous results to spot trends, and reads patterns, not single numbers. She points out urgent values and gives you questions for your doctor. In testing, given HbA1c values of 5.6 → 5.9 → 6.1 she said "the steady upward trend matters more than any single number" and linked it to the family history and habits in the health profile.</td></tr>
+      <tr><td><b>Nutrition plan</b></td><td>Calorie needs from your body and activity, protein targets, the plate method, meals from your own cuisine in household measures, a shopping list, and swaps instead of bans; adapted for diabetes, blood pressure, pregnancy or allergies.</td></tr>
+      <tr><td><b>Exercise plan</b></td><td>A safety screen first, then a realistic weekly plan (frequency, intensity, time, type) that builds up gradually, including strength work.</td></tr>
+      <tr><td><b>Sleep and stress</b></td><td>The proven methods behind CBT for insomnia, sleep habits, a 2-week sleep diary, and short stress techniques; plus when to see a professional.</td></tr>
+      <tr><td><b>Medicine information</b></td><td>What a medicine does, how to take it, common versus serious side effects and interactions, from trusted sources. She never changes a prescribed dose.</td></tr>
+    </tbody>
+  </table>
+  <h4>What she keeps about you</h4>
+  <p><b>Health profile</b> (age, conditions, medicines, allergies, baseline blood pressure and weight, lifestyle, goals, what your doctor said) and the
+  <b>Biomarker table</b> (every lab value with date, unit and the lab's range). Reference files: <b>Red flags</b>, <b>Lab ranges</b> (your report's own
+  range always wins) and a <b>Preventive screening schedule</b>; she tells you which screenings apply to you now.</p>
+  <h4>Her apps</h4>
+  <p><span class="tag">Web search (medical authorities only: WHO, NIH, NHS, Mayo Clinic…)</span><span class="tag">Documents (reports, PDFs)</span><span class="tag">Lessons</span><span class="tag">Screen look</span><span class="tag">Team folders</span></p>
+  <div class="callout red"><p><b>Safety lines Sara never crosses:</b> she doesn't diagnose with certainty, never changes prescribed medication, and always
+  sends you to emergency services or a doctor for warning signs (chest pain, trouble breathing, stroke signs, fainting, heavy bleeding, thoughts of self-harm).</p></div>
+</div>
+</section>
+
+<!-- ================= 8 VICTOR ================= -->
+<section class="pb">
+<h2><span class="num">8</span>Victor: money &amp; business</h2>
+<div class="member" style="--c:var(--victor)">
+  <h3><span class="dot">●</span> Victor <span class="role">Money and business analyst who works from your real numbers · information, not regulated advice</span></h3>
+  <p>Victor turns money questions into clear numbers: what you can afford, what a decision really costs, and whether it fits your goals. He
+  shows the maths and the assumptions, and holds you to the investment rules you set while you were calm.</p>
+  <h4>His skills</h4>
+  <table>
+    <tbody>
+      <tr><td style="width:27%"><b>Purchase evaluator</b></td><td>"Should I buy this?": the price as a share of your take-home pay, months of savings it uses, the effect on your emergency fund, <b>opportunity cost</b> (what the money would grow to if invested), the interest if on EMI, cost per use, cheaper alternatives, and whether it delays a goal. Then a clear verdict (buy now / wait / skip) with the deciding numbers.</td></tr>
+      <tr><td><b>Investment policy</b></td><td>Writes your own rulebook: goals, horizon, risk you can live with, target allocation, rebalancing rule, and <b>rules for bad days</b> (what you promise not to do in a market fall or a hype rally). Later, when you want to act on fear or hype, he holds you to it.</td></tr>
+      <tr><td><b>Budget</b></td><td>Picks a method that fits you (50/30/20, zero-based, pay-yourself-first), checks your emergency fund, builds a planned-vs-actual table, finds the 2–3 biggest savings with amounts, and can categorise a bank statement you give him.</td></tr>
+      <tr><td><b>Debt payoff</b></td><td>EMI and total interest, avalanche vs snowball compared with your numbers, prepaying vs investing, refinancing or consolidating, and warning signs.</td></tr>
+      <tr><td><b>Investing basics</b></td><td>The right order (emergency fund, high-interest debt, insurance, then goals), allocation by goal and horizon, low-cost diversified funds, compounding shown at realistic returns after inflation, and the usual traps.</td></tr>
+      <tr><td><b>Tax basics</b></td><td>Your country's current rules looked up on official sources, saved with the date and link, a worked estimate with your numbers, and deadlines as reminders through Maya.</td></tr>
+      <tr><td><b>Business analysis</b></td><td>Unit economics (margin, break-even, customer acquisition cost vs lifetime value), market size from the bottom up, pricing, a 12-month projection with worst/base/best cases, and the 3 assumptions to test first.</td></tr>
+    </tbody>
+  </table>
+  <h4>What he keeps about you</h4>
+  <p><b>Balance sheet</b> (assets, liabilities with rates and EMIs, net worth), <b>Monthly cash flow</b> (income, fixed and variable costs, savings rate)
+  and <b>Investment policy</b>. Reference files: <b>Formulas</b> (EMI, compounding, monthly investing, real returns, opportunity cost, emergency-fund cover,
+  debt-to-income, break-even) and <b>Rates and rules</b>, which only ever holds figures he has verified on official sources, with the date.</p>
+  <h4>His apps</h4>
+  <p><span class="tag">Web search (official sources for rates and tax)</span><span class="tag">Documents (statements, spreadsheets, PDFs)</span><span class="tag">Lessons and charts</span><span class="tag">Screen look</span><span class="tag">Team folders</span></p>
+  <div class="callout amber"><p><b>Safety lines:</b> general information, not regulated financial advice (for big decisions he suggests a licensed, fee-only
+  adviser). He never asks for passwords, card numbers, one-time codes or bank logins.</p></div>
+</div>
+</section>
+
+<!-- ================= 9 ================= -->
+<section>
+<h2><span class="num">9</span>What makes the team experts</h2>
+<p>Each member is built on Claude: the same knowledge and reasoning. What turns them into specialists is everything around the model:</p>
+<table>
+  <thead><tr><th style="width:26%">Ingredient</th><th>What it gives you</th></tr></thead>
+  <tbody>
+    <tr><td><b>An expert method</b></td><td>Every member works the same way: start from your files → if a fact that changes the answer is missing, ask 1–3 specific questions first (never generic advice) → follow the right skill → update your profile → end with one concrete next step. No filler.</td></tr>
+    <tr><td><b>Skills (playbooks)</b></td><td>27 step-by-step procedures across the team (listed in sections 5–8), so the expert process is followed every time without you writing a careful prompt.</td></tr>
+    <tr><td><b>Profile files</b></td><td>Structured facts about you in each field, loaded automatically at the start of every conversation and kept up to date as you talk.</td></tr>
+    <tr><td><b>Reference files</b></td><td>Checked material they must use instead of guessing: red flags, lab ranges, screening schedules, finance formulas, verified tax rates, spec templates, definition of done.</td></tr>
+    <tr><td><b>Memory</b></td><td>Notes about you, summarised as you talk. You can read, edit, summarise or erase them on the Team page.</td></tr>
+    <tr><td><b>Their own folder</b></td><td>A real folder on your computer (Team → PA, Project Manager, Doctor, Finance) where they keep plans, minutes, notes, budgets and research, organised by date. Open it from the Team page.</td></tr>
+    <tr><td><b>Trusted sources</b></td><td>Web search steered to the right sites for each field (medical authorities, official regulators, official software docs).</td></tr>
+    <tr><td><b>The right tools and model</b></td><td>Only the apps their job needs, and a stronger model where it pays off (Ryan on Opus 5.5).</td></tr>
+  </tbody>
+</table>
+<h3>Make them yours</h3>
+<ul>
+  <li><b>Add your own skills:</b> drop a Markdown file in a member's <b>Skills</b> folder (a title line, then the steps or rules) and they'll use it.</li>
+  <li><b>Fill in or correct their files</b> directly: they're ordinary documents in their folders, and your edits are never overwritten.</li>
+  <li><b>Tell them things once:</b> <span class="say">Victor, I earn 60,000 a month after tax and pay 15,000 rent</span>, and it goes into his cash flow for every future answer.</li>
+</ul>
+</section>
+
+<!-- ================= 10 ================= -->
+<section>
+<h2><span class="num">10</span>Lessons and visual explanations</h2>
+<p>When something is clearer when seen, a member explains it with a <b>lesson</b>: a narrated, step-by-step presentation that opens in its own window
+on the empty side of your screen (or full screen), with each picture appearing exactly as the voice explains it.</p>
+<h3>What a lesson can show</h3>
+<div class="grid2">
+  <div class="card"><h4>Diagrams and charts</h4><ul><li>Flowcharts, process and relationship diagrams</li><li>Bar, line and pie charts</li><li>Tables, notes and highlighted key points</li><li>Moving scenes that animate a process</li></ul></div>
+  <div class="card"><h4>Visual maths</h4><ul><li>Curves that draw themselves; a tangent that slides as a value changes</li><li>Shaded areas and rectangles that fill the area under a curve</li><li>Vectors and a whole grid that bends under a matrix</li><li>Equations that transform step by step, each quantity in its own colour</li></ul></div>
+</div>
+<ul>
+  <li><b>Interactive:</b> drag points, move sliders, scroll to zoom, drag to pan, and replay any step.</li>
+  <li><b>References:</b> quotes from a document, pieces of code, or a cut-out of your screen, numbered with a reference list at the end.</li>
+  <li><b>Adapts to the question:</b> a simple question gets a plain answer; an idea gets a short lesson; a problem or a deep topic gets four parts: <b>Problem → Intuition → Solution → Recap</b>.</li>
+  <li><b>At your level:</b> Settings → "How Jarvis explains things": Automatic, Like I'm five, Student, or Professional (precise terms, trade-offs, real code). You can also just say <span class="say">explain like I'm five</span>.</li>
+  <li><b>Controls:</b> <code>Space</code> pause, arrow keys step, <code>F</code> side or full screen, <code>Esc</code> close; push-to-talk pauses the lesson so you can ask a follow-up.</li>
+  <li>The lesson is narrated in the voice of the member who made it. Sara uses lessons to show how the body works, Victor to chart budgets and compounding.</li>
+</ul>
+</section>
+
+<!-- ================= 11-13 ================= -->
+<section>
+<h2><span class="num">11</span>Documents and code</h2>
+<ul>
+  <li><b>Open a file or folder you pick</b> (a window asks you which; a member never browses your computer on their own): PDFs, text, spreadsheets as text, and whole code projects.</li>
+  <li><b>Read only what's needed:</b> pages of a PDF or ranges of lines, with answers that cite where they came from (page numbers, file and line).</li>
+  <li><b>Search an opened folder</b> for words or code.</li>
+  <li><b>Secret files are never opened</b> (keys, passwords, <code>.env</code> files).</li>
+  <li>Typical uses: <span class="say">Sara, explain this blood report</span> · <span class="say">Victor, categorise this bank statement</span> · <span class="say">Ryan, how does login work in this project?</span></li>
+</ul>
+
+<h2><span class="num">12</span>Looking at your screen</h2>
+<ul>
+  <li>Ask <span class="say">what's this error on my screen?</span> or <span class="say">explain this chart</span> and a member takes <b>one</b> screenshot for that request.</li>
+  <li>You choose what to share (a window, a whole screen, or an area you draw), and a small indicator shows when your screen is being looked at.</li>
+  <li>The member only ever looks when you ask; never in the background.</li>
+</ul>
+
+<h2><span class="num">13</span>Meetings and recordings</h2>
+<ul>
+  <li><span class="say">Ryan, record this meeting and note down the tasks given to me</span>: records your microphone (and the call's sound where possible) and transcribes it on your computer as the meeting goes on.</li>
+  <li>When you say <span class="say">stop recording</span>, the member you asked writes it up in their own style:
+    <ul>
+      <li><b>Ryan</b> (also the default): minutes, decisions, an action-item table, your tasks on the board with due dates and reminders, project status and roadmap updated.</li>
+      <li><b>Sara</b> (<span class="say">Sara, record this appointment</span>): what the doctor found, tests, medicines with doses, instructions, warning signs and the follow-up date; reminders through Maya.</li>
+      <li><b>Maya</b> or <b>Victor</b>: notes with every task, deadline, figure and decision that involves you.</li>
+    </ul>
+  </li>
+  <li>The notes are saved in that member's folder; the transcript stays on your computer, and audio is deleted once it has been transcribed.</li>
+</ul>
+</section>
+
+<!-- ================= 14-15 ================= -->
+<section>
+<h2><span class="num">14</span>Email and calendar</h2>
+<table>
+  <thead><tr><th style="width:22%">App</th><th>What the team can do</th><th style="width:28%">Default permission</th></tr></thead>
+  <tbody>
+    <tr><td><b>Gmail / Outlook mail</b></td><td>Read recent emails (with search), read one email, draft replies in your style, send a draft, delete an email</td><td>Reading allowed; drafting and sending ask you first; deleting always asks</td></tr>
+    <tr><td><b>Google / Outlook Calendar</b></td><td>Read events, create events, delete events</td><td>Reading allowed; creating asks first; deleting always asks</td></tr>
+  </tbody>
+</table>
+<p>Typical uses: <span class="say">Maya, what's on my calendar tomorrow?</span> · <span class="say">reply to the professor and ask for an extension to Friday</span> ·
+<span class="say">find all deadlines in my email this week</span>. Email content is treated as information only: instructions hidden inside an email are never followed.</p>
+<div class="callout amber"><p><b>Current setup step:</b> connecting Google or Microsoft needs a one-time setup of your own app registration (guided in the
+Tool Hub). One-click sign-in is planned (see section 24).</p></div>
+
+<h2><span class="num">15</span>Reminders, morning plan and project board</h2>
+<ul>
+  <li><b>Reminders:</b> <span class="say">Maya, remind me to submit the form at 5 pm</span>. At the time, Maya says it out loud on the voice card, in her voice. Reminders missed while Jarvis was closed are said when it opens.</li>
+  <li><b>Morning plan:</b> set a time on the Team page and Maya plans your day every morning (email triage, calendar, board, your energy), saves it and tells you.</li>
+  <li><b>Project board:</b> a simple To do / Doing / Done board on the Team page, shared by Maya and Ryan, with projects and due dates. You can add tasks yourself; the team adds tasks from emails, meetings and coding work automatically.</li>
+</ul>
+</section>
+
+<!-- ================= 16 ================= -->
+<section>
+<h2><span class="num">16</span>Coding supervisor</h2>
+<p>Ryan runs real coding work on your projects with Claude Code, in the background, and acts like a good team lead between you and it.
+(Turn it on in the Tool Hub; it's off by default.)</p>
+<ol class="steps">
+  <li><span class="say">Ryan, add a login page to my project</span>: you pick the project folder.</li>
+  <li>Ryan writes the <b>spec</b> and waits for your OK (section 6).</li>
+  <li>Claude Code works in the background while you do something else. Safe steps (reading, editing project files, running tests and builds) are approved for you according to your setting.</li>
+  <li>When Claude has a question or wants to do something risky, a small card appears (and is spoken) with <b>Ryan's recommendation and reason</b>. Answer by clicking or by voice: <span class="say">go with yours</span>, <span class="say">the second one</span>, <span class="say">no, keep it</span>.</li>
+  <li>You get progress updates while it works, and a summary at the end with the <b>test results</b> and the <b>list of changed files</b>; Ryan checks it against the spec and updates the board.</li>
+</ol>
+<table>
+  <thead><tr><th style="width:24%">Setting</th><th>Options</th></tr></thead>
+  <tbody>
+    <tr><td><b>How much Ryan may approve</b></td><td><b>Careful</b> (asks for any change), <b>Balanced</b> (approves low-risk steps), <b>Hands-off</b> (approves low and medium risk). High-risk actions (deleting, pushing to git, installing packages, network access, anything outside the project, key or password files) <b>always</b> ask you.</td></tr>
+    <tr><td><b>Updates</b></td><td>Every few minutes or only at milestones; spoken or silent.</td></tr>
+    <tr><td><b>Your own sessions</b></td><td>Optionally, Jarvis tells you when Claude Code sessions you started yourself (VS Code, terminal) finish or need you.</td></tr>
+  </tbody>
+</table>
+<p>You can also give more instructions while it runs (<span class="say">also add a "remember me" box</span>), ask for progress, stop it, or open the project in VS Code.</p>
+</section>
+
+<!-- ================= 17-18 ================= -->
+<section>
+<h2><span class="num">17</span>Web search</h2>
+<ul>
+  <li>Built in for every member; no account needed. Search the web and read pages for current facts, prices, news and documentation.</li>
+  <li><b>Steered to trusted sources by field:</b> Sara uses medical authorities (WHO, NIH, MedlinePlus, NHS, Mayo Clinic, CDC); Victor uses official government and regulator sites; Ryan uses official documentation; others use reliable general sources.</li>
+  <li>Members name their sources and only give links that actually came back from the search, never made-up links.</li>
+  <li>Web pages are treated as information only; instructions on a page are never followed.</li>
+</ul>
+
+<h2><span class="num">18</span>Apps and the Tool Hub</h2>
+<p>The <b>Tool Hub</b> is where you choose which apps your team can use, and exactly what they may do in each.</p>
+<h3>For every app</h3>
+<ul>
+  <li><b>On / off</b> switch.</li>
+  <li><b>For every ability: Off / Ask me first / Allowed.</b> Anything destructive (like deleting) can never be set to Allowed.</li>
+  <li><b>Who can use it:</b> coloured chips for Maya, Ryan, Sara and Victor; click to give or take away an app (for example, give your calendar to Sara for appointment planning). Jarvis always has every app. Reset puts back the usual members.</li>
+</ul>
+<h3>The apps</h3>
+<ul>
+  <li><b>Email and calendar:</b> Gmail and Google Calendar (Google account), Outlook mail and Outlook Calendar (Microsoft account).</li>
+  <li><b>Built in, nothing to set up:</b> web search, lessons, documents &amp; code, meeting recorder, screen look, reminders, project board, team folders, skills, team (members asking each other) and the coding supervisor.</li>
+  <li>Turn each one on or off; nothing else can be added in this version.</li>
+</ul>
+</section>
+
+<!-- ================= 19-20 ================= -->
+<section>
+<h2><span class="num">19</span>Conversations and history</h2>
+<ul>
+  <li>Chats are organised into <b>conversations</b>. A new one starts when you open Jarvis, after 30 quiet minutes, or when you click <b>New chat</b>.</li>
+  <li>The <b>History</b> panel next to the chat lists them by Today, Yesterday, Previous 7 days, Previous 30 days and by month, each with a title, time and the coloured dots of who took part.</li>
+  <li><b>Search</b> finds words in any old conversation.</li>
+  <li><b>Open</b> an earlier conversation to read it (with dates between days), and <b>Continue</b> it: each member picks up exactly where they left off.</li>
+  <li><b>Select and delete</b> conversations, or a whole day, for good. Chats from the voice card and floating box go into the same conversation.</li>
+  <li>Settings: keep history on this computer (on by default), or switch it off and clear everything.</li>
+</ul>
+
+<h2><span class="num">20</span>Activity</h2>
+<ul>
+  <li>Everything your team did in your apps, <b>grouped by day</b>: time, who did it (with their colour), what they did and in which app, and the result (Done, Blocked, You said no, Failed).</li>
+  <li>Select entries, a whole day, or all, and <b>delete them for good</b>.</li>
+</ul>
+</section>
+
+<!-- ================= 21 ================= -->
+<section>
+<h2><span class="num">21</span>Safety, permissions and privacy</h2>
+<h3>You stay in control</h3>
+<ul>
+  <li><b>Every action passes your permission settings</b> before it happens: Off, Ask me first, or Allowed, per ability, per app.</li>
+  <li><b>Anything that sends, deletes, spends or acts</b> asks you first with a clear description of exactly what will happen. Deleting can never be set to Allowed.</li>
+  <li><b>Members only use the apps you give them</b> (Who can use it). Asking for anything else is blocked.</li>
+  <li><b>Everything is logged</b> in Activity.</li>
+  <li><b>Content is never obeyed:</b> text inside emails, documents, web pages, transcripts and screenshots is treated as information, never as instructions, even if it claims to come from you.</li>
+  <li><b>Coding work never skips permission checks;</b> risky steps always come to you.</li>
+</ul>
+<h3>Your data stays yours</h3>
+<table>
+  <tbody>
+    <tr><td style="width:32%"><b>On your computer</b></td><td>Chats and history, members' memory and folders, profiles, reminders, the board, recordings and transcripts, voices and speech recognition, settings.</td></tr>
+    <tr><td><b>In the Windows Credential Manager</b></td><td>Your sign-ins to Google, Microsoft and added apps, and app keys. Never in files.</td></tr>
+    <tr><td><b>Sent to Anthropic</b></td><td>Your requests to the team go to Claude on your own plan, through Claude Code. Jarvis never reads or stores your Claude login.</td></tr>
+    <tr><td><b>Sent to other services</b></td><td>Only what you use: web searches go to the search service (Exa); email and calendar actions go to Google or Microsoft; added apps go to their own service.</td></tr>
+    <tr><td><b>Never uploaded</b></td><td>Your voice. Speech recognition and the natural voices run on your computer.</td></tr>
+  </tbody>
+</table>
+<h3>Health and money safety</h3>
+<p>Sara is not a doctor and Victor is not a licensed adviser. They give careful, evidence-based information, say clearly when something needs a
+professional, and send you to emergency help for warning signs.</p>
+</section>
+
+<!-- ================= 22 ================= -->
+<section>
+<h2><span class="num">22</span>Settings reference</h2>
+<table>
+  <thead><tr><th style="width:30%">Setting</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><b>Model</b></td><td>Automatic (fast model for look-ups, stronger for drafting and explaining, Opus 5.5 for Ryan), or always use one model.</td></tr>
+    <tr><td><b>Speak replies aloud</b></td><td>Natural voice on or off.</td></tr>
+    <tr><td><b>Pause music and videos…</b></td><td>Pause other media while you talk and while the team speaks (on by default).</td></tr>
+    <tr><td><b>Keep chat history</b></td><td>Keep conversations on this computer; clear them.</td></tr>
+    <tr><td><b>How Jarvis explains things</b></td><td>Automatic, Like I'm five, Student, Professional.</td></tr>
+    <tr><td><b>Natural voice</b></td><td>Download, Jarvis's own voice, speaking speed (each member's voice is set on the Team page).</td></tr>
+    <tr><td><b>Voice shortcuts</b></td><td>Push-to-talk shortcut (default <code>Ctrl+Alt+Space</code>) and show/hide answer card (default <code>Ctrl+Alt+J</code>).</td></tr>
+    <tr><td><b>Coding supervisor</b></td><td>How much Ryan may approve, update interval, speak updates, watch your own Claude Code sessions.</td></tr>
+    <tr><td><b>You</b></td><td>Your name and how to say it (with Hear it and Suggest again).</td></tr>
+    <tr><td><b>Welcome &amp; uninstall</b></td><td>Meet the team again, run the setup again, uninstall Jarvis.</td></tr>
+  </tbody>
+</table>
+<h3>The Team page</h3>
+<p>For each member: rename, choose their natural voice (Play sample), see their apps and skills, read, edit, summarise or erase what they remember, open
+their folder, and talk to them. Maya's card also sets the morning-plan time and shows upcoming reminders. The shared project board is at the bottom.</p>
+</section>
+
+<!-- ================= 23 ================= -->
+<section>
+<h2><span class="num">23</span>Installing, updating and uninstalling</h2>
+<ul>
+  <li><b>Install:</b> run the installer; choose the folder; Jarvis opens and the welcome guides you (section 2).</li>
+  <li><b>Update:</b> run a newer installer over the old one. Your chats, memory, folders, settings and sign-ins are kept.</li>
+  <li><b>Uninstall:</b> Settings → <b>Uninstall Jarvis</b>, or Windows Settings → Apps → Jarvis. Uninstalling removes the app <b>and everything Jarvis kept</b>: settings, chats, memory, team folders, voices and speech models, saved sign-ins in the Windows Credential Manager, the Claude Code hooks it added, and its own saved Claude sessions, as if it had never been installed. Claude Code itself and your own projects are not touched.</li>
+</ul>
+<div class="callout"><p><b>Disk space after a full setup:</b> about 1 GB without speech recognition models; about 2.6 GB on an NVIDIA computer with
+natural voices and fast speech recognition; plus Claude Code (about 350 MB) if it wasn't already installed.</p></div>
+</section>
+
+<!-- ================= 24 ================= -->
+<section>
+<h2><span class="num">24</span>Current limits and what's next</h2>
+<table>
+  <thead><tr><th style="width:30%">Today</th><th>Planned or possible</th></tr></thead>
+  <tbody>
+    <tr><td>Windows only</td><td>A Mac version (built and signed on a Mac).</td></tr>
+    <tr><td>The installer isn't code-signed, so Windows shows a warning</td><td>A code-signing certificate removes the warning and protects updates.</td></tr>
+    <tr><td>Fast speech recognition needs an NVIDIA graphics card; other computers are slower</td><td>A light, fast model for ordinary laptops, and an optional <b>Jarvis Cloud Voice</b> (streaming recognition and premium voices) for any computer.</td></tr>
+    <tr><td>Gmail, Outlook and calendars need a one-time app registration by the user</td><td>One-click Connect for Google, Microsoft and GitHub once Jarvis is registered (Google requires verification for Gmail access).</td></tr>
+    <tr><td>Phone health data (Apple Health, Android Health Connect) isn't connected</td><td>Import a health export into Sara's profile; later, wearable services (Oura, Garmin, Fitbit) or a companion phone app.</td></tr>
+    <tr><td>Typical time from you stopping talking to the first spoken word: about 3.5–5.5 seconds</td><td>Smarter end-of-turn detection, keeping Claude ready between messages, and speaking sooner, aiming for about 1.5–2.5 seconds.</td></tr>
+    <tr><td>The experts' playbooks were written from standard references</td><td>Review by professionals, exact calculators (calories, EMI, tax), and a side-by-side test against plain Claude.</td></tr>
+  </tbody>
+</table>
+</section>
+
+<!-- ================= 25 ================= -->
+<section>
+<h2><span class="num">25</span>Quick reference</h2>
+<h3>Shortcuts</h3>
+<table>
+  <tbody>
+    <tr><td style="width:34%"><code>Ctrl+Alt+Space</code></td><td>Push-to-talk from any app (press again to stop, or just pause)</td></tr>
+    <tr><td><code>Ctrl+Alt+J</code></td><td>Show or hide the answer card</td></tr>
+    <tr><td><code>Ctrl+Shift+Space</code></td><td>Floating chat box</td></tr>
+    <tr><td><code>Space</code> · arrows · <code>F</code> · <code>Esc</code></td><td>In a lesson: pause · step · side/full screen · close</td></tr>
+  </tbody>
+</table>
+<h3>Things to try</h3>
+<div class="grid2">
+  <div class="card" style="border-left:3px solid var(--maya)"><h4>Maya</h4><ul class="small">
+    <li><span class="say">Plan my day.</span></li>
+    <li><span class="say">Check my email for deadlines and draft the replies that need me.</span></li>
+    <li><span class="say">Remind me to pay the electricity bill on the 5th.</span></li>
+    <li><span class="say">Prep me for my interview tomorrow at 11.</span></li>
+    <li><span class="say">Play Blinding Lights by The Weeknd.</span></li></ul></div>
+  <div class="card" style="border-left:3px solid var(--ryan)"><h4>Ryan</h4><ul class="small">
+    <li><span class="say">Add a dark mode to my app.</span> (he writes the spec first)</li>
+    <li><span class="say">Record this meeting and note down my tasks.</span></li>
+    <li><span class="say">I want to also add payments. Should we?</span> (scope guard)</li>
+    <li><span class="say">How's the project going?</span></li>
+    <li><span class="say">Review what Claude changed today.</span></li></ul></div>
+  <div class="card" style="border-left:3px solid var(--sara)"><h4>Sara</h4><ul class="small">
+    <li><span class="say">My HbA1c came back 6.1. Should I worry?</span></li>
+    <li><span class="say">Explain this blood report.</span> (pick the PDF)</li>
+    <li><span class="say">Make me a vegetarian high-protein meal plan.</span></li>
+    <li><span class="say">I sleep badly after late classes.</span></li>
+    <li><span class="say">Which health screenings should I do this year?</span></li></ul></div>
+  <div class="card" style="border-left:3px solid var(--victor)"><h4>Victor</h4><ul class="small">
+    <li><span class="say">Should I buy a 90,000 rupee laptop on EMI?</span></li>
+    <li><span class="say">Help me write my investment rules.</span></li>
+    <li><span class="say">Make me a budget from this bank statement.</span></li>
+    <li><span class="say">Avalanche or snowball for my two loans?</span></li>
+    <li><span class="say">Is this café idea profitable?</span></li></ul></div>
+</div>
+</section>
+
+</body>
+</html>

@@ -5,32 +5,28 @@ export const DOCTOR_SKILLS: Skill[] = [
     id: 'symptom-check',
     when: 'the user describes a symptom or feels unwell',
     body: `Symptom check (structured history, like a careful GP):
-1. Red flags first. If ANY is present, stop and tell them to call emergency services or go to the emergency department now: chest pain or pressure (especially with sweating, breathlessness or pain spreading to arm/jaw); trouble breathing; face drooping, arm weakness or slurred speech (stroke: FAST); sudden worst-ever headache; fainting; confusion; seizure; heavy bleeding; vomiting blood or black stools; severe allergic reaction (swelling of lips/tongue, wheeze); high fever with stiff neck or a rash that does not fade under a glass; severe abdominal pain; suicidal thoughts (give a crisis line); in children: floppy, not drinking, fewer wet nappies.
-2. Ask only what changes the advice (2-4 questions at a time), using SOCRATES: Site, Onset (sudden or gradual, when), Character, Radiation, Associated symptoms, Time course, Exacerbating/relieving factors, Severity (0-10). Also age, pregnancy, long-term conditions, current medicines, allergies, recent travel.
-3. Give 2-4 likely explanations in plain words, most likely first, and say what would make each more or less likely. Never state a diagnosis as certain.
-4. Triage clearly: Emergency now / See a doctor today / Book a GP visit within a few days / Self-care at home.
-5. Self-care: concrete, safe steps (fluids, rest, paracetamol per pack label if suitable, etc.) and what NOT to do.
-6. Safety-net: "Get help sooner if …" with specific worsening signs and a time limit ("if not better in 3 days").
-7. If they want sources, search the web with focus "health" and cite 1-3 authorities (NHS, Mayo Clinic, MedlinePlus, WHO).
-8. Offer to save a short note to "Health notes/" (date, symptom, advice) so it can be tracked.`,
+1. Red flags first: check Reference/Red flags.md. If any fits, stop and tell them to call emergency services or a doctor now, kindly and clearly. No home advice first.
+2. Context from Profile/Health profile.md: age, conditions, medicines, allergies, pregnancy. Ask for what is missing only if it matters here.
+3. OPQRST, one or two questions at a time (never a long questionnaire): Onset (when, sudden or gradual), Provocation/palliation (what makes it worse or better), Quality (what it feels like), Region/radiation (where, does it spread), Severity (0-10, effect on sleep and daily life), Time (constant or comes and goes, getting better or worse). Plus associated symptoms and recent travel, food, injury or new medicines.
+4. Give 2-4 likely explanations in plain words, most likely first, and what would make each more or less likely. Never certain.
+5. Triage clearly: Emergency now / See a doctor today / Book a visit within a few days / Self-care.
+6. Self-care: concrete, safe steps and what not to do (painkillers only per the pack label and the user's conditions).
+7. Safety net: "Get help sooner if ..." with specific signs and a time limit.
+8. Sources on request (web focus "health", 1-3 named authorities).
+9. Save a dated note in Health notes/, and add lasting facts (a diagnosis, a new medicine) to Profile/Health profile.md.`,
   },
   {
     id: 'lab-report',
     when: 'explaining blood tests, scans or any medical report',
-    body: `Reading a medical report:
-1. Read the whole report (documents or files tool). Note the lab's own reference ranges: ranges differ between labs, units and age/sex, so always compare to the range printed on the report.
-2. Lead with the overall picture in one or two sentences ("Most results are normal; two need attention: …").
-3. For each abnormal value: name in plain words, the value vs range, how far off (slightly / clearly / markedly), the common harmless and important causes, and what usually happens next. Ignore tiny deviations that are clinically meaningless and say so.
-4. Look for patterns, not single numbers. Common panels:
-   - CBC: low Hb + low MCV → iron deficiency likely; high MCV → B12/folate, alcohol, thyroid; WBC differential (neutrophils: bacterial; lymphocytes: viral); platelets.
-   - Lipids: LDL is the main target; risk depends on age, BP, smoking, diabetes; HDL protective; triglycerides affected by fasting, sugar, alcohol.
-   - Glucose: fasting ≥126 mg/dL (7.0 mmol/L) or HbA1c ≥6.5% suggests diabetes; 100-125 / 5.7-6.4% prediabetes (confirm with a repeat test).
-   - Thyroid: high TSH with low/normal T4 → underactive; low TSH → overactive.
-   - Liver (ALT, AST, ALP, GGT, bilirubin) and kidney (creatinine, eGFR, urea, electrolytes, urine albumin).
-   - Vitamin D, B12, ferritin (ferritin also rises with inflammation).
-5. End with: questions to ask their doctor, lifestyle steps that genuinely move these numbers, and whether a repeat test makes sense.
-6. Never change prescribed medicine. Point out anything urgent (very high potassium, very low sodium or haemoglobin, troponin) as "contact your doctor today".
-7. Offer to save a dated summary in "Health notes/Reports.md" so trends can be compared next time.`,
+    body: `Reading a medical report, against the user's own history:
+1. Read the whole report (documents or files tool). Note the lab's printed ranges: they win over Reference/Lab ranges.md.
+2. Append every value to Profile/Biomarkers.csv with the files tool (write, mode "append"): date of the test, marker, value, unit, lab_low, lab_high, lab, notes. This includes values the user only tells you ("my HbA1c is 6.1"); ask the date if unknown. One row per value; never rewrite old rows.
+3. Compare each value with the user's own earlier results in Biomarkers.csv: is it stable, rising or falling, and since when? A change inside the normal range can still matter (e.g. HbA1c 5.2 → 5.6 → 5.9 over two years).
+4. Lead with the overall picture in one or two sentences, then each abnormal or clearly changing value: plain name, value vs range and vs their last result, how far off, common harmless and important causes, what usually happens next.
+5. Read patterns, not single numbers (anaemia: Hb with MCV and ferritin; diabetes risk: fasting glucose with HbA1c; heart risk: LDL with blood pressure, smoking and diabetes; thyroid: TSH with free T4; kidney: creatinine with eGFR and urine albumin).
+6. Urgent values (see the end of Lab ranges.md): tell them to contact their doctor today.
+7. End with: questions to ask their doctor, lifestyle steps that really move these numbers, and when to repeat the test. Never change prescribed medicine.
+8. Update Profile/Health profile.md if the report shows something lasting.`,
   },
   {
     id: 'nutrition-plan',

@@ -6,9 +6,6 @@ import crypto from 'node:crypto';
 import { ActivityLog } from '../gateway/activity-log.js';
 import { GatewayCore } from '../gateway/core.js';
 import { startControlServer, ControlServer } from '../gateway/control-server.js';
-import { connectMcp, discoverApp } from '../gateway/mcp-proxy.js';
-import { JarvisMcpAuth } from '../gateway/mcp-auth.js';
-import { SUGGESTED_APPS } from '../gateway/suggested.js';
 import { SettingsStore, defaultSetting, groupOf } from '../gateway/settings.js';
 import type { AbilitySetting, ConfirmRequest, ExplainLevel } from '../gateway/types.js';
 import { ClaudeCLIBrain } from '../brain/claude-cli.js';
@@ -18,9 +15,10 @@ import { UsageLog } from '../brain/usage.js';
 import { checkSetup, openInstallTerminal, openLoginTerminal, SetupStep } from '../brain/setup.js';
 import { fallbackIntros, introCards, introPrompt, Intros, parseIntros } from '../roles/intros.js';
 import { uninstallCleanup } from './uninstall-cleanup.js';
+import { MediaHolds, systemMedia } from '../speech/media.js';
 import { applyPronunciations, parseRespelling, respellPrompt } from '../speech/pronounce.js';
 import { allowedSettings } from '../security/destructive-lock.js';
-import { createKeyringStore, SecretStore, secretKeyForApp } from '../security/secrets.js';
+import { createKeyringStore, SecretStore } from '../security/secrets.js';
 import { AccountId, AccountManager, APP_ACCOUNT, PROVIDERS } from '../security/accounts.js';
 import type { LocalCommand } from '../router/commands.js';
 import { ScreenExecutor, ScreenUI } from '../tools/screen/executor.js';
@@ -46,6 +44,7 @@ import { timePrefix } from '../brain/system-prompt.js';
 import { modelFor } from '../router/model.js';
 import { FALLBACK_ROLE } from '../router/roles.js';
 import { ensureRoleFolders, ROLE_FOLDER, roleFolder } from '../roles/folders.js';
+import { casebookContext, seedCasebook } from '../roles/casebook.js';
 import { SKILLS } from '../roles/skills/index.js';
 import { noteTaker, notesRequest } from '../roles/notes.js';
 import { FilesExecutor } from '../tools/files/executor.js';
@@ -90,6 +89,8 @@ let lessons: LessonExecutor;
 let coder: Coder | null = null;
 let roleMemory: RoleMemory;
 let history: ChatHistory;
+let media: MediaHolds;
+let stopMediaHelper: () => void = () => undefined;
 let reminders: ReminderStore;
 let board: BoardStore;
 /** The board task for the coding job the supervisor is running. */
@@ -133,7 +134,7 @@ function plannerTick() {
 }
 
 /** The natural voice of a team member (Jarvis itself keeps the voice from Settings → Natural voice). */
-/** The team members' names (the user's choices, else Maya, Alan, Ryan, Sara, Victor). */
+/** The team members' names (the user's choices, else Maya, Ryan, Sara, Victor). */
 const people = () => peopleNames(store.snapshot().roleNames ?? {});
 
 function roleVoice(role: RoleId): string {
@@ -577,7 +578,11 @@ async function pick(kind: 'openFile' | 'openDirectory', reason: string): Promise
 }
 
 /** Opens a lesson beside what the user is looking at (an empty side), or full screen. */
-async function showLesson(lesson: Lesson): Promise<Side> {
+/** Who opened the lesson on screen: it is narrated in their voice. */
+let lessonBy: RoleId = 'doctor';
+
+async function showLesson(lesson: Lesson, role?: string): Promise<Side> {
+  if (isRole(role) && role !== 'jarvis') lessonBy = role;
   const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
   const open = lessonWindow && !lessonWindow.isDestroyed() && lessonWindow.isVisible();
   let side: Side;
@@ -609,13 +614,17 @@ function createMainWindow(show = true) {
     minWidth: 720,
     minHeight: 520,
     title: 'Jarvis',
-    show,
+    // shown only once its first frame is painted, so it never flashes an empty or half-built screen
+    show: false,
     ...glassOptions(),
     ...mainChromeOptions(),
     // Keep audio capture running while the window is hidden (push-to-talk, recording).
     webPreferences: { preload: preloadPath(), contextIsolation: true, sandbox: true, nodeIntegration: false, backgroundThrottling: false },
   });
-  mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), { query: { mode: 'main' } });
+  // first run: the page starts with the welcome already covering it (no glimpse of the app behind)
+  const welcome = store.snapshot().onboarded === true ? '0' : '1';
+  mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), { query: { mode: 'main', welcome } });
+  if (show) mainWindow.once('ready-to-show', () => mainWindow?.show());
   mainWindow.on('closed', () => (mainWindow = null));
 }
 
@@ -674,7 +683,15 @@ async function confirm(req: ConfirmRequest): Promise<boolean> {
 }
 
 /** Names speech recognition should expect, so it spells them the team's way (Sara, not Sarah). */
-const teamVocabulary = () => `${ROLES.filter((r) => r.id !== 'jarvis').map((r) => people()[r.id]).join(', ')}, Jarvis.`;
+const teamVocabulary = () => {
+  const user = store.snapshot().userName;
+  return `${user ? `${user}, ` : ''}${ROLES.filter((r) => r.id !== 'jarvis').map((r) => people()[r.id]).join(', ')}, Jarvis.`;
+};
+
+/** What a member has in mind when a conversation starts: their notes and their Profile files. */
+function memoryPrefix(role: RoleId): string {
+  return [roleMemory.prefix(role), casebookContext(app.getPath('userData'), role)].filter(Boolean).join('\n');
+}
 
 /** Tools shown in the welcome, to switch on or off (the rest are always on or set up later). */
 const ONBOARD_TOOLS = ['web', 'lesson', 'documents', 'recorder', 'screen', 'reminders', 'board', 'coding'];
@@ -771,14 +788,15 @@ function buildBrain(command: string) {
     sessions,
     usage,
     modelOverride: () => store.snapshot().modelOverride,
-    memory: { prefix: (r) => roleMemory.prefix(r), remember: (r, u, a) => roleMemory.remember(r, u, a) },
+    // a new conversation starts with the member's notes and their filled-in Profile files
+    memory: { prefix: (r) => memoryPrefix(r), remember: (r, u, a) => roleMemory.remember(r, u, a) },
     people,
     level: () => {
       const l = store.snapshot().explainLevel;
       return l && l !== 'auto' ? l : null;
     },
     runLocal,
-    onProgress: (label) => send('progress', label),
+    onProgress: () => undefined, // no step-by-step labels in the UI
     onRequestStart: () => {
       requestSeq += 1;
     },
@@ -864,6 +882,7 @@ function registerIpc() {
       roleMemory.setNotes(r.id, clean ? `- The user's name is ${clean}.\n${notes}` : notes);
     }
     introsPromise = null; // write them again with the name
+    voice.engine.vocabulary = teamVocabulary();
     return clean;
   });
   /** The user's name and how it should sound. */
@@ -933,7 +952,15 @@ function registerIpc() {
     }
     throw new Error('Uninstall works in the installed app.');
   });
+  // the user's music stays paused from when they spoke until the answer has started (main releases 'reply')
   ipcMain.handle('ask', async (e, text: string, picked?: string, opts?: { stream?: boolean }) => {
+    try {
+      return await askInner(e, text, picked, opts);
+    } finally {
+      setTimeout(() => media?.hold('reply', false), 1500);
+    }
+  });
+  const askInner = async (e: Electron.IpcMainInvokeEvent, text: string, picked?: string, opts?: { stream?: boolean }) => {
     requestSender = e.sender;
     // not started yet (or Claude Code was just installed / logged in): check again now
     if (!orchestrator) await ensureBrain();
@@ -954,7 +981,7 @@ function registerIpc() {
     });
     // Jarvis never answers or speaks while you work (only in the welcome): local replies come from the member in charge
     let role: RoleId = res.role ?? FALLBACK_ROLE;
-    if (role === 'jarvis') role = res.command === 'start_recording' || res.command === 'stop_recording' ? recordingFor : FALLBACK_ROLE;
+    if (role === 'jarvis') role = res.command === 'start_recording' || res.command === 'stop_recording' ? recordingFor : res.speaker && res.speaker !== 'jarvis' ? res.speaker : FALLBACK_ROLE;
     // A lesson narrates itself, so the window that asked should not read the reply aloud too.
     const who = people()[role];
     const roleName = role === 'jarvis' ? 'Jarvis' : `${who} · ${roleById(role).name}`;
@@ -976,7 +1003,7 @@ function registerIpc() {
     if (win !== mainWindow && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('history:add', items);
     send('history:changed', {});
     return { ...res, role, roleName, person: who, roleColor: roleById(role).color, voice: roleVoice(role), lessonShown: (lessons?.shown ?? 0) > before, conv };
-  });
+  };
   ipcMain.handle('history:prepare', () => prepareConversation());
   ipcMain.handle('history:list', (_e, query?: string) => ({ items: history.list(typeof query === 'string' ? query.slice(0, 200) : ''), current: history.currentId }));
   ipcMain.handle('history:open', (_e, id: string) => {
@@ -1045,6 +1072,10 @@ function registerIpc() {
     if (taken) throw new Error(`${clean} is already on the team.`);
     store.setRoleName(role, clean || null);
     voice.engine.vocabulary = teamVocabulary();
+  // keep the speech model loaded, so talking to the team is quick from the first sentence
+  setTimeout(() => {
+    if (voice.engine.status().ready) void voice.engine.warmUp();
+  }, 6000);
     return people()[role];
   });
   ipcMain.handle('team:setVoice', (_e, role: string, voice: string) => {
@@ -1087,64 +1118,6 @@ function registerIpc() {
     store.setAbility(a, ability, setting); // throws on destructive → allowed (criterion 29)
     return hubList();
   });
-  ipcMain.handle('hub:suggested', () => {
-    const added = new Set(catalog.all().map((a) => a.id));
-    return SUGGESTED_APPS.map((a) => ({ ...a, added: added.has(a.id) }));
-  });
-  ipcMain.handle(
-    'hub:addMcp',
-    async (_e, input: { id?: string; name: string; url?: string; command?: string; args?: string[]; apiKey?: string; members?: string[] }) => {
-      const id = (input.id ?? input.name).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 20) || 'app';
-      // who gets the new app: the user's pick, else a guess from what the app is for
-      const chosen = cleanMembers(input.members);
-      const giveTo = (def: { id: string; name: string; description?: string; abilities: { description: string }[] }) =>
-        store.setAppRoles(id, chosen.length ? chosen : guessMembers({ ...def, name: input.name, description: `${def.description ?? ''} ${def.abilities.map((x) => x.description).join(' ')}` }));
-      if (catalog.find(id)?.kind === 'builtin') throw new Error('That name is taken by a built-in app.');
-      await catalog.forget(id);
-      if (input.apiKey) {
-        await secrets.set(secretKeyForApp(id), input.apiKey);
-        const def = await discoverApp(id, input.name, { url: input.url, command: input.command, args: input.args, auth: 'key' }, { secret: input.apiKey });
-        store.addCustomApp(def);
-        giveTo(def);
-        return hubList();
-      }
-      if (!input.url) {
-        const def = await discoverApp(id, input.name, { command: input.command, args: input.args, auth: 'none' }, {});
-        store.addCustomApp(def);
-        giveTo(def);
-        return hubList();
-      }
-      // URL without a key: sign in through the browser if the app asks for it.
-      const auth = await JarvisMcpAuth.load(id, input.name, secrets);
-      const def = await withSignIn((signal) =>
-        discoverApp(id, input.name, { url: input.url, auth: 'oauth' }, { auth, interactive: { openBrowser, signal } }),
-      );
-      if (!auth.hasTokens) {
-        await auth.forget();
-        def.mcp = { url: input.url, auth: 'none' };
-      }
-      store.addCustomApp(def);
-        giveTo(def);
-      return hubList();
-    },
-  );
-  ipcMain.handle('hub:signIn', async (_e, appId: string) => {
-    const a = catalog.find(appId);
-    if (!a?.mcp?.url || a.mcp.auth !== 'oauth') throw new Error('This app does not use browser sign-in.');
-    await catalog.forget(appId);
-    const auth = await JarvisMcpAuth.load(a.id, a.name, secrets);
-    const client = await withSignIn((signal) => connectMcp(a.mcp!, { auth, interactive: { openBrowser, signal } }));
-    await client.close();
-    return hubList();
-  });
-  ipcMain.handle('hub:remove', async (_e, appId: string) => {
-    const a = catalog.find(appId);
-    await catalog.forget(appId);
-    await secrets.delete(secretKeyForApp(appId));
-    if (a) await (await JarvisMcpAuth.load(a.id, a.name, secrets)).forget();
-    store.removeCustomApp(appId);
-    return hubList();
-  });
   ipcMain.handle('accounts:list', accountList);
   ipcMain.handle('accounts:setup', async (_e, id: AccountId, clientId: string, clientSecret?: string) => {
     if (!(id in PROVIDERS)) throw new Error('unknown account');
@@ -1170,6 +1143,11 @@ function registerIpc() {
     if (err) throw new Error(`Could not open the guide: ${err}`);
   });
   ipcMain.handle('usage:summary', () => usage.summary());
+  // a window started or stopped speaking (each window counts separately)
+  ipcMain.on('media:speaking', (e, on: boolean) => {
+    media?.hold(`speak:${e.sender.id}`, on === true, 180_000);
+    if (on) media?.hold('reply', false); // the answer has started: the speaking hold takes over
+  });
   ipcMain.handle('activity:list', () => activity.list());
   ipcMain.handle('activity:remove', (_e, ids: unknown) => activity.remove(Array.isArray(ids) ? ids.filter((x): x is string => typeof x === 'string') : []));
   ipcMain.handle('activity:clear', () => activity.clear());
@@ -1181,9 +1159,13 @@ function registerIpc() {
     if (err) throw new Error(err);
   });
   ipcMain.handle('settings:get', () => store.snapshot());
-  ipcMain.handle('settings:set', (_e, patch: { modelOverride?: 'haiku' | 'sonnet' | null; voiceOutput?: boolean; ttsVoice?: string; ttsSpeed?: number; explainLevel?: ExplainLevel }) => {
+  ipcMain.handle('settings:set', (_e, patch: { modelOverride?: 'haiku' | 'sonnet' | null; voiceOutput?: boolean; pauseMedia?: boolean; ttsVoice?: string; ttsSpeed?: number; explainLevel?: ExplainLevel }) => {
     if (patch.modelOverride !== undefined) store.setModelOverride(patch.modelOverride);
     if (patch.voiceOutput !== undefined) store.setVoiceOutput(patch.voiceOutput);
+    if (patch.pauseMedia !== undefined) {
+      store.setPauseMedia(patch.pauseMedia === true);
+      if (!patch.pauseMedia) void media?.releaseAll();
+    }
     if (patch.explainLevel !== undefined) store.setExplainLevel(patch.explainLevel);
     if (patch.ttsVoice !== undefined || patch.ttsSpeed !== undefined) {
       const v = isVoice(patch.ttsVoice) ? patch.ttsVoice : undefined;
@@ -1206,7 +1188,7 @@ function registerIpc() {
     if (!kokoro.status().installed) return null; // the window falls back to the OS voice
     const snap = store.snapshot();
     const fromWin = BrowserWindow.fromWebContents(e.sender);
-    const own = fromWin && fromWin === lessonWindow ? roleVoice('educator') : fromWin && fromWin === supWindow ? roleVoice('pm') : null;
+    const own = fromWin && fromWin === lessonWindow ? roleVoice(lessonBy) : fromWin && fromWin === supWindow ? roleVoice('pm') : null;
     const v = isVoice(opts?.voice) ? opts.voice : (own ?? (isVoice(snap.ttsVoice) ? snap.ttsVoice : DEFAULT_VOICE));
     const speed = Math.min(MAX_SPEED, Math.max(MIN_SPEED, snap.ttsSpeed ?? 1));
     const target = e.sender;
@@ -1322,14 +1304,38 @@ function registerIpc() {
   });
 }
 
+/**
+ * No Jarvis window ever leaves its own pages: a link in a reply (or anything else) opens in the
+ * user's browser instead, and only http(s) links are opened at all.
+ */
+app.on('web-contents-created', (_e, contents) => {
+  const external = (url: string) => {
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+  };
+  contents.on('will-navigate', (e, url) => {
+    if (url.startsWith('file:')) return;
+    e.preventDefault();
+    external(url);
+  });
+  contents.setWindowOpenHandler(({ url }) => {
+    external(url);
+    return { action: 'deny' };
+  });
+});
+
 app.whenReady().then(async () => {
   store = new SettingsStore(data('settings.json'));
   activity = new ActivityLog(data('activity.jsonl'));
   usage = new UsageLog(data('usage.jsonl'), data('baseline.json'));
   secrets = await createKeyringStore();
-  accounts = new AccountManager({ secrets, clientId: (id) => store.oauthClientId(id), openBrowser });
+  accounts = new AccountManager({
+    secrets,
+    clientId: (id) => store.oauthClientId(id),
+    openBrowser,
+  });
   await accounts.init();
   ensureRoleFolders(app.getPath('userData'));
+  seedCasebook(app.getPath('userData')); // profiles and reference files each member works from
   const screenExec = new ScreenExecutor(new ElectronScreenBackend(), screenUI, () => requestSeq);
   kokoro = new KokoroEngine(path.join(app.getPath('userData'), 'speech', 'kokoro'), path.join(__dirname, '..', 'speech', 'kokoro-worker.mjs'));
   setTimeout(() => kokoro.warmUp(), 4000); // load the voice in the background so the first reply speaks quickly
@@ -1346,6 +1352,11 @@ app.whenReady().then(async () => {
         .catch((err) => send('notice', `The natural voice update failed: ${String(err).slice(0, 160)}. You can retry in Settings → Natural voice.`));
     }, 6000);
   }
+  // pause music and videos while the user talks and while the team speaks; resume after
+  const mediaBackend = systemMedia();
+  media = new MediaHolds(mediaBackend, () => store.snapshot().pauseMedia !== false);
+  mediaBackend.warmUp?.();
+  stopMediaHelper = () => mediaBackend.dispose?.();
   voice = new VoiceController({
     dataDir: app.getPath('userData'),
     preloadPath: preloadPath(),
@@ -1353,8 +1364,9 @@ app.whenReady().then(async () => {
     askRenderer: (channel, payload, timeoutMs) => askRenderer(channel, payload, timeoutMs, false),
     deliver: deliverSpeech,
     notify: (text) => send('notice', text),
-    progress: (label) => send('progress', label),
+    progress: () => undefined,
     stopSpeaking: stopAllSpeech,
+    media: { hold: (key, on, maxMs) => media.hold(key, on, maxMs) },
   });
   makeSupervisor();
   voice.engine.vocabulary = teamVocabulary();
@@ -1367,11 +1379,11 @@ app.whenReady().then(async () => {
   const team = new TeamExecutor({
     consult: async (role, question) => {
       if (!brain) return { reply: 'Jarvis is not set up yet.', isError: true };
-      const notes = roleMemory.prefix(role);
+      const notes = memoryPrefix(role);
       const res = await brain.ask(`${notes ? `${notes}\n` : ''}${timePrefix()} (A teammate asks you.) ${question}`, null, modelFor(role, question, store.snapshot().modelOverride), { role, consult: true });
       return { reply: res.reply, isError: res.is_error, name: fullName(role, people()) };
     },
-    onAsk: (role) => send('progress', `Asking ${fullName(role, people())}…`),
+    onAsk: () => undefined,
   });
   const coding = new CodingExecutor({ supervisor, pickFolder: pickProject });
   lessons = new LessonExecutor({ show: showLesson, snip: (r) => snipScreen(screenExec.lastShot, r) });
@@ -1396,6 +1408,7 @@ app.whenReady().then(async () => {
     web: new WebExecutor(),
     screen: screenExec,
     recorder: transcripts, lesson: lessons, documents, coding, team, reminders: new RemindersExecutor(reminders, () => send('planner:changed')), board: new BoardExecutor(board, () => send('planner:changed')) });
+  void catalog.dropAddedApps().catch(() => undefined); // adding your own apps is not offered in this version
   core = new GatewayCore({
     apps: () => catalog.all(),
     settings: store,
@@ -1403,7 +1416,7 @@ app.whenReady().then(async () => {
     available: (a) => catalog.available(a),
     confirm,
     log: activity,
-    onProgress: (label) => send('progress', `${label}…`),
+    onProgress: () => undefined,
   });
   control = await startControlServer(() => core, {
     approve: (runId, req) => supervisor.onPermission(runId, req),
@@ -1453,6 +1466,7 @@ app.whenReady().then(async () => {
 });
 
 app.on('will-quit', () => {
+  void media?.releaseAll().finally(() => stopMediaHelper());
   voice?.dispose();
   kokoro?.dispose();
   globalShortcut.unregisterAll();

@@ -16,7 +16,7 @@ export class TeamExecutor implements AppExecutor {
     if (ability !== 'ask') throw new Error(`unknown team ability ${ability}`);
     const role = input.role;
     const question = typeof input.question === 'string' ? input.question.trim().slice(0, 4000) : '';
-    if (!isRole(role) || role === 'jarvis') throw new Error('Pick a teammate: pa, educator, pm, doctor or finance.');
+    if (!isRole(role) || role === 'jarvis') throw new Error('Pick a teammate: pa, pm, doctor or finance.');
     if (!question) throw new Error('Say what to ask.');
     this.deps.onAsk?.(role);
     const r = await this.deps.consult(role, question);

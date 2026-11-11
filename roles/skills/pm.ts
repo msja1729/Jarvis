@@ -5,19 +5,12 @@ export const PM_SKILLS: Skill[] = [
     id: 'meeting-minutes',
     when: 'after a recorded meeting, or the user asks for meeting notes',
     body: `Meeting minutes from a transcript:
-1. Read the whole transcript (recorder tool, every part). Speech-to-text has errors: fix obvious mis-hearings from context; mark anything unclear with (?) rather than guessing.
-2. Write the minutes:
-   # <Meeting title> — <date>
-   **Attendees** (as far as the transcript shows)
-   **Summary**: 3-5 sentences, what the meeting was for and the outcome.
-   **Key points**: by topic, short bullets.
-   **Decisions**: each decision in one line, with who decided if known.
-   **Action items**: table of Task | Owner | Due | Notes. Mark the USER's own tasks clearly (the user is "me/I" in their own speech or addressed by name).
-   **Open questions / risks**
-   **Next meeting** if mentioned.
-3. Save to "Meetings/<YYYY-MM-DD> <title>.md" in your folder.
-4. For every task given to the user: add it to the project board (project = the meeting's project, due date as YYYY-MM-DD when one was said; turn "by Friday" into a real date using today's date), and add a reminder the day before each due date (09:00) through the reminders tool.
-5. Reply briefly: the gist, the decisions, and the user's tasks with due dates, then say where the full minutes are saved.`,
+1. Read the whole transcript (recorder tool, every part). Fix obvious mis-hearings from context; mark unclear parts with (?) rather than guessing.
+2. Write the minutes: title and date; attendees; summary (3-5 sentences); key points by topic; decisions (one line each, who decided); action items as a table (Task | Owner | Due | Notes) with the USER's own tasks marked clearly; open questions and risks; next meeting.
+3. Save to Meetings/<YYYY-MM-DD> <title>.md.
+4. For every task given to the user: add it to the board (project, due date as YYYY-MM-DD, turning "by Friday" into a real date) and a reminder the day before at 09:00.
+5. Update the project's Projects/<project>/Status.md (what changed, decisions) and Profile/Roadmap.md (new deadlines, decisions made).
+6. Reply briefly: the gist, the decisions, and the user's tasks with dates; say where the minutes are saved.`,
   },
   {
     id: 'project-brief',
@@ -47,15 +40,14 @@ export const PM_SKILLS: Skill[] = [
   },
   {
     id: 'coding-brief',
-    when: 'before starting a coding task with Claude Code',
-    body: `Writing a strong coding brief for Claude Code:
-1. Goal: what the user should be able to do when it is finished, in one or two sentences.
-2. Context: the project folder, relevant files or modules (look first with the documents tool and cite paths), the stack, and existing conventions to follow.
-3. Requirements and constraints: behaviour, edge cases, things that must not change, libraries allowed or not, performance or security needs.
-4. Definition of done: tests to add or update and that must pass, how to verify by hand, no new warnings, docs updated if needed.
-5. Ask for small, reviewable steps and a short summary of changes at the end.
-6. Risky actions (deleting files, migrations, force-push, deploying, installing new packages) must be raised as questions, not done silently.
-7. Afterwards: review the summary and test results, update the board, and tell the user what changed and what they should check.`,
+    when: 'before starting any coding task with Claude Code',
+    body: `Spec gate, then a strong coding brief:
+1. Read Profile/Roadmap.md and the project's Projects/<project>/ files. Look at the code first (documents tool) and cite the paths that matter.
+2. Write Projects/<project>/SPEC.md from Reference/Spec template.md: goal, scope (MoSCoW), context, design, edge cases, breaking changes and risks, test plan, definition of done, open questions.
+3. Show the user a short summary of the spec and ask for OK or changes. Do not start the coding task before they agree.
+4. Then start the coding task with a brief built from the spec: goal, files and conventions (Reference/Coding standards.md), requirements and constraints, the tests that must pass, Reference/Definition of done.md, and: ask before risky actions (deleting files, migrations, force-push, deploying, new dependencies).
+5. Ask Claude Code for small, reviewable steps and a summary of changes at the end.
+6. Afterwards: check the summary and tests against the spec's definition of done, update the board, the project's Status.md and the Roadmap, and tell the user what changed and what to check.`,
   },
   {
     id: 'status-report',
@@ -79,5 +71,16 @@ export const PM_SKILLS: Skill[] = [
 5. Performance where it matters (loops over large data, repeated I/O, N+1 queries).
 6. Readability and docs for anything non-obvious.
 Report findings ranked by severity, each with file:line, why it matters and a concrete fix. Say clearly when it is good to merge.`,
+  },
+  {
+    id: 'scope-guard',
+    when: 'a new idea, feature request or change of plans arrives',
+    body: `Scope guard (protect focus and deadlines):
+1. Read Profile/Roadmap.md and the board (what is in progress, what is due soon).
+2. Restate the idea in one sentence and ask what problem it solves and for whom, if unclear.
+3. Score it quickly with RICE (Reach, Impact, Confidence, Effort) or place it in MoSCoW for the current milestone.
+4. Show the trade-off plainly: what it would push back, by how long, and the risk to current deadlines.
+5. Recommend one: do now (and what gets dropped), schedule for Next, or park in Later with the reason. Push back on scope creep; it is fine to say "not now".
+6. Record the decision in the Roadmap ("Decisions made", dated) and on the board.`,
   },
 ];

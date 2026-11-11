@@ -12,7 +12,6 @@ import { RoleId, ROLES, roleById } from './roles.js';
 export const ROLE_FOLDER: Record<RoleId, string> = {
   jarvis: 'Jarvis',
   pa: 'PA',
-  educator: 'Educator',
   pm: 'Project Manager',
   doctor: 'Doctor',
   finance: 'Finance',
@@ -23,7 +22,6 @@ export const SKILLS_DIR = 'Skills';
 
 const STARTER: Partial<Record<RoleId, string[]>> = {
   pa: ['Plans', 'Inbox notes'],
-  educator: ['Lessons', 'Resources'],
   pm: ['Projects', 'Meetings'],
   doctor: ['Health notes'],
   finance: ['Budgets'],

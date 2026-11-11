@@ -158,6 +158,11 @@ export class SettingsStore {
     this.save();
   }
 
+  setPauseMedia(on: boolean): void {
+    this.data.pauseMedia = on;
+    this.save();
+  }
+
   setOnboarded(on: boolean): void {
     this.data.onboarded = on;
     this.save();

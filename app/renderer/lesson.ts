@@ -1103,3 +1103,15 @@ j.onLesson(({ lesson: incoming, side }) => {
   void goTo(0, true);
 });
 j.lessonReady();
+
+/* ---------- pause the user's music while the lesson is narrated ---------- */
+{
+  let was = false;
+  setInterval(() => {
+    const now = narrator.speaking;
+    if (now !== was) {
+      was = now;
+      (j as unknown as { mediaSpeaking?: (on: boolean) => void }).mediaSpeaking?.(now);
+    }
+  }, 200);
+}

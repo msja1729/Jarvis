@@ -1,8 +1,16 @@
 {
   "name": "jarvis",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Desktop AI assistant driven by the Claude Code CLI",
+  "description": "Your own team of AI experts on your desktop, running on your Claude plan through Claude Code.",
+  "homepage": "https://github.com/msja1729/Jarvis",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/msja1729/Jarvis.git"
+  },
+  "bugs": {
+    "url": "https://github.com/msja1729/Jarvis/issues"
+  },
   "main": "dist/app/main.cjs",
   "scripts": {
     "build": "node scripts/build.mjs",
@@ -20,14 +28,15 @@
     "npmRebuild": false,
     "files": [
       "dist/**",
-      "docs/**",
+      "docs/connect-*.md",
       "package.json",
       "!dist/**/*.map",
       "!**/node_modules/**/{test,tests,__tests__,example,examples}/**",
       "!**/node_modules/**/*.{md,map,ts,tsx}",
       "!**/node_modules/onnxruntime-web/**",
       "!**/node_modules/onnxruntime-node/bin/napi-v3/linux/**",
-      "!**/node_modules/@napi-rs/canvas*/**"
+      "!**/node_modules/@napi-rs/canvas*/**",
+      "!**/node_modules/@huggingface/transformers/.cache/**"
     ],
     "win": {
       "target": [
@@ -40,7 +49,7 @@
       ],
       "files": [
         "dist/**",
-        "docs/**",
+        "docs/connect-*.md",
         "package.json",
         "!dist/**/*.map",
         "!**/node_modules/**/{test,tests,__tests__,example,examples}/**",
@@ -49,7 +58,8 @@
         "!**/node_modules/onnxruntime-node/bin/napi-v3/linux/**",
         "!**/node_modules/onnxruntime-node/bin/napi-v3/darwin/**",
         "!**/node_modules/@napi-rs/canvas*/**",
-        "!**/node_modules/onnxruntime-node/bin/napi-v3/win32/arm64/**"
+        "!**/node_modules/onnxruntime-node/bin/napi-v3/win32/arm64/**",
+        "!**/node_modules/@huggingface/transformers/.cache/**"
       ]
     },
     "nsis": {
@@ -80,7 +90,7 @@
       "category": "public.app-category.productivity",
       "files": [
         "dist/**",
-        "docs/**",
+        "docs/connect-*.md",
         "package.json",
         "!dist/**/*.map",
         "!**/node_modules/**/{test,tests,__tests__,example,examples}/**",
@@ -88,7 +98,8 @@
         "!**/node_modules/onnxruntime-web/**",
         "!**/node_modules/onnxruntime-node/bin/napi-v3/linux/**",
         "!**/node_modules/onnxruntime-node/bin/napi-v3/win32/**",
-        "!**/node_modules/@napi-rs/canvas*/**"
+        "!**/node_modules/@napi-rs/canvas*/**",
+        "!**/node_modules/@huggingface/transformers/.cache/**"
       ],
       "extendInfo": {
         "NSMicrophoneUsageDescription": "Jarvis listens when you press the push-to-talk shortcut, and records meetings when you ask it to.",

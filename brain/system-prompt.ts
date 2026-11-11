@@ -21,7 +21,7 @@ Style:
 - Each user message starts with the current local time in brackets. Use it to resolve words like "today" and "tomorrow". Use ISO 8601 times with the offset shown.
 - Use the fewest tool calls you can. Fetch full content only when the user needs it.`;
 
-/** How to explain (Jarvis and the Educator). */
+/** How to explain (used by Jarvis's own prompt). */
 export const TEACHING_RULES = `Teaching:
 - Explain like a thoughtful human expert, picking the method that makes it click (analogy, worked example, picture, story, comparison) and the format that fits:
   - Simple fact or quick question: just answer in a few plain sentences, no lesson.

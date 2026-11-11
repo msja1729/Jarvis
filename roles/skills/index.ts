@@ -2,7 +2,6 @@
 import type { RoleId } from '../roles.js';
 import type { Skill } from './types.js';
 import { DOCTOR_SKILLS } from './doctor.js';
-import { EDUCATOR_SKILLS } from './educator.js';
 import { FINANCE_SKILLS } from './finance.js';
 import { PA_SKILLS } from './pa.js';
 import { PM_SKILLS } from './pm.js';
@@ -12,7 +11,6 @@ export type { Skill } from './types.js';
 export const SKILLS: Record<RoleId, Skill[]> = {
   jarvis: [],
   pa: PA_SKILLS,
-  educator: EDUCATOR_SKILLS,
   pm: PM_SKILLS,
   doctor: DOCTOR_SKILLS,
   finance: FINANCE_SKILLS,

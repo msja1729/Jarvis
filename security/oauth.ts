@@ -129,6 +129,9 @@ export interface OAuthProviderConfig {
   redirectHost: string;
   extraAuthParams?: Record<string, string>;
   revokeUrl?: string;
+  /** Some providers only accept the exact redirect registered by the user: a fixed port and path. */
+  redirectPort?: number;
+  redirectPath?: string;
 }
 
 export interface OAuthClientConfig {
@@ -194,9 +197,9 @@ export interface SignInDeps {
 
 /** Full interactive sign-in. Returns tokens; the caller stores them in the keychain. */
 export async function signIn(provider: OAuthProviderConfig, client: OAuthClientConfig, deps: SignInDeps): Promise<TokenSet> {
-  const loop = await startLoopback(0, deps.timeoutMs);
+  const loop = await startLoopback(provider.redirectPort ?? 0, deps.timeoutMs);
   try {
-    const redirectUri = `http://${provider.redirectHost}:${loop.port}`;
+    const redirectUri = `http://${provider.redirectHost}:${loop.port}${provider.redirectPath ?? ''}`;
     const { verifier, challenge } = createPkce();
     const state = randomState();
     const codePromise = loop.waitForCode(state, deps.signal);

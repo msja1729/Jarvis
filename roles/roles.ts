@@ -34,7 +34,7 @@ export interface RoleDef {
 /** Every member has these: their own folder, their skills, and the web. */
 export const SHARED_APPS = ['files', 'skills', 'web', 'team'];
 
-export const ROLE_IDS = ['jarvis', 'pa', 'educator', 'pm', 'doctor', 'finance'] as const;
+export const ROLE_IDS = ['jarvis', 'pa', 'pm', 'doctor', 'finance'] as const;
 export type RoleId = (typeof ROLE_IDS)[number];
 
 export const ROLES: RoleDef[] = [
@@ -58,25 +58,11 @@ export const ROLES: RoleDef[] = [
     title: 'Personal assistant',
     blurb: 'Your schedule, email, deadlines, daily plan and every personal task the others don’t cover.',
     color: '#3987e5',
-    apps: ['gmail', 'gcal', 'outlook', 'outlook_cal', 'recorder', 'documents', 'reminders', 'board', ...SHARED_APPS],
+    apps: ['gmail', 'gcal', 'outlook', 'outlookcal', 'recorder', 'documents', 'reminders', 'board', ...SHARED_APPS],
     defaultVoice: 'bf_emma',
     names: ['pa', 'assistant', 'secretary'],
     topics: /\b(schedule|calendar|meeting|meetings|appointment|remind|reminder|agenda|plan my (day|week)|my day|email|emails|e-?mail|inbox|mail|reply to|invite|free (time|slot)|busy|tomorrow's|today's)\b/i,
     examples: ['What does my day look like?', 'Read my latest emails'],
-  },
-  {
-    id: 'educator',
-    person: 'Alan',
-    name: 'Educator',
-    title: 'Teacher for every subject',
-    blurb: 'Explains anything with lessons, diagrams, animations and visual maths.',
-    color: '#9085e9',
-    apps: ['lesson', 'documents', 'screen', ...SHARED_APPS],
-    defaultVoice: 'bm_fable',
-    names: ['educator', 'teacher', 'tutor', 'professor'],
-    topics: /\b(teach|lesson|learn|derivative|integral|theorem|equation|formula|physics|chemistry|biology|history|geography|grammar|math|maths|algebra|calculus|geometry|homework|exam|study|concept)\b/i,
-    weak: /\b(explain|understand|what is|what are|how does|how do|why does|why do|why is)\b/i,
-    examples: ['Explain what a derivative is', 'Teach me how photosynthesis works'],
   },
   {
     id: 'pm',
@@ -85,7 +71,7 @@ export const ROLES: RoleDef[] = [
     title: 'Projects and coding',
     blurb: 'Runs coding work with Claude Code on Opus 5.5, takes meeting minutes, tracks progress and deadlines.',
     color: '#199e70',
-    apps: ['coding', 'documents', 'gcal', 'outlook_cal', 'screen', 'board', 'reminders', 'recorder', 'custom', ...SHARED_APPS],
+    apps: ['coding', 'documents', 'gcal', 'outlookcal', 'screen', 'board', 'reminders', 'recorder', 'custom', ...SHARED_APPS],
     defaultVoice: 'am_michael',
     names: ['pm', 'project manager', 'manager', 'lead'],
     topics: /\b(project|projects|code|coding|codebase|repo|repository|bug|feature|build|deploy|deadline|milestone|sprint|task list|refactor|pull request|github|claude code)\b/i,

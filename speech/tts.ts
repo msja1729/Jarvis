@@ -279,3 +279,11 @@ export function stopSpeaking(): void {
   live = null;
   if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
 }
+
+/**
+ * True while this window is speaking or about to (a reply is being voiced, queued, or the OS voice
+ * is talking). Used to pause the user's music while the team speaks.
+ */
+export function isSpeaking(): boolean {
+  return sources.length > 0 || current !== null || live !== null || (typeof speechSynthesis !== 'undefined' && speechSynthesis.speaking);
+}

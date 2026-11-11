@@ -2,7 +2,7 @@
  * Coding supervisor card: shows what Claude is doing, brings its questions to the
  * user with Jarvis's recommendation, and speaks them (natural voice) when enabled.
  */
-import { initTts, speak, TtsApi } from '../../speech/tts.js';
+import { initTts, isSpeaking, speak, TtsApi } from '../../speech/tts.js';
 import type { Pending, SessionView } from '../../supervisor/supervisor.js';
 
 interface SupState {
@@ -163,3 +163,15 @@ j.onSupState((s) => {
   fit();
 });
 new ResizeObserver(fit).observe($('card'));
+
+/* ---------- pause the user's music while this card speaks ---------- */
+{
+  let was = false;
+  setInterval(() => {
+    const now = isSpeaking();
+    if (now !== was) {
+      was = now;
+      (j as unknown as { mediaSpeaking?: (on: boolean) => void }).mediaSpeaking?.(now);
+    }
+  }, 200);
+}

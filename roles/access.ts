@@ -40,7 +40,6 @@ export const cleanMembers = (list: unknown): RoleId[] =>
 const HINTS: [Exclude<RoleId, 'jarvis'>, RegExp][] = [
   ['pm', /\b(git|github|gitlab|bitbucket|code|coding|repo|issues?|jira|linear|asana|trello|clickup|sprint|projects?|deploy|vercel|netlify|sentry|figma|database|sql|supabase|docker|api)\b/],
   ['pa', /\b(e-?mail|mail|gmail|outlook|calendar|slack|teams|whatsapp|telegram|todo|to-do|tasks?|reminders?|notes?|notion|evernote|drive|dropbox|docs|contacts?|travel|flights?|zoom|meet|maps)\b/],
-  ['educator', /\b(notion|wiki|wikipedia|docs|drive|course|courses|learn|learning|paper|papers|scholar|arxiv|books?|wolfram|anki|flashcards?|youtube|research)\b/],
   ['doctor', /\b(health|fitness|fit|medical|medicine|sleep|nutrition|diet|strava|garmin|oura|whoop|apple health|workouts?)\b/],
   ['finance', /\b(bank|banking|finance|financial|stripe|invoices?|accounting|budget|expenses?|crypto|stocks?|market|tax|payments?|sheets|excel|quickbooks|xero|zerodha)\b/],
 ];

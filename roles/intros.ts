@@ -6,7 +6,7 @@
 import { RoleId, roleById, ROLES } from './roles.js';
 import { SKILLS } from './skills/index.js';
 
-export const INTRO_ORDER: RoleId[] = ['jarvis', 'pa', 'educator', 'pm', 'doctor', 'finance'];
+export const INTRO_ORDER: RoleId[] = ['jarvis', 'pa', 'pm', 'doctor', 'finance'];
 
 export interface Intros {
   /** Jarvis's hello, before "here is your team". */
@@ -27,7 +27,6 @@ export function fallbackIntros(people: People, user?: string): Intros {
     hello: `${hey} I'm Jarvis. Think of me as the front desk of your own little AI team, living right here on your computer. You ask, by typing or just by talking, and I get the right expert on it. Your stuff stays on this machine, and nothing happens without your say. Okay, enough about me. Let me introduce the team.`,
     members: {
       pa: `Hi${you}! I'm ${people.pa}, your personal assistant. Calendar, emails, deadlines, the boring admin stuff, I've got it. I'll plan your mornings, pull deadlines out of your inbox, and remind you before things sneak up on you. Honestly, keeping you organised is lowkey my favourite thing.`,
-      educator: `Hey! I'm ${people.educator}, your teacher for, well, literally any subject. Maths, physics, code, history, you name it. I explain with diagrams, animations and real examples until it actually clicks, not just memorised. Exam coming up? I'll make you a study plan. No cap, we'll make the hard stuff feel easy.`,
       pm: `Yo, ${people.pm} here, your project manager. Give me an idea and I'll turn it into a plan, run the coding with Claude Code, and keep you posted. Record a meeting and I'll write the minutes and track every task that lands on you. I think with Opus, so building things is kind of my thing.`,
       doctor: `Hi${you}, I'm ${people.doctor}, your health buddy. Food, sleep, workouts, that weird headache, or a blood report that looks like a different language, I'll explain it in plain words using trusted medical sources. I'm not a replacement for your real doctor, but I'll always tell you when it's time to see one. And hey, drink some water.`,
       finance: `Hey, ${people.finance} here, your money person. Budgets, savings, loans, investing basics, even that startup idea of yours, I'll run the numbers and show you the maths simply. Not official financial advice, more like a friend who's weirdly good with spreadsheets. Let's get your money working, responsibly.`,
@@ -52,7 +51,7 @@ Write:
 - one introduction per member, in first person, starting with their name: what they do and how they'll help, in a friendly human way. 40-65 words each. The doctor says they don't replace a real doctor; finance says it isn't official financial advice.
 - outro: Jarvis wraps up warmly and asks what to start with. 20-35 words.
 
-JSON shape: {"hello": "...", "pa": "...", "educator": "...", "pm": "...", "doctor": "...", "finance": "...", "outro": "..."}`;
+JSON shape: {"hello": "...", "pa": "...", "pm": "...", "doctor": "...", "finance": "...", "outro": "..."}`;
   return { prompt, system };
 }
 

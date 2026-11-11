@@ -27,9 +27,9 @@ describe('who can use each app', () => {
   });
 
   it("the user's choice replaces the usual members, both ways", () => {
-    const choices = { gmail: ['pa', 'doctor'], notion: ['educator', 'pa'] };
+    const choices = { gmail: ['pa', 'doctor'], notion: ['finance', 'pa'] };
     expect(membersOf(gmail, choices)).toEqual(['pa', 'doctor']);
-    expect(membersOf(notion, choices)).toEqual(['pa', 'educator']);
+    expect(membersOf(notion, choices)).toEqual(['pa', 'finance']);
     expect(canUse('pm', notion, choices)).toBe(false);
     expect(membersOf(notion, { notion: [] })).toEqual([]); // only Jarvis
   });
@@ -39,7 +39,7 @@ describe('who can use each app', () => {
   });
 
   it('suggests members for a new app from what it does', () => {
-    expect(guessMembers(notion)).toEqual(['pa', 'educator']);
+    expect(guessMembers(notion)).toEqual(['pa']);
     expect(guessMembers({ id: 'github', name: 'GitHub', description: 'Read issues, pull requests, and repositories.' })).toEqual(['pm']);
     expect(guessMembers({ id: 'strava', name: 'Strava', description: 'Your workouts and runs' })).toEqual(['doctor']);
     expect(guessMembers({ id: 'zerodha', name: 'Zerodha', description: 'Stocks and portfolio' })).toEqual(['finance']);
@@ -55,8 +55,8 @@ describe('who can use each app', () => {
     const file = path.join(tmpDir(), 'settings.json');
     const s = new SettingsStore(file);
     s.addCustomApp(notion);
-    s.setAppRoles('notion', ['educator']);
-    expect(new SettingsStore(file).snapshot().appRoles).toEqual({ notion: ['educator'] });
+    s.setAppRoles('notion', ['doctor']);
+    expect(new SettingsStore(file).snapshot().appRoles).toEqual({ notion: ['doctor'] });
     s.setAppRoles('notion', null);
     expect(s.snapshot().appRoles).toEqual({});
     s.setAppRoles('notion', ['pa']);
@@ -71,9 +71,9 @@ describe('who can use each app', () => {
     settings.setEnabled('notion', true);
     const spy = new SpyExecutor();
     const core = new GatewayCore({ apps: () => settings.snapshot().customApps, settings, executors: () => spy, confirm: async () => true, log: new ActivityLog(null) });
-    const scope = (role: 'educator' | 'pm') => (a: AppDef) => canUse(role, a, settings.snapshot().appRoles);
-    settings.setAppRoles('notion', ['educator']);
-    expect(core.listTools(scope('educator')).map((t) => t.name)).toEqual(['notion__search']);
+    const scope = (role: 'doctor' | 'pm') => (a: AppDef) => canUse(role, a, settings.snapshot().appRoles);
+    settings.setAppRoles('notion', ['doctor']);
+    expect(core.listTools(scope('doctor')).map((t) => t.name)).toEqual(['notion__search']);
     expect(core.listTools(scope('pm'))).toEqual([]);
     const r = await core.callTool('notion__search', {}, scope('pm'), { role: 'pm' });
     expect(r.text).toMatch(/belongs to another member/);

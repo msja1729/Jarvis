@@ -8,7 +8,7 @@ import { Lesson, normalizeLesson } from './spec.js';
 
 export interface LessonBridge {
   /** Opens (or adds to) the lesson window. Returns where it was placed. */
-  show(lesson: Lesson): Promise<'left' | 'right' | 'full'>;
+  show(lesson: Lesson, role?: string): Promise<'left' | 'right' | 'full'>;
   /** Cuts a part out of the last screenshot: the picture, and where the asked-for part sits in it (0-1). */
   snip?(rect: { x: number; y: number; w: number; h: number }): { image: string; hl: { x: number; y: number; w: number; h: number } } | null;
 }
@@ -19,7 +19,7 @@ export class LessonExecutor implements AppExecutor {
 
   constructor(private readonly bridge: LessonBridge) {}
 
-  async call(ability: string, input: Record<string, unknown>): Promise<RawResult> {
+  async call(ability: string, input: Record<string, unknown>, ctx?: { role: string }): Promise<RawResult> {
     if (ability !== 'show') throw new Error(`unknown lesson ability ${ability}`);
     const { lesson, warnings } = normalizeLesson(input);
     // Screen cut-outs come from Jarvis's own copy of the last screenshot, never from Claude.
@@ -36,7 +36,7 @@ export class LessonExecutor implements AppExecutor {
         return true;
       });
     }
-    const where = await this.bridge.show(lesson);
+    const where = await this.bridge.show(lesson, ctx?.role);
     this.shown++;
     const place = where === 'full' ? 'full screen' : `on the ${where} side of the screen`;
     const skipped = warnings.length ? ` Skipped: ${warnings.join('; ')}.` : '';

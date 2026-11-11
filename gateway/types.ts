@@ -87,6 +87,8 @@ export interface JarvisSettings {
   appRoles?: Record<string, string[]>;
   /** Names the user gave team members ("Sara" for the Doctor). */
   roleNames?: Record<string, string>;
+  /** Pause music and videos while you talk to the team and while they speak (default on). */
+  pauseMedia?: boolean;
   /** First-run welcome finished (setup, tools, voices, meeting the team). */
   onboarded?: boolean;
   /** How names should sound when spoken (name → "say it like" spelling), e.g. the user's own name. */
@@ -118,7 +120,7 @@ export interface RawResult {
   images?: { data: string; mimeType: string }[];
 }
 
-/** Who is calling a tool: the team member (jarvis, pa, educator…) and whether a teammate consulted them. */
+/** Who is calling a tool: the team member (jarvis, pa, doctor…) and whether a teammate consulted them. */
 export interface CallContext {
   role: string;
   consult?: boolean;

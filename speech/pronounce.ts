@@ -35,7 +35,7 @@ Rules, because the voice reads by English spelling:
 - Vowels: "ee" as in see, "oo" as in moon, "aa" as in father, "uh" as in cup, "ay" as in day, "oe"/"oh" as in go. Never leave a bare "i" or "a" that English could read as "eye" or "ay".
 - Indian "th"/"dh" are soft dental sounds: write "t"/"d", never "th" (English would say "thin"/"this").
 - "Jy"/"Jyo" at the start: write "Joe"; "Ksh": "Ksh" inside a chunk ("Lukshmee").
-Checked examples: Jyothiradit → Joe-tee-raa-dit; Priyanka → Pree-yaan-kaa; Lakshmi → Lukshmee; Aishwarya → Ash-waar-ya; Siddharth → Sid-daart; Gaurav → Gow-rav; Aadimulam → Aa-dee-moo-lum.`,
+Checked examples: Priyanka → Pree-yaan-kaa; Lakshmi → Lukshmee; Aishwarya → Ash-waar-ya; Siddharth → Sid-daart; Gaurav → Gow-rav; Aadimulam → Aa-dee-moo-lum.`,
   };
 }
 

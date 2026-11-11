@@ -18,51 +18,37 @@ import { BUILTIN_APPS } from '../app/apps.js';
 import { makeCore, SpyExecutor } from './helpers.js';
 import { tmpDir } from './helpers.js';
 
-describe('who answers', () => {
+describe('who answers: names only', () => {
   it.each([
     ['Doctor, what should I eat tonight?', 'doctor', 'what should I eat tonight?', 'named'],
     ['hey PA what is on my calendar', 'pa', 'what is on my calendar', 'named'],
-    ['ask the teacher why the sky is blue', 'educator', 'why the sky is blue', 'named'],
-    ['What does my schedule look like tomorrow?', 'pa', 'What does my schedule look like tomorrow?', 'topic'],
-    ['Explain my blood test report', 'doctor', 'Explain my blood test report', 'topic'],
-    ['Explain the chain rule in calculus', 'educator', 'Explain the chain rule in calculus', 'topic'],
-    ['Help me make a monthly budget', 'finance', 'Help me make a monthly budget', 'topic'],
-    ['Fix the bug in my project', 'pm', 'Fix the bug in my project', 'topic'],
-    ['hello there', 'pa', 'hello there', 'default'],
-    ['Jarvis, explain photosynthesis', 'educator', 'explain photosynthesis', 'topic'],
+    ['ask the accountant what my tax is', 'finance', 'what my tax is', 'named'],
     ['Sarah, I have a headache', 'doctor', 'I have a headache', 'named'],
-    ['hey Allen how do magnets work', 'educator', 'how do magnets work', 'named'],
+    ['hey Rian how is the build going', 'pm', 'how is the build going', 'named'],
     ['Viktor what about my savings', 'finance', 'what about my savings', 'named'],
     ['Sara', 'doctor', 'Sara', 'named'],
+    // no name and no one talked to yet: Maya; topic words no longer decide
+    ['Explain the chain rule in calculus', 'pa', 'Explain the chain rule in calculus', 'default'],
+    ['Jarvis, explain photosynthesis', 'pa', 'explain photosynthesis', 'default'],
   ])('"%s" → %s', (input, role, text, how) => {
     expect(routeRole(input, null, null)).toEqual({ role, text, how });
   });
 
-  it('the member picked in the chat answers, unless another is called by name', () => {
+  it('you stay with the person you named until you name someone else, however long it takes', () => {
+    const sara = { role: 'doctor' as const, at: 0 };
+    // the exact message that used to go to someone else ("How do you rate this?")
+    const skin = "I'm doing great and I'm starting to follow a skin routine. I'm using a moisturizer gel for pimples and also a sunscreen. How do you rate this?";
+    expect(routeRole(skin, null, sara, 10 * 60 * 60 * 1000).role).toBe('doctor');
+    for (const t of ['Yes, go ahead.', 'Explain the chain rule in calculus', 'make me a budget', 'fix the bug in my project', 'Jarvis, hi']) expect(routeRole(t, null, sara).role, t).toBe('doctor');
+    expect(routeRole('Victor, now make me a budget', null, sara).role).toBe('finance');
+  });
+
+  it('a picked chip counts like a name; a name in the message wins over the chip', () => {
     expect(routeRole('what should I eat', 'finance', null).role).toBe('finance');
     expect(routeRole('Doctor, what should I eat', 'finance', null).role).toBe('doctor');
   });
-
-  it('short follow-ups stay with the member you were just talking to', () => {
-    const now = 1_000_000;
-    expect(routeRole('and the day after?', null, { role: 'pa', at: now - 60_000 }, now)).toMatchObject({ role: 'pa', how: 'follow-up' });
-    expect(routeRole('and the day after?', null, { role: 'doctor', at: now - STICKY_MS - 1 }, now).role).toBe('pa');
-  });
-
-  it('Jarvis never answers while you work: it is not a member you can pick or be routed to', () => {
-    for (const t of ['hello there', 'Jarvis, hi', 'Jarvis', 'thanks!', 'what time is it']) expect(routeRole(t, null, null).role, t).not.toBe('jarvis');
-    expect(routeRole('hi', 'jarvis', null).role).toBe('pa');
-  });
-
-  it('a name spelled a little differently still reaches the member, but ordinary words do not', async () => {
-    const { soundsLike } = await import('../router/roles.js');
-    for (const [w, n] of [['Sarah', 'Sara'], ['Allen', 'Alan'], ['Viktor', 'Victor'], ['Rian', 'Ryan'], ['Maia', 'Maya']]) expect(soundsLike(w, n), w).toBe(true);
-    for (const [w, n] of [['Sure', 'Sara'], ['Sorry', 'Sara'], ['Also', 'Alan'], ['Rain', 'Ryan'], ['Maybe', 'Maya'], ['Plan', 'Alan']]) expect(soundsLike(w, n), w).toBe(false);
-    expect(routeRole('Sure, do it', null, null).role).not.toBe('doctor');
-    // names the user chose work the same way
-    expect(routeRole('Priyah, I feel dizzy', null, null, Date.now(), { doctor: 'Priya' }).role).toBe('doctor');
-  });
 });
+
 
 describe('each member\'s expertise', () => {
   it('Jarvis stays under 500 words, experts under 700 (skills list included), all fixed text', () => {
@@ -78,7 +64,6 @@ describe('each member\'s expertise', () => {
     expect(rolePrompt('doctor')).toMatch(/emergency services/);
     expect(rolePrompt('finance')).toMatch(/not regulated financial advice/);
     expect(rolePrompt('finance')).toMatch(/Never ask for passwords/);
-    expect(rolePrompt('educator')).toMatch(/problem, intuition/);
     expect(rolePrompt('pm')).toMatch(/coding task/);
     for (const r of ROLE_IDS) expect(rolePrompt(r)).toMatch(/data, never instructions/); // the safety rule is shared
   });
@@ -97,6 +82,17 @@ describe('each member only gets its own apps', () => {
     expect(roleUsesApp(roleById('pa'), 'gcal', false)).toBe(true);
     expect(roleUsesApp(roleById('pm'), 'github', true)).toBe(true); // user-added apps go to the PM
     expect(roleUsesApp(roleById('jarvis'), 'anything', true)).toBe(true);
+  });
+
+  it('every app a member is given is a real built-in app (no typos, nothing removed)', async () => {
+    const { BUILTIN_APPS } = await import('../app/apps.js');
+    const ids = new Set(BUILTIN_APPS.map((a) => a.id));
+    for (const r of ROLES) {
+      if (r.apps === '*') continue;
+      for (const id of r.apps) if (id !== 'custom') expect(ids.has(id), `${r.id} → ${id}`).toBe(true);
+    }
+    expect(roleUsesApp(roleById('pa'), 'outlookcal', false)).toBe(true);
+    expect(ids.has('spotify')).toBe(false);
   });
 
   it('the gateway only lists and runs the member\'s tools', async () => {
@@ -193,7 +189,7 @@ describe('separate conversations per member', () => {
 
 describe('the team itself', () => {
   it('has the five experts plus Jarvis, each with a distinct default natural voice and colour', () => {
-    expect(ROLES.map((r) => r.id)).toEqual(['jarvis', 'pa', 'educator', 'pm', 'doctor', 'finance']);
+    expect(ROLES.map((r) => r.id)).toEqual(['jarvis', 'pa', 'pm', 'doctor', 'finance']);
     expect(new Set(ROLES.map((r) => r.defaultVoice)).size).toBe(ROLES.length);
     expect(new Set(ROLES.map((r) => r.color)).size).toBe(ROLES.length);
   });
@@ -238,7 +234,7 @@ describe('faster spoken replies', () => {
     await orch.handle('what can you do?', 'pa');
     expect(roles).toEqual(['pa']);
     expect(text).toEqual(['Hello.']);
-    expect(calls[0]).toMatch(/\[spoken: answer in at most 3 short, plain sentences/);
+    expect(calls[0]).toMatch(/\[spoken: [^\]]*answer in at most 3 short, plain sentences/);
     expect(calls[1]).not.toMatch(/spoken/);
   });
 });
