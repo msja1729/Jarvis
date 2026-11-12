@@ -4,50 +4,72 @@
 
 **Your own team of AI experts, on your desktop.**
 
-Talk to a personal assistant, a project manager, a doctor and a finance expert, by typing or by voice.
-They work in the apps you allow, remember what matters to you, and run on **your own Claude Pro or Max plan**.
+A personal assistant, a project manager, a doctor and a finance advisor on your computer.
+You talk to them by name, just like talking to a person, and they get the work done.
+They run on **your own Claude Pro or Max plan**.
 
-[**Download for Windows**](https://github.com/msja1729/Jarvis/releases/latest/download/Jarvis-Setup-0.8.1.exe) · [All releases](https://github.com/msja1729/Jarvis/releases) · [What Jarvis can do (PDF)](docs/Jarvis-Capabilities.pdf)
+[**Download for Windows**](https://github.com/msja1729/Jarvis/releases/latest/download/Jarvis-Setup-0.8.1.exe) · [Project page](https://msja1729.github.io/Jarvis/) · [What Jarvis can do (PDF)](docs/Jarvis-Capabilities.pdf) · [All releases](https://github.com/msja1729/Jarvis/releases)
 
-<img src="docs/images/chat.png" alt="Chatting with Sara, the doctor" width="860" />
+<img src="docs/images/chat.png" alt="Asking Sara, the doctor, about a headache" width="860" />
 
 </div>
+
+## Why Jarvis
+
+In real life, some people have a personal assistant who runs their day, a family doctor they can call any time, an advisor for their money and a manager who keeps their projects on track. Most people have none of these. Jarvis gives everyone their own team: each member has a name, a voice and a field, remembers you, and is talked to like a person ("Sara, I've had a headache since yesterday"). This version is the first step towards that goal.
 
 ## Meet your team
 
 | | Who | Ask them about |
 |---|---|---|
-| 🔵 | **Maya** · Personal assistant | your day, email, calendar, deadlines, reminders, anything personal |
-| 🟢 | **Ryan** · Project manager | projects, coding (runs Claude Code on Opus 5.5), meeting minutes, the project board |
-| 🔴 | **Sara** · Doctor | symptoms, food, sleep, exercise, your lab reports (general information, not a diagnosis) |
-| 🟡 | **Victor** · Finance | budgets, spending, investing basics, tax, business questions (information, not regulated advice) |
+| 🔵 | **Maya** · Personal assistant | your day, email, calendar, reminders, bills, forms, anything personal |
+| 🟢 | **Ryan** · Project manager and tech lead | projects, meetings and minutes, deadlines, coding (he runs Claude Code) |
+| 🔴 | **Sara** · Doctor and health coach | symptoms, lab reports, medicines, food, sleep, exercise (information, not a diagnosis) |
+| 🟡 | **Victor** · Finance advisor | budgets, bills, savings, debt, investing basics, business numbers (information, not regulated advice) |
 
-Start a message with a name, like *"Sara, …"*, and you stay with her until you name someone else. **Jarvis** is the front desk: it passes everything to the right person and introduces the team when you first open it. You can rename everyone and pick their voices.
+Start a message with a name, like *"Sara, …"*, and you stay with her until you name someone else. **Jarvis** is the front desk: if you don't name anyone, it passes your request to the right person. You can rename everyone and choose their voices on the Team page.
 
-<img src="docs/images/meet-the-team.png" alt="The team introduces itself" width="860" />
+<img src="docs/images/meet-the-team.png" alt="Maya introduces herself, her words appearing as she speaks" width="860" />
 
-## What they can do
+## What your team can do
 
-- **Talk or type.** Press **Ctrl+Alt+Space** in any app, speak, and the answer is read aloud in a small card above the taskbar. Speech recognition and voices run on your computer. The voice card and the floating box can be moved, resized and minimised, and what you ask there shows in the main chat right away. One switch (**Speak replies aloud**) decides whether answers are read out, everywhere.
-- **Real expertise.** Each member follows detailed playbooks for their field (Sara's symptom check with red flags, Ryan's meeting minutes and project briefs, Victor's budgets and debt payoff, Maya's inbox triage and daily plan) and keeps a profile of you in their own folder.
-- **Claude Code's own tools too.** Every expert can read and write files, search, read web pages and run commands (for example Python for exact sums or charts), working in their own folder, so what they make is saved there and you can open it from the Team page. Reading the team folders, saving in their own folder and the web are allowed; running a command or touching anything outside the team folders asks you first; nobody writes in a teammate's folder. Turn it off in Settings.
-- **Your apps, from your Claude account.** Gmail, Google Calendar, Microsoft 365, Notion, Slack, Spotify and the rest of Claude's connectors. Connect an app once on claude.ai (the Tool Hub opens the page for you) and your team can use it. Jarvis checks every action: reading is allowed, changes ask you first, deleting or paying always asks, and you choose who on the team may use each app.
-- **Web search** for everyone, steered to trusted sources (medical authorities for Sara, official sites for Victor, official docs for Ryan), with sources named.
-- **Lessons.** Ask to learn something and a narrated, step-by-step lesson plays beside your work: diagrams, animated graphs, equations and notes.
-- **Documents & code.** They read a PDF, text file or code folder you pick, and quote the exact page or line.
-- **Coding supervisor.** "Ryan, add a login page to my project": Claude Code works in the background; you get its questions with a recommendation, and risky steps always wait for you.
-- **Meetings, with what was shown.** "Ryan, record this meeting and note my tasks": Jarvis records your microphone, your computer's sound (the call, a video you play) and the screen as a video, and takes a picture whenever a new slide or board appears. You get a transcript, minutes that include what was on the slides, and your tasks on the board with reminders. Once the notes are written, the video and pictures are deleted so they don't pile up (you can choose to keep them in **Videos → Jarvis Meetings**).
-- **"What did they just say?"** Say "listen along" during a lecture, a video or a call, and ask any time: "what did he just say?", "explain that", "what was the question?". Jarvis hears your computer's sound (not your microphone) and keeps only the text of the last 15 minutes, in memory.
-- **Help during a live meeting.** While a meeting is being recorded, press the push-to-talk key and ask "what should I answer?" or "what did we decide about this last time?": the answer appears quietly on the card, so nothing is played into the meeting.
-- **A welcome to remember.** Stars become a turning globe, your team lights up around it, the Jarvis logo forms and the globe unrolls into the world map that stays behind the app.
-- **They show you what they made.** When a member wants you to see a document, picture or report, a large preview opens next to the chat (like Claude's side panel): Markdown with tables and flowcharts, pictures, PDFs, web pages, spreadsheets, video. Flip through several files, or open any one big.
-- **"On it, about 2 minutes."** When a request needs work, the member says right away what they will do and how long it takes, then gets on with it.
-- **Show them anything.** Say "Sara, I want to show you something" and she gives you a drop box: drop a PDF, a photo, a video or a recording. It's saved in her own folder (Shared with me) and she looks at it right away. Videos are taken in as pictures of each scene plus a timed transcript, on your computer. You can also drop files on the chat or use the paperclip.
-- **Bills and forms.** Show Victor a bill and he files it in your budget and has Maya remind you before it's due; show Maya a form and she fills it from what the team knows, leaving passwords and ID numbers to you.
-- **Medicines and follow-ups.** Tell Sara what the doctor prescribed (or record the appointment) and she sets a reminder for every dose, for exactly the number of days, plus the follow-up visit, and says them in her own voice.
-- **Reminders, a morning plan, an evening review and a project board** shared by Maya and Ryan: "Wrap up my day" (or a set time) tells you what got done, what's still open, what's due tomorrow and anything you missed.
-- **They work together.** Members ask each other for help and read each other's notes.
-- **Conversations** organised by day, searchable, and you can continue any of them.
+**Talk to them like real people**
+- Press **Ctrl+Alt+Space** in any app, speak, and the right member answers out loud in their own natural voice. Speech recognition and the voices run on your computer; your voice never leaves it.
+- Before working, a member tells you what they will do and how long it takes ("On it, about 2 minutes"), then does it.
+- The **voice card** above the taskbar (Ctrl+Alt+J) and the **floating chat box** (Ctrl+Shift+Space) can be moved, resized and minimised; whatever you ask there also shows in the main chat.
+- One switch, **Speak replies aloud**, decides whether answers are read out, everywhere. Music and videos pause while you talk.
+
+**They know you**
+- Each member keeps their own notes and profile files about you (Sara your health profile and every lab value, Victor your budget, Ryan your roadmap, Maya your routine and writing style) and uses them in every answer.
+- Each follows the method of their field: Sara checks warning signs first, Victor reads your investment policy before any money decision, Ryan writes a spec before any coding.
+- They ask each other for help and read each other's notes. They can also use Claude Code's own tools (files, web pages, Python for exact sums) in their own folder.
+
+**They work in your apps**
+- Gmail, Google Calendar, Microsoft 365, Notion, Slack, Spotify and the rest of Claude's connectors: connect an app once on claude.ai (the Tool Hub opens the page and notices when it is connected) and your team can use it.
+- You choose which member may use each app. Reading is allowed, anything that sends or changes something asks you first, and deleting or paying always asks.
+
+**Meetings and lectures**
+- "Ryan, record this meeting and note my tasks": Jarvis records your microphone, the computer's sound and the screen, with a picture of every new slide. You get a transcript, minutes that include the slides, and your tasks on the board with reminders.
+- Say "listen along" during a lecture or call and ask "what did he just say?" or "explain that".
+- During a recorded meeting, ask "what should I answer?": the reply appears quietly on the card, so nothing plays into the meeting.
+
+**On time, every day**
+- Reminders said out loud at the right time, in the member's own voice.
+- Maya plans your morning and wraps up your day in the evening; a project board shared by Maya and Ryan.
+- Sara sets a reminder for every dose of a prescription, for exactly the right number of days, plus the follow-up visit.
+- Show Victor a bill and he files it and has Maya remind you before it is due; show Maya a form and she fills it, leaving passwords and ID numbers to you.
+
+**Show them, and they show you**
+- "Sara, I want to show you something": a drop box opens for a PDF, photo, video or recording, and she looks at it right away. Videos are understood scene by scene, with a timed transcript.
+- When they make something for you (a plan, a report, a picture), it opens in a large preview next to the chat: documents with tables and flowcharts, pictures, PDFs, spreadsheets, video. Flip through several, or open any one big.
+
+**Learn and work**
+- Lessons: a narrated, step-by-step explanation plays beside your work, with diagrams, animated graphs and equations, at your level.
+- They read a PDF, a file or a code folder you pick and quote the exact page or line, and look at your screen when you ask.
+- "Ryan, add a login page to my project": Claude Code works in the background; Ryan brings you only the real decisions with his recommendation and gives spoken updates. Risky steps always wait for you.
+- Web search steered to trusted sources, with the sources named. Conversations are kept by day, searchable, and can be continued.
+
+<img src="docs/images/preview.png" alt="Maya shows the trip plan in the preview next to the chat" width="860" />
 
 <table>
 <tr>
@@ -55,8 +77,8 @@ Start a message with a name, like *"Sara, …"*, and you stay with her until you
 <td><img src="docs/images/tool-hub.png" alt="The Tool Hub" /></td>
 </tr>
 <tr>
-<td align="center">Team: skills, voices, memory and folders</td>
-<td align="center">Tool Hub: what each app may do, and who can use it</td>
+<td align="center">Team: each member's field, skills, voice and memory</td>
+<td align="center">Tool Hub: your apps, what each may do, and who can use it</td>
 </tr>
 </table>
 
@@ -64,24 +86,24 @@ Start a message with a name, like *"Sara, …"*, and you stay with her until you
 
 1. **[Download Jarvis-Setup-0.8.1.exe](https://github.com/msja1729/Jarvis/releases/latest/download/Jarvis-Setup-0.8.1.exe)** and run it.
    Windows may say *"Windows protected your PC"* because the installer is not code-signed yet: click **More info → Run anyway**.
-2. Jarvis opens and sets itself up with you: your name (and how to say it), connecting your Claude (it installs Claude Code and signs you in if needed), tools and microphone, the natural voices, and then the team introduces itself.
+2. A short welcome sets everything up: your name and how to say it, connecting your Claude (buttons install Claude Code and sign you in through your browser if needed), your team's tools, and the natural voices. Then each member introduces themselves.
 
-<p align="center"><img src="docs/images/welcome.png" alt="The Jarvis welcome screen" width="640" /></p>
+<p align="center"><img src="docs/images/welcome.png" alt="The Jarvis welcome" width="640" /></p>
 
 **You need:** a **Claude Pro or Max** plan and about 2.5 GB of disk space after setup (less without an NVIDIA graphics card). Speech recognition is fastest with an NVIDIA graphics card; other computers work too, just more slowly.
 
-To use email, calendar or other apps, open the **Tool Hub**, click **Connect an app**, and sign in to the app on claude.ai. Jarvis picks it up as soon as you come back.
+To use email, calendar or other apps, open the **Tool Hub**, click **Connect an app**, and sign in to the app on claude.ai.
 
 ## You stay in control
 
-- **Every action is checked.** Each ability of each app is *Off*, *Ask me first* or *Allowed*, and anything destructive can never be set to Allowed. Everything your team did is listed on the **Activity** page, where you can delete it.
-- **Your data stays on your computer.** Chats, memory and team folders are kept in your Jarvis folder. Sign-ins are stored only in Windows Credential Manager. Your voice is turned into text on your computer and never sent anywhere.
+- **Every action is checked.** For each app, reading, changing and deleting are each *Off*, *Ask me first* or *Allowed*; deleting and paying can never be set to Allowed. You choose which member may use each app. Everything your team did is listed on the **Activity** page.
+- **Your data stays on your computer.** Chats, memory and team folders are kept in your Jarvis folder. Your voice is turned into text on your computer and never sent anywhere. Sign-ins to your apps are held by your Claude account, not by Jarvis.
 - **Your Claude login is never read.** Jarvis runs Claude Code, which handles the sign-in itself. If an `ANTHROPIC_API_KEY` is set on your computer, Jarvis removes it for its own runs, so usage counts against your plan, not API billing.
 - **Content is never obeyed.** Emails, web pages and documents are treated as information, never as instructions.
 
 ## Uninstall
 
-Settings → **Uninstall Jarvis**, or Windows Settings → Apps → Jarvis. This removes the app and everything it kept on your computer: settings, chats, memory, team folders, voices, saved sign-ins and the Claude Code hooks it added. Claude Code itself, your own projects and any meeting videos you chose to keep (Videos → Jarvis Meetings) are not touched. Updating to a newer version keeps your data.
+Settings → **Uninstall**, or Windows Settings → Apps → Jarvis. This removes the app and everything it kept on your computer: settings, chats, memory, team folders, voices, saved keys and the Claude Code hooks it added. Claude Code itself, your own projects and any meeting videos you chose to keep (Videos → Jarvis Meetings) are not touched. Updating to a newer version keeps your data.
 
 ## Build from source
 
@@ -99,16 +121,18 @@ npm run dist       # Windows installer in release/
 <summary>Project layout</summary>
 
 ```
-app/       Electron main process, preload, the pages (renderer) and the orchestrator
-router/    who answers (names only), local commands and model choice
-roles/     the team: prompts, skills (playbooks), casebooks, folders and memory
-brain/     the only code that runs claude (Claude Code CLI)
-gateway/   every tool call: ability checks, confirmations, trimming, activity log
-tools/     email, calendars, web, lessons, documents, coding supervisor, recorder, planner, team…
-speech/    whisper.cpp speech-to-text, Kokoro voices, media pause
-security/  keychain storage, OAuth sign-in (PKCE), destructive-action lock
-docs/      user guides and the capabilities report
-tests/     unit and acceptance tests
+app/         Electron main process, preload, the pages (renderer) and the orchestrator
+router/      who answers (names only), local commands and model choice
+roles/       the team: prompts, skills (playbooks), casebooks, folders and memory
+brain/       the only code that runs claude (Claude Code CLI)
+gateway/     every tool call: permission checks, confirmations, trimming, activity log
+connectors/  apps from the user's Claude account: names, rules, who may use them
+tools/       team folders, web, lessons, documents, coding supervisor, recorder, planner, screen, team…
+speech/      whisper.cpp speech-to-text, Kokoro voices, media pause
+security/    keychain storage, destructive-action lock
+scripts/     build, docs PDF, app icon and installer pictures
+docs/        project page, user guide and the capabilities report
+tests/       unit and acceptance tests
 ```
 
 </details>
