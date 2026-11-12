@@ -4,10 +4,11 @@ import { startWorldMap } from './worldmap.js';
 import { Onboarding, sayMyName } from './onboard.js';
 import { renderMarkdown } from './markdown.js';
 import { startCapture, stopCapture, CaptureKind } from './audio.js';
+import { initViewerPanel, ShownSet } from './viewer-panel.js';
 
 interface Ability { name: string; title: string; description: string; group: string; setting: string; options: string[] }
-interface HubApp { id: string; name: string; description: string; kind: string; enabled: boolean; connected: boolean; account: string | null; auth: string | null; abilities: Ability[]; members: string[]; everyone: boolean; membersChanged: boolean }
-interface Account { id: string; name: string; configured: boolean; connected: boolean; email: string | null; needsSecret: boolean }
+/** A Tool Hub app: one of Jarvis's own tools, or (kind "connector") an app from the user's Claude account. */
+interface HubApp { id: string; name: string; description: string; kind: string; enabled: boolean; connected: boolean; status: string | null; maker: string | null; category: string | null; toolCount: number; auth: string | null; abilities: Ability[]; members: string[]; everyone: boolean; membersChanged: boolean }
 interface ConfirmReq { id: string; appName: string; abilityTitle: string; group: string; summary: string; title?: string }
 
 declare global {
@@ -23,6 +24,11 @@ declare global {
       ask(text: string, role?: string | null, opts?: { stream?: boolean; files?: string[] }): Promise<any>;
       onAskStart(cb: (s: { roleName: string; roleColor: string; voice: string }) => void): void;
       onAskPartial(cb: (d: string) => void): void;
+      onAskNote(cb: (n: { text: string; roleName: string; roleColor: string; first: boolean }) => void): void;
+      onViewerShow(cb: (v: ShownSet & { id: string; who: string; color: string; card: boolean }) => void): void;
+      viewerRead(rel: string): Promise<{ text: string; cut: boolean; kind: string }>;
+      viewerOpen(rel: string): Promise<void>;
+      viewerReveal(rel: string): Promise<void>;
       historyPrepare(): Promise<{ conv: string; isNew: boolean }>;
       historyList(query?: string): Promise<{ items: ConvSummary[]; current: string | null }>;
       historyOpen(id: string): Promise<{ conv: ConvSummary; messages: HistoryItem[]; current: boolean }>;
@@ -44,13 +50,10 @@ declare global {
       hubList(): Promise<HubApp[]>;
       hubSetEnabled(appId: string, on: boolean): Promise<HubApp[]>;
       hubSetAbility(appId: string, ability: string, setting: string): Promise<HubApp[]>;
-      accountsList(): Promise<Account[]>;
-      accountsSetup(id: string, clientId: string, clientSecret?: string): Promise<Account[]>;
-      accountsConnect(id: string): Promise<Account[]>;
-      accountsDisconnect(id: string): Promise<Account[]>;
-      accountsOpenConsole(id: string): Promise<void>;
-      accountsOpenGuide(id: string): Promise<void>;
-      cancelSignIn(): void;
+      connectorsInfo(): Promise<{ checkedAt: number; checking: boolean; url: string; suggestions: { name: string; maker?: string; description: string; category: string }[] }>;
+      connectorsRefresh(): Promise<HubApp[]>;
+      connectorsOpen(): Promise<void>;
+      onConnectorsChanged(cb: () => void): void;
       usageSummary(): Promise<any>;
       hubSetMembers(appId: string, members: string[] | null): Promise<HubApp[]>;
       activityList(): Promise<ActivityItem[]>;
@@ -192,7 +195,7 @@ requestAnimationFrame(() => movePill(activeTab(), true));
 const SUBS: Record<string, string> = {
   chat: 'Ask anything, by typing or with your voice',
   team: 'Your experts, their voices and what they remember',
-  hub: 'Your apps and what Jarvis may do in each  ·  changes apply on the next request',
+  hub: 'Your apps and tools, and what your team may do in each  ·  changes apply on the next request',
   activity: 'What your team did or was stopped from doing, day by day',
   settings: 'Model, voice and shortcuts',
 };
@@ -209,10 +212,7 @@ function show(view: string) {
   $('page-title').textContent = TITLES[view] ?? view;
   $('page-sub').textContent = SUBS[view] ?? '';
   movePill(activeTab());
-  if (view === 'hub') {
-    void renderAccounts();
-    void renderHub();
-  }
+  if (view === 'hub') void loadHub();
   if (view === 'team') void renderTeam();
   if (view === 'activity') void renderActivity();
   if (view === 'settings') {
@@ -569,13 +569,15 @@ async function renderTeam() {
 
 /* ---------- chat ---------- */
 const messages = $('messages');
+/** The preview next to the chat (files a member shows you). */
+const viewer = initViewerPanel(j, (msg) => showNotice(msg));
 /** A reply, formatted (bold, lists, code, links); links open in the browser. */
 function mdBlock(text: string): HTMLElement {
   const box = el('div', { className: 'md' });
   box.innerHTML = renderMarkdown(text);
   return box;
 }
-function addMsg(who: 'user' | 'jarvis', text: string, meta?: string, isError = false, from?: { name: string; color: string }) {
+function addMsg(who: 'user' | 'jarvis', text: string, meta?: string, isError = false, from?: { name: string; color: string }): HTMLElement {
   $('empty').classList.add('hidden');
   const m = el('div', { className: `msg ${who}${isError ? ' error' : ''}` });
   if (who === 'jarvis' && !isError) m.append(mdBlock(text));
@@ -588,6 +590,7 @@ function addMsg(who: 'user' | 'jarvis', text: string, meta?: string, isError = f
   if (meta) m.append(el('span', { className: 'meta' }, meta));
   messages.append(m);
   messages.scrollTop = messages.scrollHeight;
+  return m;
 }
 interface HistoryItem {
   id: string;
@@ -600,11 +603,18 @@ interface HistoryItem {
   via: 'chat' | 'voice' | 'box';
   meta?: string;
   error?: boolean;
+  shown?: ShownSet[];
 }
 const VIA: Record<string, string> = { voice: ' · by voice', box: ' · floating box', chat: '' };
 function showHistoryItem(i: HistoryItem) {
   if (i.who === 'user') addMsg('user', i.text, i.via !== 'chat' ? VIA[i.via].replace(' · ', '') : undefined);
-  else addMsg('jarvis', i.text, `${i.meta ?? ''}${VIA[i.via] ?? ''}`, Boolean(i.error), i.roleName ? { name: i.roleName, color: i.color ?? '#9a9a96' } : undefined);
+  else {
+    const m = addMsg('jarvis', i.text, `${i.meta ?? ''}${VIA[i.via] ?? ''}`, Boolean(i.error), i.roleName ? { name: i.roleName, color: i.color ?? '#9a9a96' } : undefined);
+    if (i.meta === 'while working') m.classList.add('interim');
+    // the files shown while answering: a card before the reply, to open them again
+    const who = { who: (i.roleName ?? '').split(' · ')[0], color: i.color ?? '#9a9a96' };
+    for (const set of i.shown ?? []) m.before(viewer.card(set, who));
+  }
 }
 /* ---------- conversations: the History panel next to the chat ---------- */
 interface ConvSummary { id: string; title: string; startedAt: string; updatedAt: string; count: number; people: { name: string; color: string }[] }
@@ -841,10 +851,37 @@ function addNote(text: string) {
 const progress = $('progress');
 function setProgress(working: boolean) {
   progress.classList.toggle('hidden', !working);
+  if (!working) $('progress-text').textContent = '';
   if (working) setStatus('busy');
 }
 
 j.onNotice((text) => showNotice(text));
+
+/* ---------- while they work: "On it, about 2 minutes", then a quiet status line ---------- */
+j.onAskNote(({ text, roleName, roleColor, first }) => {
+  if (MODE === 'voice') return; // the voice card already speaks it as it is written
+  if (first) {
+    addMsg('jarvis', text, 'while working', false, { name: roleName, color: roleColor }).classList.add('interim');
+    $('progress-text').textContent = '';
+  } else $('progress-text').textContent = text.replace(/\s+/g, ' ').slice(0, 140);
+});
+
+/* ---------- files a member shows you: the preview next to the chat ---------- */
+j.onViewerShow((v) => {
+  if (MODE !== 'main') return;
+  show('chat');
+  const who = { who: v.who, color: v.color };
+  viewer.open(v, who);
+  if (v.card) {
+    // more files for the same preview: the card is brought up to date instead of adding another
+    const card = viewer.card(v, who);
+    card.dataset.set = v.id;
+    const old = messages.querySelector(`.msg.shown[data-set="${CSS.escape(v.id)}"]`);
+    if (old) old.replaceWith(card);
+    else messages.append(card);
+    messages.scrollTop = messages.scrollHeight;
+  }
+});
 
 document.querySelectorAll<HTMLButtonElement>('[data-suggest]').forEach((b) =>
   b.addEventListener('click', () => {
@@ -1165,13 +1202,25 @@ $('confirm-no').addEventListener('click', () => {
 });
 
 /* ---------- Tool Hub ---------- */
-const ACCOUNT_HELP: Record<string, string> = {
-  google:
-    'One-time setup (about 10 minutes): create a free "Desktop app" sign-in client in Google Cloud, then paste its Client ID and Client secret here.',
-  microsoft:
-    'One-time setup (about 5 minutes): register a free app in Microsoft Entra, then paste its Application (client) ID here.',
-};
-const ACCOUNT_NAME: Record<string, string> = { google: 'Google', microsoft: 'Microsoft' };
+/*
+ * Two kinds of apps:
+ * - apps from the user's Claude account (Gmail, Notion, Spotify…): connected on claude.ai, used here
+ *   under Jarvis's rules (on/off, who can use it, reading / making changes / deleting);
+ * - Jarvis's own team tools (screen, recorder, folders…), built in and working on this computer.
+ */
+type AppFilter = 'all' | 'connected' | 'signin';
+interface Suggestion { name: string; maker?: string; description: string; category: string }
+interface ConnectorsInfo { checkedAt: number; checking: boolean; url: string; suggestions: Suggestion[] }
+
+let hubApps: HubApp[] = [];
+let appsInfo: ConnectorsInfo | null = null;
+let appFilter: AppFilter = 'all';
+let hubQuery = '';
+/** The user went to claude.ai to connect an app: check again when they come back. */
+let waitingFor: { name: string | null; connectedBefore: number; before: string[]; since: number } | null = null;
+let checking = false;
+
+const STATUS_LABEL: Record<string, string> = { connected: 'Connected', 'needs-auth': 'Sign in needed', pending: 'Starting', failed: 'Not reachable' };
 
 /** Electron prefixes IPC errors with "Error invoking remote method …: Error: ". */
 function cleanError(err: unknown): string {
@@ -1182,85 +1231,6 @@ function cleanError(err: unknown): string {
 
 function showHubError(err: unknown) {
   $('hub-error').textContent = err ? cleanError(err) : '';
-}
-
-/** Show the "finish in your browser" card while a sign-in is running. */
-async function duringSignIn<T>(fn: () => Promise<T>): Promise<T | undefined> {
-  showHubError(null);
-  $('signin-wait').classList.remove('hidden');
-  try {
-    return await fn();
-  } catch (err) {
-    showHubError(err);
-    return undefined;
-  } finally {
-    $('signin-wait').classList.add('hidden');
-  }
-}
-$('signin-cancel').addEventListener('click', () => j.cancelSignIn());
-
-async function renderAccounts(list?: Account[]) {
-  const accounts = list ?? (await j.accountsList());
-  const root = $('accounts');
-  root.replaceChildren(...accounts.map((a) => (a.configured || a.connected ? accountCard(a) : setupCard(a))));
-}
-
-function accountCard(a: Account): HTMLElement {
-  const card = el('div', { className: 'card' });
-  const pill = el('span', { className: `pill${a.connected ? ' ok' : ''}` }, a.connected ? 'Connected' : 'Not connected');
-  card.append(el('div', { className: 'app-head' }, el('h3', {}, `${a.name} account`), pill));
-  if (a.connected) {
-    card.append(el('div', {}, a.email ? `Signed in as ${a.email}` : 'Signed in'));
-    const out = el('button', {}, 'Disconnect');
-    out.addEventListener('click', async () => {
-      await renderAccounts(await j.accountsDisconnect(a.id));
-      renderHub();
-    });
-    card.append(el('div', { className: 'row-buttons' }, out));
-    return card;
-  }
-  const go = el('button', { className: 'primary' }, `Sign in with ${a.name}`);
-  go.addEventListener('click', async () => {
-    const res = await duringSignIn(() => j.accountsConnect(a.id));
-    if (res) {
-      await renderAccounts(res);
-      renderHub();
-    }
-  });
-  const change = el('button', { className: 'link' }, 'Change setup');
-  change.addEventListener('click', () => card.replaceWith(setupCard(a)));
-  card.append(el('div', { className: 'row-buttons' }, go, change));
-  return card;
-}
-
-function setupCard(a: Account): HTMLElement {
-  const card = el('div', { className: 'card' });
-  card.append(el('div', { className: 'app-head' }, el('h3', {}, `${a.name} account`), el('span', { className: 'pill' }, 'Needs setup')));
-  card.append(el('div', { className: 'help' }, ACCOUNT_HELP[a.id] ?? ''));
-  const guide = el('button', { className: 'link', type: 'button' }, 'Step-by-step guide');
-  guide.addEventListener('click', () => j.accountsOpenGuide(a.id).catch(showHubError));
-  const open = el('button', { className: 'link', type: 'button' }, `Open ${a.name} console`);
-  open.addEventListener('click', () => j.accountsOpenConsole(a.id));
-  const id = el('input', { placeholder: 'Client ID', autocomplete: 'off' });
-  const secret = el('input', { placeholder: 'Client secret', type: 'password', autocomplete: 'off' });
-  const form = el('form', { className: 'stack' }, el('label', {}, 'Client ID', id));
-  if (a.needsSecret) form.append(el('label', {}, 'Client secret (kept in your system keychain)', secret));
-  form.append(el('div', { className: 'row-buttons' }, el('button', { type: 'submit' }, 'Save'), guide, open));
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    if (!id.value.trim() || (a.needsSecret && !secret.value.trim())) {
-      showHubError(a.needsSecret ? 'Please paste both the Client ID and the Client secret.' : 'Please paste the Client ID.');
-      return;
-    }
-    try {
-      showHubError(null);
-      await renderAccounts(await j.accountsSetup(a.id, id.value.trim(), a.needsSecret ? secret.value.trim() : undefined));
-    } catch (err) {
-      showHubError(err);
-    }
-  });
-  card.append(form);
-  return card;
 }
 
 /** The team members (not Jarvis), for "Who can use it". */
@@ -1283,78 +1253,370 @@ function memberChips(members: TeamRole[], on: Set<string>, onToggle: (id: string
   return row;
 }
 
-async function renderHub(list?: HubApp[]) {
-  const apps = list ?? (await j.hubList());
-  const team = await teamMembers();
-  // email & calendar (need an account) first, then the tools built into Jarvis
-  const mail = $('hub-mail');
-  const tools = $('hub-list');
-  mail.replaceChildren();
-  tools.replaceChildren();
-  for (const a of apps) {
-    const root = a.account ? mail : tools;
-    const toggle = el('input', { type: 'checkbox', checked: a.enabled, className: 'switch', title: a.enabled ? 'On' : 'Off' });
-    toggle.addEventListener('change', async () => renderHub(await j.hubSetEnabled(a.id, toggle.checked)));
-    // only apps that need an account say whether they are connected
-    const head = el('div', { className: 'app-head' }, el('h3', {}, a.name));
-    if (a.account) head.append(el('span', { className: `pill${a.connected ? ' ok' : ''}` }, a.connected ? 'Connected' : `Sign in to ${ACCOUNT_NAME[a.account]} first`));
-    head.append(toggle);
-    const table = el('table', { className: 'abilities' });
-    for (const ab of a.abilities) {
-      const select = el('select');
-      for (const opt of ab.options) select.append(el('option', { value: opt, selected: opt === ab.setting }, SETTING_LABEL[opt]));
-      select.addEventListener('change', async () => {
-        try {
-          showHubError(null);
-          renderHub(await j.hubSetAbility(a.id, ab.name, select.value));
-        } catch (err) {
-          showHubError(err);
-        }
+/* a calm coloured tile with the app's initials (no outside images) */
+function hueOf(name: string): number {
+  let h = 7;
+  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 360;
+  return h;
+}
+function initials(name: string): string {
+  // "Google Calendar" → GC, "Gmail" → G, "Microsoft 365" → M, "monday.com" → M
+  const words = name.replace(/\.[a-z]+$/i, '').split(/[^A-Za-z]+/).filter(Boolean);
+  if (words.length > 1 && /^[A-Z]/.test(words[1])) return (words[0][0] + words[1][0]).toUpperCase();
+  return (words[0] ?? '?').slice(0, 1).toUpperCase();
+}
+function appLogo(name: string): HTMLElement {
+  const tile = el('span', { className: 'app-logo', ariaHidden: 'true' }, initials(name));
+  tile.style.setProperty('--h', String(hueOf(name)));
+  return tile;
+}
+
+/** Simple line icons for Jarvis's own tools. */
+const TOOL_ICON: Record<string, string> = {
+  lesson: 'M4 6l8-3 8 3-8 3zM7 8v5c0 1.5 2.2 3 5 3s5-1.5 5-3V8',
+  documents: 'M7 3h7l4 4v14H7zM14 3v4h4M10 12h5M10 16h5',
+  coding: 'M9 8l-4 4 4 4M15 8l4 4-4 4',
+  team: 'M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3.5 19c.6-3 2.8-5 5.5-5s4.9 2 5.5 5M17 11a2.5 2.5 0 1 0 0-5M16 14c2.4 0 4.2 1.8 4.6 4.5',
+  files: 'M3 7h6l2 2h10v10H3z',
+  skills: 'M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z',
+  web: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c2.5 2.7 3.6 5.7 3.6 9s-1.1 6.3-3.6 9c-2.5-2.7-3.6-5.7-3.6-9S9.5 5.7 12 3z',
+  reminders: 'M6 16V11a6 6 0 1 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0',
+  board: 'M4 4h5v16H4zM10 4h5v10h-5zM16 4h4v7h-4z',
+  screen: 'M3 5h18v11H3zM8 20h8M12 16v4',
+  recorder: 'M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3',
+};
+function toolLogo(id: string): HTMLElement {
+  const tile = el('span', { className: 'app-logo tool', ariaHidden: 'true' });
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  p.setAttribute('d', TOOL_ICON[id] ?? 'M5 5h14v14H5z');
+  svg.append(p);
+  tile.append(svg);
+  return tile;
+}
+
+/** The query words, for search and highlighting. */
+const queryWords = () => hubQuery.toLowerCase().split(/\s+/).filter(Boolean);
+function matchesQuery(...texts: (string | null | undefined)[]): boolean {
+  const words = queryWords();
+  if (!words.length) return true;
+  const hay = texts.filter(Boolean).join(' ').toLowerCase();
+  return words.every((w) => hay.includes(w));
+}
+/** The name with the searched words highlighted (text nodes only, never HTML). */
+function highlighted(text: string): (Node | string)[] {
+  const words = queryWords();
+  if (!words.length) return [text];
+  const re = new RegExp(`(${words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'ig');
+  return text.split(re).map((part, i) => (i % 2 ? el('mark', { className: 'hit' }, part) : part));
+}
+
+function sinceText(ms: number): string {
+  if (!ms) return '';
+  const min = Math.round((Date.now() - ms) / 60_000);
+  if (min < 1) return 'Checked just now.';
+  if (min < 60) return `Checked ${min} min ago.`;
+  return `Checked at ${new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`;
+}
+
+const isConnector = (a: HubApp) => a.kind === 'connector';
+const needsSignIn = (a: HubApp) => a.status !== 'connected';
+
+/** "Who can use it" for one app. */
+function whoRow(a: HubApp, team: TeamRole[]): HTMLElement {
+  const who = el('div', { className: 'who-uses' }, el('span', { className: 'who-label muted small' }, 'Who can use it'));
+  if (a.everyone) {
+    who.append(el('span', { className: 'muted small' }, 'Everyone on the team, always'));
+    return who;
+  }
+  const on = new Set(a.members);
+  who.append(
+    memberChips(team, on, async (id) => {
+      if (on.has(id)) on.delete(id);
+      else on.add(id);
+      try {
+        showHubError(null);
+        teamCache = null; // the Team page lists each member's apps
+        setHub(await j.hubSetMembers(a.id, [...on]));
+      } catch (err) {
+        showHubError(err);
+      }
+    }),
+    el('span', { className: 'muted small who-note' }, on.size ? '+ Jarvis' : 'Only Jarvis'),
+  );
+  if (a.membersChanged) {
+    const reset = el('button', { type: 'button', className: 'link-btn small' }, 'Reset');
+    reset.title = 'Back to the usual members';
+    reset.addEventListener('click', async () => {
+      teamCache = null;
+      setHub(await j.hubSetMembers(a.id, null));
+    });
+    who.append(reset);
+  }
+  return who;
+}
+
+/** "What it may do": each ability (or, for apps from the Claude account, its three rules) with its setting. */
+function rulesDetails(a: HubApp, label: string, note?: string): HTMLElement {
+  const table = el('table', { className: 'abilities' });
+  for (const ab of a.abilities) {
+    const select = el('select', { ariaLabel: `${ab.title} in ${a.name}` });
+    for (const opt of ab.options) select.append(el('option', { value: opt, selected: opt === ab.setting }, SETTING_LABEL[opt]));
+    select.addEventListener('change', async () => {
+      try {
+        showHubError(null);
+        setHub(await j.hubSetAbility(a.id, ab.name, select.value));
+      } catch (err) {
+        showHubError(err);
+      }
+    });
+    table.append(el('tr', {}, el('td', {}, ab.title, el('div', { className: 'muted' }, ab.description)), el('td', {}, select)));
+  }
+  const details = el('details', {}, el('summary', {}, label), table);
+  if (note) details.append(el('p', { className: 'rules-note' }, note));
+  return details;
+}
+
+function onOff(a: HubApp): HTMLInputElement {
+  const toggle = el('input', { type: 'checkbox', checked: a.enabled, className: 'switch', title: a.enabled ? 'On: your team can use it' : 'Off' });
+  toggle.setAttribute('aria-label', `Let your team use ${a.name}`);
+  toggle.addEventListener('change', async () => setHub(await j.hubSetEnabled(a.id, toggle.checked)));
+  return toggle;
+}
+
+/** One app from the Claude account. */
+function connectorCard(a: HubApp, team: TeamRole[]): HTMLElement {
+  const connected = a.status === 'connected';
+  const sub = [a.maker ? `by ${a.maker}` : null, a.category].filter(Boolean).join(' · ');
+  const title = el('div', { className: 'app-title' }, appLogo(a.name), el('div', {}, el('h3', {}, ...highlighted(a.name)), el('span', { className: 'app-sub' }, sub || 'From your Claude account')));
+  const status = el('span', { className: `status ${a.status ?? 'failed'}` }, el('i', {}), STATUS_LABEL[a.status ?? 'failed'] ?? 'Unknown');
+  const head = el('div', { className: 'app-head' }, title, status);
+  if (connected) head.append(onOff(a));
+  const card = el('div', { className: `card app-card${connected ? (a.enabled ? '' : ' off') : ' dim'}` }, head, el('div', { className: 'muted app-desc' }, a.description));
+  if (connected) {
+    const actions = a.toolCount ? `${a.toolCount} action${a.toolCount === 1 ? '' : 's'}` : 'What it may do';
+    card.append(whoRow(a, team), rulesDetails(a, `${actions} · your rules`, 'Jarvis sorts each action by its name: looking things up, making changes (create, send, play…), or deleting and paying. Deleting always asks you.'));
+    return card;
+  }
+  const row = el('div', { className: 'app-actions' });
+  if (a.status === 'needs-auth') {
+    const go = el('button', { type: 'button', className: 'primary' }, 'Sign in on claude.ai');
+    go.addEventListener('click', () => openConnect(a.name));
+    row.append(go, el('span', { className: 'muted' }, 'It is in your Claude account but not signed in yet.'));
+  } else {
+    const again = el('button', { type: 'button' }, 'Check again');
+    again.addEventListener('click', () => void checkNow());
+    row.append(again, el('span', { className: 'muted' }, a.status === 'pending' ? 'It was still starting.' : 'Claude could not reach it just now.'));
+  }
+  card.append(row);
+  return card;
+}
+
+/** A small tile: an app to sign in to, or a popular app to add. */
+function appTile(name: string, text: string, button: string, onClick: () => void, title?: string): HTMLElement {
+  const b = el('button', { type: 'button' }, button);
+  b.addEventListener('click', onClick);
+  if (title) b.title = title;
+  return el('div', { className: 'suggest-card' }, appLogo(name), el('div', { className: 'suggest-text' }, el('b', {}, ...highlighted(name)), el('span', { title: text }, text)), b);
+}
+
+/** One of Jarvis's own tools. */
+function toolCard(a: HubApp, team: TeamRole[]): HTMLElement {
+  const title = el('div', { className: 'app-title' }, toolLogo(a.id), el('div', {}, el('h3', {}, ...highlighted(a.name)), el('span', { className: 'app-sub' }, 'Built into Jarvis')));
+  const head = el('div', { className: 'app-head' }, title, onOff(a));
+  return el(
+    'div',
+    { className: `card app-card${a.enabled ? '' : ' off'}` },
+    head,
+    el('div', { className: 'muted app-desc' }, a.description),
+    whoRow(a, team),
+    rulesDetails(a, `What it may do (${a.abilities.length})`),
+  );
+}
+
+function renderFilters(apps: HubApp[]) {
+  const counts: Record<AppFilter, number> = { all: apps.length, connected: apps.filter((a) => !needsSignIn(a)).length, signin: apps.filter(needsSignIn).length };
+  const label: Record<AppFilter, string> = { all: 'All', connected: 'Connected', signin: 'Sign in needed' };
+  const root = $('hub-filters');
+  root.replaceChildren(
+    ...(Object.keys(label) as AppFilter[]).map((f) => {
+      const b = el('button', { type: 'button', className: `hub-filter${appFilter === f ? ' on' : ''}` }, label[f], el('span', { className: 'count' }, String(counts[f])));
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', String(appFilter === f));
+      b.addEventListener('click', () => {
+        appFilter = f;
+        void renderHubAll();
       });
-      table.append(
-        el(
-          'tr',
-          {},
-          el('td', {}, ab.title, el('div', { className: 'muted' }, ab.description)),
-          el('td', { className: 'group' }, ab.group),
-          el('td', {}, select),
-        ),
-      );
-    }
-    const details = el('details', {}, el('summary', {}, `What it may do (${a.abilities.length})`), table);
-    // who can use it: the user picks members; Jarvis (front desk) always can
-    const who = el('div', { className: 'who-uses' }, el('span', { className: 'who-label muted small' }, 'Who can use it'));
-    if (a.everyone) {
-      who.append(el('span', { className: 'muted small' }, 'Everyone on the team, always'));
+      return b;
+    }),
+  );
+}
+
+function emptyCard(title: string, text: string, button?: { label: string; run: () => void }): HTMLElement {
+  const kids: HTMLElement[] = [el('h3', {}, title), el('p', {}, text)];
+  if (button) {
+    const b = el('button', { type: 'button', className: 'primary' }, button.label);
+    b.addEventListener('click', button.run);
+    kids.push(b);
+  }
+  return el('div', {}, ...kids);
+}
+
+async function renderHubAll() {
+  const team = await teamMembers();
+  const all = hubApps.filter(isConnector);
+  renderFilters(all);
+  $('apps-checked').textContent = checking ? 'Checking your Claude account…' : sinceText(appsInfo?.checkedAt ?? 0);
+  $('apps-check').classList.toggle('busy', checking);
+  $<HTMLButtonElement>('apps-check').disabled = checking;
+
+  // apps from the Claude account: full cards for the ones ready to use, small tiles for the ones to sign in to
+  const shown = all
+    .filter((a) => appFilter === 'all' || (appFilter === 'connected' ? !needsSignIn(a) : needsSignIn(a)))
+    .filter((a) => matchesQuery(a.name, a.description, a.maker, a.category))
+    .sort((x, y) => x.name.localeCompare(y.name));
+  const ready = shown.filter((a) => a.status !== 'needs-auth');
+  const signIn = shown.filter((a) => a.status === 'needs-auth');
+  ready.sort((x, y) => Number(x.status !== 'connected') - Number(y.status !== 'connected'));
+  $('hub-apps').replaceChildren(...ready.map((a) => connectorCard(a, team)));
+  $('apps-signin-head').classList.toggle('hidden', !signIn.length);
+  $('apps-signin').replaceChildren(...signIn.map((a) => appTile(a.name, a.description, 'Sign in', () => openConnect(a.name), `Sign in to ${a.name} on claude.ai`)));
+
+  const empty = $('apps-empty');
+  const connectedAny = all.some((a) => a.status === 'connected');
+  let message: HTMLElement | null = null;
+  if (!all.length && !appsInfo?.checkedAt)
+    message = emptyCard(checking ? 'Checking your Claude account…' : 'Your Claude account has not been checked yet', 'Jarvis asks Claude Code which apps you connected on claude.ai. It takes a few seconds and uses no messages from your plan.', checking ? undefined : { label: 'Check now', run: () => void checkNow() });
+  else if (hubQuery && !shown.length)
+    message = /git\s*hub/i.test(hubQuery)
+      ? emptyCard('GitHub is not offered as an app for Jarvis', "claude.ai's GitHub Integration works only inside claude.ai (Projects and cloud sessions); it never reaches other apps. Your Project Manager already works with code and Git on this computer through coding tasks.")
+      : emptyCard(`No app in your account matches “${hubQuery}”`, 'Not there yet? Connect it on claude.ai: it shows up here as soon as you are signed in.', { label: 'Connect an app', run: () => openConnect(null) });
+  else if (!connectedAny && appFilter !== 'signin')
+    message = emptyCard('No apps connected yet', 'Connect Gmail, Google Calendar, Notion, Spotify or any other app on claude.ai, sign in once, and your team can use it here.', { label: 'Connect an app', run: () => openConnect(null) });
+  else if (appFilter === 'signin' && !shown.length) message = emptyCard('Every app is signed in', 'All the apps in your Claude account are ready to use.');
+  empty.classList.toggle('hidden', !message);
+  if (message) empty.replaceChildren(message);
+
+  // popular apps the account does not have yet
+  const suggestions = appFilter === 'connected' ? [] : (appsInfo?.suggestions ?? []).filter((s) => matchesQuery(s.name, s.description, s.maker, s.category));
+  $('apps-suggest-head').classList.toggle('hidden', !suggestions.length);
+  $('apps-suggest').replaceChildren(...suggestions.map((s) => appTile(s.name, s.description, 'Connect', () => openConnect(s.name), `Connect ${s.name} on claude.ai`)));
+
+  // Jarvis's own tools
+  const tools = hubApps.filter((a) => !isConnector(a) && matchesQuery(a.name, a.description, ...a.abilities.map((b) => b.title)));
+  $('hub-list').replaceChildren(...tools.map((a) => toolCard(a, team)));
+  const none = $('hub-none');
+  none.classList.toggle('hidden', tools.length > 0 || !hubQuery);
+  if (!tools.length && hubQuery) none.replaceChildren(emptyCard(`No team tool matches “${hubQuery}”`, 'Try another word, like “screen”, “reminders” or “record”.'));
+}
+
+function setHub(list: HubApp[]) {
+  hubApps = list;
+  void renderHubAll();
+}
+
+async function loadHub() {
+  const [list, info] = await Promise.all([j.hubList(), j.connectorsInfo()]);
+  hubApps = list;
+  appsInfo = info;
+  checking = info.checking;
+  await renderHubAll();
+}
+
+/** Ask the Claude account again which apps are connected (a few seconds, no tokens). */
+async function checkNow() {
+  if (checking) return;
+  checking = true;
+  void renderHubAll();
+  try {
+    showHubError(null);
+    hubApps = await j.connectorsRefresh();
+    appsInfo = await j.connectorsInfo();
+  } catch (err) {
+    showHubError(err);
+  } finally {
+    checking = false;
+  }
+  if (waitingFor) {
+    const nowConnected = hubApps.filter((a) => isConnector(a) && a.status === 'connected');
+    const want = waitingFor.name?.toLowerCase();
+    // names can differ a little ("GitHub" / "GitHub Enterprise"): match either way round
+    const target = want ? nowConnected.find((a) => a.name.toLowerCase().includes(want) || want.includes(a.name.toLowerCase())) : null;
+    if (target || nowConnected.length > waitingFor.connectedBefore) {
+      const name = target?.name ?? nowConnected.find((a) => !waitingFor!.before.includes(a.name))?.name ?? waitingFor.name;
+      stopWaitingTimer();
+      waitingFor = null;
+      // say so right here, then fade the message away
+      const box = $('apps-waiting');
+      box.classList.add('done');
+      $('apps-waiting-title').textContent = name ? `${name} is connected` : 'Your new app is connected';
+      $('apps-waiting-sub').textContent = 'Your team can use it now. Its rules and who can use it are on its card below.';
+      window.setTimeout(() => {
+        if (!waitingFor) closeWaiting();
+      }, 6000);
     } else {
-      const on = new Set(a.members);
-      who.append(
-        memberChips(team, on, async (id) => {
-          if (on.has(id)) on.delete(id);
-          else on.add(id);
-          try {
-            showHubError(null);
-            teamCache = null; // the Team page lists each member's apps
-            renderHub(await j.hubSetMembers(a.id, [...on]));
-          } catch (err) {
-            showHubError(err);
-          }
-        }),
-        el('span', { className: 'muted small who-note' }, on.size ? '+ Jarvis' : 'Only Jarvis'),
-      );
-      if (a.membersChanged) {
-        const reset = el('button', { type: 'button', className: 'link-btn small' }, 'Reset');
-        reset.title = 'Back to the usual members';
-        reset.addEventListener('click', async () => {
-          teamCache = null;
-          renderHub(await j.hubSetMembers(a.id, null));
-        });
-        who.append(reset);
+      const minutes = (Date.now() - waitingFor.since) / 60_000;
+      const at = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const who = waitingFor.name ?? 'The app';
+      if (minutes >= WAIT_MINUTES) {
+        stopWaitingTimer();
+        $('apps-waiting-title').textContent = `${who} is not in your Claude account's apps`;
+        $('apps-waiting-sub').textContent = `Checked at ${at}. On claude.ai it must say "Connected" under Settings → Connectors. Some claude.ai integrations (like GitHub's) work only on claude.ai itself and never reach other apps. Press Check again after connecting.`;
+      } else {
+        $('apps-waiting-sub').textContent = `Not connected yet (checked at ${at}). Jarvis checks again every few seconds while you finish on claude.ai: this message goes away by itself once it is connected.`;
       }
     }
-    root.append(el('div', { className: `card app-card${a.enabled ? '' : ' off'}` }, head, el('div', { className: 'muted app-desc' }, a.description), who, details));
   }
+  await renderHubAll();
 }
+
+/** While waiting for an app: check every 15 seconds for up to WAIT_MINUTES (and whenever the window gets focus). */
+const WAIT_MINUTES = 5;
+let waitingTimer = 0;
+function stopWaitingTimer() {
+  window.clearInterval(waitingTimer);
+  waitingTimer = 0;
+}
+
+/** Open claude.ai's connectors page and wait for the user to come back. */
+function openConnect(name: string | null) {
+  showHubError(null);
+  j.connectorsOpen().catch(showHubError);
+  const connected = hubApps.filter((a) => isConnector(a) && a.status === 'connected');
+  waitingFor = { name, connectedBefore: connected.length, before: connected.map((a) => a.name), since: Date.now() };
+  $('apps-waiting-title').textContent = name ? `Finish connecting ${name} on claude.ai` : 'Finish on claude.ai';
+  $('apps-waiting-sub').textContent = name
+    ? `Find ${name}, click Connect and sign in. This message goes away by itself once Jarvis sees it connected.`
+    : 'Find the app you want, click Connect and sign in. This message goes away by itself once Jarvis sees it connected.';
+  $('apps-waiting').classList.remove('hidden', 'done');
+  stopWaitingTimer();
+  waitingTimer = window.setInterval(() => {
+    if (waitingFor && !document.hidden) void checkNow();
+  }, 15_000);
+}
+function closeWaiting() {
+  stopWaitingTimer();
+  waitingFor = null;
+  $('apps-waiting').classList.add('hidden');
+  $('apps-waiting').classList.remove('done');
+}
+
+$('hub-q').addEventListener('input', () => {
+  hubQuery = $<HTMLInputElement>('hub-q').value.trim();
+  void renderHubAll();
+});
+$('apps-check').addEventListener('click', () => void checkNow());
+$('apps-connect').addEventListener('click', () => openConnect(null));
+$('apps-waiting-check').addEventListener('click', () => void checkNow());
+$('apps-waiting-close').addEventListener('click', closeWaiting);
+// back from the browser: see whether the app is connected now
+window.addEventListener('focus', () => {
+  if (waitingFor) void checkNow();
+});
+j.onConnectorsChanged(() => {
+  if ($('view-hub').classList.contains('active')) void loadHub();
+});
 
 /* ---------- activity ---------- */
 interface ActivityItem { id: string; ts: string; role?: string; appId: string; ability: string; outcome: 'done' | 'blocked' | 'declined' | 'error'; detail: string }

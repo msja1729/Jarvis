@@ -46,7 +46,8 @@ export interface AppDef {
   id: string;
   name: string;
   description: string;
-  kind: 'builtin' | 'mcp';
+  /** builtin: Jarvis's own; mcp: added by the user in an older version; connector: from the user's Claude account (connectors/). */
+  kind: 'builtin' | 'mcp' | 'connector';
   /** On without any setup (screen, recorder, team folders). Others start off until connected. */
   defaultEnabled?: boolean;
   abilities: AbilityDef[];
@@ -77,7 +78,7 @@ export interface JarvisSettings {
   pa?: { planAt?: string | null; lastPlan?: string; reviewAt?: string | null; lastReview?: string };
   /** Shortcut that shows/hides the voice card while Jarvis answers; null = default. */
   voiceCardHotkey?: string | null;
-  /** OAuth client IDs for Google / Microsoft sign-in (not secret). */
+  /** Client ids of the Google / Microsoft sign-ins older versions used (cleared at start; apps now come from the Claude account). */
   oauthClients: Record<string, { clientId: string }>;
   voiceOutput: boolean;
   /** Natural voice chosen for each team role (Jarvis itself uses ttsVoice). */

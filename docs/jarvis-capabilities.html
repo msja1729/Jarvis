@@ -99,7 +99,7 @@
       </div>
     </div>
   </div>
-  <div class="meta"><span>Version 0.1.0 · Windows · November 2026</span><span>github.com/msja1729/Jarvis</span></div>
+  <div class="meta"><span>Version 0.7.0 · Windows · November 2026</span><span>github.com/msja1729/Jarvis</span></div>
 </div>
 
 <!-- ================= CONTENTS ================= -->
@@ -119,7 +119,7 @@
     <li>Documents and code</li>
     <li>Looking at your screen</li>
     <li>Meetings and recordings</li>
-    <li>Email and calendar</li>
+    <li>Email, calendar and your other apps</li>
     <li>Reminders, morning plan and project board</li>
     <li>Coding supervisor</li>
     <li>Web search</li>
@@ -330,7 +330,7 @@ a memory of you, a folder on your computer, a natural voice and a name you can c
   <p><b>About me</b> (working hours, deep-work window, best time for meetings, protected time, recurring commitments, important people, preferences) and
   <b>Writing style</b> (your example emails, greeting and sign-off, phrases to avoid). Plus her folders: Plans, Inbox notes, Personal lists.</p>
   <h4>Her apps</h4>
-  <p><span class="tag">Gmail / Outlook</span><span class="tag">Google / Outlook Calendar</span><span class="tag">Reminders</span><span class="tag">Project board</span><span class="tag">Meeting recorder</span><span class="tag">Documents</span><span class="tag">Web search</span><span class="tag">Team folders</span></p>
+  <p><span class="tag">Gmail &amp; Microsoft 365</span><span class="tag">Google Calendar</span><span class="tag">Your other apps</span><span class="tag">Reminders</span><span class="tag">Project board</span><span class="tag">Meeting recorder</span><span class="tag">Documents</span><span class="tag">Web search</span><span class="tag">Team folders</span></p>
   <h4>Proactive</h4>
   <p>Turn on her <b>morning plan</b> (Team page → set a time) and every day she goes through your new email, puts deadlines on the board, plans the
   day, saves it, and tells you the shape of your day out loud. She also says your <b>reminders</b> out loud at the right time, even if the main window is closed.</p>
@@ -514,6 +514,18 @@ on the empty side of your screen (or full screen), with each picture appearing e
   <li>They take it in straight away: <b>photos</b> are looked at, <b>PDFs</b> are read, <b>videos</b> become a picture of each scene (like the meeting slides) plus a timed transcript of what is said, and <b>recordings</b> become a timed transcript. All of this happens on your computer; for long videos, the first 40 minutes.</li>
   <li>You can also drop files on the chat or use the <b>paperclip</b>: they go, with your message, to the member who answers it.</li>
 </ul>
+<h3>They show you what they made</h3>
+<ul>
+  <li>When a member wants you to see a document, picture or report (<span class="say">Maya, show me my trip plan</span>), a <b>large preview opens next to the chat</b>, like Claude's side panel. The window grows if it needs room.</li>
+  <li>It shows <b>Markdown documents</b> fully drawn (headings, tables, task lists, code, and flowcharts), <b>pictures</b>, <b>PDFs</b> (with pages, zoom and search), <b>web pages</b> (with their scripts switched off), <b>spreadsheets (CSV)</b>, code and text, <b>video</b> and <b>sound</b>.</li>
+  <li>Several files appear as a strip at the top: click one to preview it, use &larr; / &rarr;, or <b>double-click (or the corner button) to open it big</b>, filling the window (F or Esc to go back). Buttons open it in its own app or show it in its folder; you can drag the edge to make the preview wider.</li>
+  <li>A card in the chat lists what was shown, so you can open it again later, also from an earlier conversation.</li>
+  <li>Only files in the team folders are ever shown, never secret files.</li>
+</ul>
+<h3>"On it, about 2 minutes"</h3>
+<ul>
+  <li>When a request needs work (searching email, writing a draft, opening files), the member first says <b>right away</b> what they will do and roughly how long it takes, then works. Their progress shows quietly under the typing dots, and the answer follows.</li>
+</ul>
 <h3>"What did they just say?" (listen-along)</h3>
 <ul>
   <li><span class="say">listen along</span> (or <span class="say">listen to this lecture</span>): Jarvis listens to your <b>computer's sound</b> (a lecture, a video, a call), not your microphone. A small "Listening along" badge shows at the top of the screen with a Stop button.</li>
@@ -524,18 +536,25 @@ on the empty side of your screen (or full screen), with each picture appearing e
 
 <!-- ================= 14-15 ================= -->
 <section>
-<h2><span class="num">14</span>Email and calendar</h2>
+<h2><span class="num">14</span>Email, calendar and your other apps</h2>
+<p>Outside apps come from <b>your Claude account</b>: the connectors you add on claude.ai (Gmail, Google Calendar, Google Drive, Microsoft 365,
+Notion, Slack, Spotify, Asana, Canva, Figma and many more). Connect an app once on claude.ai and sign in; your team can use it in Jarvis
+straight away. There is nothing to register or set up.</p>
 <table>
-  <thead><tr><th style="width:22%">App</th><th>What the team can do</th><th style="width:28%">Default permission</th></tr></thead>
+  <thead><tr><th style="width:22%">What the app is asked to do</th><th>Examples</th><th style="width:30%">Default permission</th></tr></thead>
   <tbody>
-    <tr><td><b>Gmail / Outlook mail</b></td><td>Read recent emails (with search), read one email, draft replies in your style, send a draft, delete an email</td><td>Reading allowed; drafting and sending ask you first; deleting always asks</td></tr>
-    <tr><td><b>Google / Outlook Calendar</b></td><td>Read events, create events, delete events</td><td>Reading allowed; creating asks first; deleting always asks</td></tr>
+    <tr><td><b>Read and search</b></td><td>Read and search email, list calendar events, find a file, look up a page</td><td>Allowed</td></tr>
+    <tr><td><b>Make changes and send</b></td><td>Draft or send an email, add an event, post a message, play a song</td><td>Ask me first (a popup shows exactly what will happen)</td></tr>
+    <tr><td><b>Delete or spend money</b></td><td>Delete an email or event, cancel, pay</td><td>Always asks; can never be set to Allowed</td></tr>
   </tbody>
 </table>
 <p>Typical uses: <span class="say">Maya, what's on my calendar tomorrow?</span> · <span class="say">reply to the professor and ask for an extension to Friday</span> ·
-<span class="say">find all deadlines in my email this week</span>. Email content is treated as information only: instructions hidden inside an email are never followed.</p>
-<div class="callout amber"><p><b>Current setup step:</b> connecting Google or Microsoft needs a one-time setup of your own app registration (guided in the
-Tool Hub). One-click sign-in is planned (see section 24).</p></div>
+<span class="say">find all deadlines in my email this week</span>. Email and app content is treated as information only: instructions hidden inside an email are never followed.</p>
+<ul>
+  <li><b>Jarvis is the gatekeeper.</b> Claude talks to the app directly, but every single action first goes to Jarvis: is this member allowed this app, and is this kind of action Off, Ask me first or Allowed? Everything is logged on the Activity page.</li>
+  <li><b>Each member sees only their apps.</b> An app goes to the members whose field it fits (email and calendar to Maya, GitHub-style coding apps to Ryan, PubMed and Clinical Trials to Sara); the others don't even see its tools. You can change who uses each app.</li>
+  <li><b>Personal Outlook.com</b> addresses are not supported by Claude's Microsoft 365 connector (work and school accounts are). claude.ai's <b>GitHub Integration</b> works only inside claude.ai, so it does not appear in Jarvis.</li>
+</ul>
 
 <h2><span class="num">15</span>Reminders, plans, medicines, bills and the project board</h2>
 <ul>
@@ -592,7 +611,8 @@ Tool Hub). One-click sign-in is planned (see section 24).</p></div>
 </ul>
 <h3>The apps</h3>
 <ul>
-  <li><b>Email and calendar:</b> Gmail and Google Calendar (Google account), Outlook mail and Outlook Calendar (Microsoft account).</li>
+  <li><b>Apps from your Claude account:</b> every connector you added on claude.ai. Connected apps show as cards (on/off, who can use it, and the three rules: reading, making changes, deleting or paying); apps in your account that still need a sign-in show as small tiles with a <b>Sign in</b> button; popular apps you haven't added have a <b>Connect</b> button. A <b>search bar</b> and filters (All, Connected, Sign in needed) find any app.</li>
+  <li><b>Connecting an app:</b> click Connect or Sign in; claude.ai opens on its connectors page, where you click Connect and sign in. A banner in the Tool Hub waits for you, checks again every few seconds and when you come back, and goes away by itself with "Gmail is connected" once it is.</li>
   <li><b>Built in, nothing to set up:</b> web search, lessons, documents &amp; code, meeting recorder, screen look, reminders, project board, team folders, skills, team (members asking each other) and the coding supervisor.</li>
   <li>Turn each one on or off; nothing else can be added in this version.</li>
   <li><b>Claude Code's own tools, for every expert</b> (on by default; Settings &rarr; Conversation): reading and writing files, finding and searching files, web search and web pages, running commands (for example Python for exact calculations or charts) and to-do lists, next to Jarvis's own tools. Each expert works in their own folder, so whatever they create is saved there (Team page &rarr; Open folder).
@@ -641,9 +661,9 @@ Tool Hub). One-click sign-in is planned (see section 24).</p></div>
 <table>
   <tbody>
     <tr><td style="width:32%"><b>On your computer</b></td><td>Chats and history, members' memory and folders, profiles, reminders, the board, transcripts, meeting videos and screen pictures you chose to keep (in your Videos folder), voices and speech recognition, settings.</td></tr>
-    <tr><td><b>In the Windows Credential Manager</b></td><td>Your sign-ins to Google, Microsoft and added apps, and app keys. Never in files.</td></tr>
+    <tr><td><b>In the Windows Credential Manager</b></td><td>App keys. Sign-ins to your apps are kept by your Claude account (claude.ai), never by Jarvis.</td></tr>
     <tr><td><b>Sent to Anthropic</b></td><td>Your requests to the team go to Claude on your own plan, through Claude Code. Jarvis never reads or stores your Claude login.</td></tr>
-    <tr><td><b>Sent to other services</b></td><td>Only what you use: web searches go to the search service (Exa); email and calendar actions go to Google or Microsoft; added apps go to their own service.</td></tr>
+    <tr><td><b>Sent to other services</b></td><td>Only what you use: web searches go to the search service (Exa); app actions (email, calendar and the rest) go through your Claude account to that app's own service.</td></tr>
     <tr><td><b>Never uploaded</b></td><td>Your voice. Speech recognition and the natural voices run on your computer.</td></tr>
   </tbody>
 </table>
@@ -696,7 +716,7 @@ natural voices and fast speech recognition; plus Claude Code (about 350 MB) if i
     <tr><td>Windows only</td><td>A Mac version (built and signed on a Mac).</td></tr>
     <tr><td>The installer isn't code-signed, so Windows shows a warning</td><td>A code-signing certificate removes the warning and protects updates.</td></tr>
     <tr><td>Fast speech recognition needs an NVIDIA graphics card; other computers are slower</td><td>A light, fast model for ordinary laptops, and an optional <b>Jarvis Cloud Voice</b> (streaming recognition and premium voices) for any computer.</td></tr>
-    <tr><td>Gmail, Outlook and calendars need a one-time app registration by the user</td><td>One-click Connect for Google, Microsoft and GitHub once Jarvis is registered (Google requires verification for Gmail access).</td></tr>
+    <tr><td>Connecting an app opens claude.ai in your browser (other apps cannot add a connector to your Claude account for you)</td><td>Connecting inside Jarvis, if Anthropic offers a way to do it.</td></tr>
     <tr><td>Phone health data (Apple Health, Android Health Connect) isn't connected</td><td>Import a health export into Sara's profile; later, wearable services (Oura, Garmin, Fitbit) or a companion phone app.</td></tr>
     <tr><td>Typical time from you stopping talking to the first spoken word: about 3.5–5.5 seconds</td><td>Smarter end-of-turn detection, keeping Claude ready between messages, and speaking sooner, aiming for about 1.5–2.5 seconds.</td></tr>
     <tr><td>The experts' playbooks were written from standard references</td><td>Review by professionals, exact calculators (calories, EMI, tax), and a side-by-side test against plain Claude.</td></tr>

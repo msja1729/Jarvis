@@ -17,7 +17,7 @@ interface AppLike {
   id: string;
   name: string;
   description?: string;
-  kind: 'builtin' | 'mcp';
+  kind: 'builtin' | 'mcp' | 'connector';
 }
 
 /** Apps every member always has; their "Who can use it" cannot be changed. */
@@ -27,6 +27,8 @@ export function canUse(role: RoleId, app: AppLike, choices: AppMembers = {}): bo
   if (role === 'jarvis' || isShared(app.id)) return true;
   const chosen = choices[app.id];
   if (Array.isArray(chosen)) return chosen.includes(role);
+  // apps from the user's Claude account go to the members whose field they fit (Gmail → the PA)
+  if (app.kind === 'connector') return guessMembers(app).includes(role);
   return roleUsesApp(roleById(role), app.id, app.kind === 'mcp');
 }
 
@@ -38,9 +40,9 @@ export const cleanMembers = (list: unknown): RoleId[] =>
   Array.isArray(list) ? SPECIALISTS.filter((r) => list.includes(r)) : [];
 
 const HINTS: [Exclude<RoleId, 'jarvis'>, RegExp][] = [
-  ['pm', /\b(git|github|gitlab|bitbucket|code|coding|repo|issues?|jira|linear|asana|trello|clickup|sprint|projects?|deploy|vercel|netlify|sentry|figma|database|sql|supabase|docker|api)\b/],
-  ['pa', /\b(e-?mail|mail|gmail|outlook|calendar|slack|teams|whatsapp|telegram|todo|to-do|tasks?|reminders?|notes?|notion|evernote|drive|dropbox|docs|contacts?|travel|flights?|zoom|meet|maps)\b/],
-  ['doctor', /\b(health|fitness|fit|medical|medicine|sleep|nutrition|diet|strava|garmin|oura|whoop|apple health|workouts?)\b/],
+  ['pm', /\b(meetings|git|github|gitlab|bitbucket|code|coding|repo|issues?|jira|linear|asana|trello|clickup|sprint|projects?|deploy|vercel|netlify|sentry|figma|database|sql|supabase|docker|api)\b/],
+  ['pa', /\b(e-?mail|mail|gmail|outlook|calendar|slack|teams|whatsapp|telegram|todo|to-do|tasks?|reminders?|notes?|notion|evernote|drive|dropbox|docs|contacts?|travel|flights?|zoom|meet|maps|music|spotify|podcasts?)\b/],
+  ['doctor', /\b(health|fitness|fit|medical|medicine|sleep|nutrition|diet|strava|garmin|oura|whoop|apple health|workouts?|pubmed|biomedical|clinical|chembl|drugs?|biorxiv|biology)\b/],
   ['finance', /\b(bank|banking|finance|financial|stripe|invoices?|accounting|budget|expenses?|crypto|stocks?|market|tax|payments?|sheets|excel|quickbooks|xero|zerodha)\b/],
 ];
 

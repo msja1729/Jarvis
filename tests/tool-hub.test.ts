@@ -4,7 +4,7 @@ import { discoverApp, McpProxyExecutor } from '../gateway/mcp-proxy.js';
 import { SettingsStore } from '../gateway/settings.js';
 import { MAX_RESULT_CHARS } from '../gateway/trim.js';
 import { DestructiveLockError } from '../security/destructive-lock.js';
-import { GMAIL_APP } from '../tools/email/definition.js';
+import { GMAIL_APP } from './fixtures/sample-apps.js';
 import { ROOT, SpyExecutor, makeCore, tmpDir } from './helpers.js';
 
 const fakeServer = { command: process.execPath, args: [path.join(ROOT, 'tests', 'fixtures', 'fake-mcp-server.mjs')] };

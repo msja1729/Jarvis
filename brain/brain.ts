@@ -34,6 +34,8 @@ export interface AskOptions {
   consult?: boolean;
   /** The reply as it is being written (pieces of text), so speaking can start early. */
   onText?: (delta: string) => void;
+  /** What the member says before they start working ("On it, about 2 minutes"), and while they work. */
+  onNote?: (text: string) => void;
 }
 
 export interface Brain {

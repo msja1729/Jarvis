@@ -100,14 +100,11 @@ export class SettingsStore {
     this.save();
   }
 
-  setOAuthClient(accountId: string, clientId: string | null): void {
-    if (clientId) this.data.oauthClients[accountId] = { clientId: clientId.trim() };
-    else delete this.data.oauthClients[accountId];
+  /** Forgets the Google / Microsoft client ids older versions used for their own sign-ins. */
+  clearOAuthClients(): void {
+    if (!Object.keys(this.data.oauthClients ?? {}).length) return;
+    this.data.oauthClients = {};
     this.save();
-  }
-
-  oauthClientId(accountId: string): string | null {
-    return this.data.oauthClients[accountId]?.clientId ?? null;
   }
 
   setSupervisor(patch: NonNullable<JarvisSettings['supervisor']>): void {

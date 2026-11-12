@@ -12,6 +12,8 @@ import { isRole, RoleId, roleById } from '../../roles/roles.js';
 import { ROLE_FOLDER, roleFolder } from '../../roles/folders.js';
 import { isSecretFile } from '../documents/executor.js';
 import { pdfPages } from '../documents/pdf-text.js';
+import { CLAUDE_CONFIG } from '../../supervisor/policy.js';
+import { MAX_SHOW, ShownFile, shownFile, teamFile } from './viewer.js';
 
 export const PART_CHARS = 6000;
 export const MAX_WRITE_CHARS = 200_000;
@@ -32,6 +34,8 @@ export interface FilesDeps {
   onChange?: (role: RoleId) => void;
   /** Shows the user a drop box for this member; resolves with what they shared (saved in the member's folder). */
   askToShare?: (role: RoleId, prompt: string) => Promise<RawResult>;
+  /** Opens the preview next to the chat with these files (already checked: inside the Team folder). */
+  showUser?: (role: RoleId, title: string, files: ShownFile[]) => Promise<void> | void;
 }
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
@@ -100,6 +104,8 @@ export class FilesExecutor implements AppExecutor {
         if (!this.deps.askToShare || self === 'jarvis') throw new Error('Sharing files is not available here.');
         return this.deps.askToShare(self, str(input.prompt).trim().slice(0, 160));
       }
+      case 'show_user':
+        return this.showUser(input, ctx);
       case 'list':
         return this.list(input, ctx);
       case 'read':
@@ -110,7 +116,7 @@ export class FilesExecutor implements AppExecutor {
         return this.write(input, ctx);
       case 'make_folder': {
         const { role, dir } = this.base(ctx, undefined, true);
-        const full = this.resolve(dir, input.path, false);
+        const full = this.writable(this.resolve(dir, input.path, false));
         fs.mkdirSync(full, { recursive: true });
         this.deps.onChange?.(role);
         return { text: `Folder ready: ${this.show(dir, full)}` };
@@ -118,7 +124,7 @@ export class FilesExecutor implements AppExecutor {
       case 'move': {
         const { role, dir } = this.base(ctx, undefined, true);
         const from = this.resolve(dir, input.from, false);
-        const to = this.resolve(dir, input.to, false);
+        const to = this.writable(this.resolve(dir, input.to, false));
         if (!fs.existsSync(from)) throw new Error(`Nothing at ${this.show(dir, from)}.`);
         if (fs.existsSync(to)) throw new Error(`${this.show(dir, to)} already exists.`);
         if (fs.statSync(from).isFile() && !WRITABLE.test(to)) throw new Error('Keep a text file type (.md, .txt, .csv, .json…).');
@@ -139,6 +145,50 @@ export class FilesExecutor implements AppExecutor {
       default:
         throw new Error(`unknown files ability ${ability}`);
     }
+  }
+
+  private async showUser(input: Record<string, unknown>, ctx?: CallContext): Promise<RawResult> {
+    if (!this.deps.showUser) throw new Error('Showing files is not available here.');
+    const self = this.self(ctx);
+    // "files": [...] as asked; one file as "path" (like the other folder abilities) or a single string also works
+    const raw = Array.isArray(input.files) ? input.files : [input.files, input.path, input.file].filter((v) => typeof v === 'string');
+    const asked = raw.map(str).filter((p) => p.trim());
+    if (!asked.length) throw new Error('Give the files to show, e.g. ["Plans/Trip plan.md"].');
+    const files: ShownFile[] = [];
+    const problems: string[] = [];
+    for (const p of asked.slice(0, MAX_SHOW)) {
+      try {
+        let full: string;
+        if (path.isAbsolute(p.trim()) || /^[a-zA-Z]:/.test(p.trim())) full = teamFile(this.deps.jarvisDir, p);
+        else {
+          // "Plans/a.md" in the member's (or owner's) folder; "PA/Plans/a.md" as the folder list shows it
+          const inFolder = () => {
+            if (self === 'jarvis' && !input.owner) throw new Error('give a full path, or the owner of the folder');
+            const { dir } = this.base(ctx, input.owner, false);
+            return teamFile(this.deps.jarvisDir, this.resolve(dir, p, false));
+          };
+          try {
+            full = inFolder();
+          } catch (err) {
+            if (p.trim().replace(/\\/g, '/').split('/').includes('..')) throw err;
+            try {
+              full = teamFile(this.deps.jarvisDir, p);
+            } catch {
+              throw err;
+            }
+          }
+        }
+        if (!files.some((f) => f.url === shownFile(this.deps.jarvisDir, full).url)) files.push(shownFile(this.deps.jarvisDir, full));
+      } catch (err) {
+        problems.push(`${p}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    if (!files.length) throw new Error(`Nothing to show. ${problems.join(' ')}`);
+    await this.deps.showUser(self, str(input.title).trim().slice(0, 80), files);
+    const more = asked.length > MAX_SHOW ? ` Only the first ${MAX_SHOW} were shown.` : '';
+    return {
+      text: `The user now sees ${files.map((f) => f.name).join(', ')} in a large preview next to the chat, where they flip through them.${more}${problems.length ? ` Not shown: ${problems.join('; ')}.` : ''} Do not paste their contents into your reply; a sentence about what they are looking at is enough.`,
+    };
   }
 
   private list(input: Record<string, unknown>, ctx?: CallContext): RawResult {
@@ -220,9 +270,15 @@ export class FilesExecutor implements AppExecutor {
     return { text: hits.length ? `${hits.join('\n')}${hits.length >= MAX_HITS ? '\n…(more not shown)' : ''}` : `Nothing found for "${q}".` };
   }
 
+  /** A path the member may create or change: never Claude Code's settings or instructions (.mcp.json, .claude, CLAUDE.md). */
+  private writable(full: string): string {
+    if (CLAUDE_CONFIG.test(full)) throw new Error('Claude Code settings files (.mcp.json, .claude, CLAUDE.md) cannot be created or changed here.');
+    return full;
+  }
+
   private write(input: Record<string, unknown>, ctx?: CallContext): RawResult {
     const { role, dir } = this.base(ctx, undefined, true);
-    const full = this.resolve(dir, input.path, false);
+    const full = this.writable(this.resolve(dir, input.path, false));
     if (!WRITABLE.test(full)) throw new Error('Write text files only: .md, .txt, .csv, .json, .html, code files…');
     const content = str(input.content);
     if (content.length > MAX_WRITE_CHARS) throw new Error(`Too long: keep a file under ${MAX_WRITE_CHARS.toLocaleString()} characters.`);

@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: jarvis-view:; frame-src 'self'" />
     <title>Jarvis</title>
     <link rel="stylesheet" href="styles.css" />
     <link rel="stylesheet" href="onboard.css" />
@@ -82,7 +82,7 @@
                 <div id="suggestions" class="suggestions"></div>
               </div>
             </div>
-            <div id="progress" class="progress hidden" aria-label="Replying"><span class="dots"><i></i><i></i><i></i></span></div>
+            <div id="progress" class="progress hidden" aria-label="Replying"><span class="dots"><i></i><i></i><i></i></span><span id="progress-text" class="progress-text"></span></div>
             <div id="role-chips" class="role-chips" role="radiogroup" aria-label="Talk to"></div>
             <div id="attachments" class="attachments hidden"></div>
             <form id="composer" class="glass">
@@ -102,6 +102,28 @@
               <button type="button" id="old-new" class="chip">New chat</button>
             </div>
             </div>
+            <aside id="viewer" class="viewer hidden" aria-label="Preview">
+              <div id="viewer-resize" class="viewer-resize" title="Drag to make the preview wider or narrower"></div>
+              <header class="viewer-head">
+                <div class="viewer-titles">
+                  <div class="viewer-kicker"><span id="viewer-who" class="viewer-who"><i></i><span></span></span><span id="viewer-count" class="muted"></span></div>
+                  <div id="viewer-title" class="viewer-title"></div>
+                </div>
+                <span class="spacer"></span>
+                <button type="button" id="viewer-prev" class="viewer-btn" title="Previous file (←)" aria-label="Previous file"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6" /></svg></button>
+                <button type="button" id="viewer-next" class="viewer-btn" title="Next file (→)" aria-label="Next file"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" /></svg></button>
+                <span class="viewer-sep"></span>
+                <button type="button" id="viewer-app" class="viewer-btn" title="Open in its app" aria-label="Open in its app"><svg viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></svg></button>
+                <button type="button" id="viewer-folder" class="viewer-btn" title="Show in its folder" aria-label="Show in its folder"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg></button>
+                <button type="button" id="viewer-big" class="viewer-btn" title="Open big (F)" aria-label="Open big"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg></button>
+                <button type="button" id="viewer-close" class="viewer-btn" title="Close preview (Esc)" aria-label="Close preview"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg></button>
+              </header>
+              <div id="viewer-strip" class="viewer-strip" role="tablist" aria-label="Files"></div>
+              <div class="viewer-stage">
+                <iframe id="viewer-frame" class="viewer-frame" title="Preview"></iframe>
+                <div id="viewer-loading" class="viewer-loading hidden"><span class="dots"><i></i><i></i><i></i></span></div>
+              </div>
+            </aside>
           </section>
 
           <section id="view-team" class="view">
@@ -122,29 +144,47 @@
           </section>
 
           <section id="view-hub" class="view">
+            <div class="hub-bar glass">
+              <label class="hub-search">
+                <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6" /><path d="M20 20l-4.5-4.5" /></svg>
+                <input id="hub-q" type="search" placeholder="Search apps and tools" autocomplete="off" />
+              </label>
+              <div id="hub-filters" class="hub-filters" role="radiogroup" aria-label="Show"></div>
+              <span class="spacer"></span>
+              <button type="button" id="apps-check" class="chip hub-check" title="Ask your Claude account which apps are connected">
+                <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5" /></svg><span>Check again</span>
+              </button>
+              <button type="button" id="apps-connect" class="primary hub-connect">
+                <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>Connect an app
+              </button>
+            </div>
+
             <div class="section-head">
-              <h2>Accounts</h2>
-              <p>Sign in once per account. Google covers Gmail and Google Calendar; Microsoft covers Outlook mail and calendar.</p>
+              <h2>Apps from your Claude account</h2>
+              <p>Gmail, Google Calendar, Microsoft 365, Notion, Slack, Spotify and many more. You sign in once on claude.ai, and your team can use them here. Jarvis checks every action: reading is allowed, changes ask you first, and deleting always asks. <span id="apps-checked" class="muted"></span></p>
             </div>
-            <div id="accounts" class="grid accounts-grid"></div>
-            <div id="signin-wait" class="card wait hidden">
-              <b>Finish signing in in your browser&hellip;</b>
-              <span class="muted">A browser tab has opened. When you are done there, come back here.</span>
-              <div><button id="signin-cancel">Cancel</button></div>
+            <div id="apps-waiting" class="apps-waiting card hidden" role="status">
+              <div class="apps-waiting-text">
+                <b id="apps-waiting-title">Finish on claude.ai</b>
+                <span id="apps-waiting-sub" class="muted">Find the app, click Connect and sign in. Jarvis checks again as soon as you come back.</span>
+              </div>
+              <button type="button" id="apps-waiting-check" class="chip">I'm done, check now</button>
+              <button type="button" id="apps-waiting-close" class="x" aria-label="Close">&times;</button>
             </div>
+            <div id="hub-apps" class="hub-grid"></div>
+            <div id="apps-empty" class="apps-empty card hidden"></div>
+            <div id="apps-signin-head" class="sub-head hidden"><h3>In your Claude account, not signed in yet</h3><span class="muted small">Sign in once on claude.ai and they are ready here.</span></div>
+            <div id="apps-signin" class="suggest-grid"></div>
+            <div id="apps-suggest-head" class="sub-head hidden"><h3>Popular apps to add</h3><span class="muted small">One click opens claude.ai, where you connect it and sign in.</span></div>
+            <div id="apps-suggest" class="suggest-grid"></div>
             <div id="hub-error" class="error"></div>
 
             <div class="section-head">
-              <h2>Email &amp; calendar</h2>
-              <p>They work once the matching account above is signed in. Anything that sends, changes or deletes asks you first.</p>
-            </div>
-            <div id="hub-mail" class="hub-grid"></div>
-
-            <div class="section-head">
               <h2>Team tools</h2>
-              <p>Built into Jarvis. Turn on what you want your team to use, and choose who can use each one.</p>
+              <p>Built into Jarvis and working on this computer. Turn on what you want your team to use, and choose who can use each one.</p>
             </div>
             <div id="hub-list" class="hub-grid"></div>
+            <div id="hub-none" class="apps-empty card hidden"></div>
           </section>
 
           <section id="view-activity" class="view">

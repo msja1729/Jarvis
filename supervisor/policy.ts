@@ -37,6 +37,12 @@ export interface Verdict {
 /** Keys, passwords and tokens. */
 export const SECRET = /(^|[\\/])(\.env(\.[\w-]+)?|[^\\/]*\.(pem|key|p12|pfx|jks|keystore|ppk|kdbx)|id_(rsa|dsa|ecdsa|ed25519)(\.pub)?|\.?(netrc|npmrc|pypirc)|[^\\/]*credentials[^\\/]*|secrets?\.(json|ya?ml|toml))$/i;
 
+/**
+ * Claude Code's own settings and instructions in a folder (.mcp.json can start programs, CLAUDE.md is read as
+ * instructions): a team member never creates or changes them, so nothing they write can change their next run.
+ */
+export const CLAUDE_CONFIG = /(^|[\\/])(\.mcp\.json|\.claude|CLAUDE(\.local)?\.md)([\\/]|$)/i;
+
 const READ_TOOLS = new Set(['Read', 'Glob', 'Grep', 'LS', 'NotebookRead', 'TodoRead', 'TodoWrite', 'BashOutput', 'TaskOutput', 'ListMcpResourcesTool', 'ReadMcpResourceTool']);
 const EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
 const SHELL_TOOLS = new Set(['Bash', 'PowerShell']);

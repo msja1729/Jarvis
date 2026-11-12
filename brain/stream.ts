@@ -13,10 +13,14 @@ export interface StreamState {
   } | null;
   rateLimited: boolean;
   lastAssistantText: string;
+  /** Claude Code's start-up report: its MCP servers (with the Claude account's apps) and tool names. */
+  init: { mcp_servers?: { name?: unknown; status?: unknown; source?: unknown }[]; tools?: unknown[] } | null;
+  /** Text written just before a tool call: what the member says while they work ("On it, about 2 minutes"). */
+  pendingNote: string;
 }
 
 export function newStreamState(): StreamState {
-  return { sessionId: null, model: null, result: null, rateLimited: false, lastAssistantText: '' };
+  return { sessionId: null, model: null, result: null, rateLimited: false, lastAssistantText: '', init: null, pendingNote: '' };
 }
 
 interface RawUsage {
@@ -34,8 +38,10 @@ export function toUsage(u: RawUsage | undefined): TokenUsage {
   return { input, output, cacheCreation, cacheRead, total: input + output + cacheCreation + cacheRead };
 }
 
-/** "mcp__jarvis__gmail__list_emails" → progress label. */
+/** "mcp__jarvis__screen__look" → progress label; "mcp__claude_ai_Gmail__search_threads" → "Using Gmail…". */
 export function progressLabel(toolName: string, labels: (tool: string) => string | undefined): string {
+  const app = /^mcp__claude_ai_(.+?)__/.exec(toolName);
+  if (app) return `Using ${app[1].replace(/_/g, ' ')}…`;
   const bare = toolName.replace(/^mcp__jarvis__/, '');
   return `${labels(bare) ?? 'Working'}…`;
 }
@@ -46,8 +52,12 @@ export function looksLikeLimit(text: string): boolean {
   return LIMIT_PATTERN.test(text);
 }
 
-/** Apply one line; returns progress labels for any tool calls it contains. `onText` gets the reply as it is written. */
-export function applyLine(state: StreamState, line: string, onText?: (delta: string) => void): string[] {
+/**
+ * Apply one line; returns progress labels for any tool calls it contains. `onText` gets the reply as it is
+ * written; `onNote` gets each piece of text the member wrote before going on to use a tool (the first one is
+ * their "Got it, I'll… about 2 minutes"), never the final answer.
+ */
+export function applyLine(state: StreamState, line: string, onText?: (delta: string) => void, onNote?: (text: string) => void): string[] {
   const trimmed = line.trim();
   if (!trimmed.startsWith('{')) return [];
   let ev: any;
@@ -61,6 +71,7 @@ export function applyLine(state: StreamState, line: string, onText?: (delta: str
   switch (ev.type) {
     case 'system':
       if (ev.subtype === 'init' && ev.model) state.model = ev.model;
+      if (ev.subtype === 'init') state.init = { mcp_servers: Array.isArray(ev.mcp_servers) ? ev.mcp_servers : [], tools: Array.isArray(ev.tools) ? ev.tools : [] };
       break;
     case 'stream_event':
       if (onText && ev.event?.type === 'content_block_delta' && ev.event.delta?.type === 'text_delta' && typeof ev.event.delta.text === 'string') onText(ev.event.delta.text);
@@ -72,8 +83,16 @@ export function applyLine(state: StreamState, line: string, onText?: (delta: str
       break;
     case 'assistant':
       for (const block of ev.message?.content ?? []) {
-        if (block.type === 'tool_use' && block.name) tools.push(block.name);
-        if (block.type === 'text' && block.text) state.lastAssistantText = block.text;
+        if (block.type === 'tool_use' && block.name) {
+          tools.push(block.name);
+          const note = state.pendingNote.trim();
+          state.pendingNote = '';
+          if (note) onNote?.(note);
+        }
+        if (block.type === 'text' && block.text) {
+          state.lastAssistantText = block.text;
+          state.pendingNote = block.text;
+        }
       }
       break;
     case 'result':

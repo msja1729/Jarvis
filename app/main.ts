@@ -1,5 +1,6 @@
 /** Electron main process. */
-import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, systemPreferences } from 'electron';
+import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, net, protocol, screen, shell, systemPreferences } from 'electron';
+import { pathToFileURL } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -8,7 +9,7 @@ import { GatewayCore } from '../gateway/core.js';
 import { startControlServer, ControlServer } from '../gateway/control-server.js';
 import { SettingsStore, defaultSetting, groupOf } from '../gateway/settings.js';
 import type { AbilitySetting, ConfirmRequest, ExplainLevel } from '../gateway/types.js';
-import { ClaudeCLIBrain } from '../brain/claude-cli.js';
+import { ClaudeCLIBrain, probeConnectors } from '../brain/claude-cli.js';
 import { CLI_MODEL } from '../brain/brain.js';
 import { SessionManager } from '../brain/session.js';
 import { UsageLog } from '../brain/usage.js';
@@ -19,7 +20,7 @@ import { MediaHolds, systemMedia } from '../speech/media.js';
 import { applyPronunciations, parseRespelling, respellPrompt } from '../speech/pronounce.js';
 import { allowedSettings } from '../security/destructive-lock.js';
 import { createKeyringStore, SecretStore } from '../security/secrets.js';
-import { AccountId, AccountManager, APP_ACCOUNT, PROVIDERS } from '../security/accounts.js';
+import { Connector, ConnectorRegistry, ConnectorSnapshot, connectorApp, CONNECTORS_URL, hiddenServers, KNOWN, ruleForTool, splitConnectorTool, SUGGESTED, toolWords } from '../connectors/connectors.js';
 import type { LocalCommand } from '../router/commands.js';
 import { ScreenExecutor, ScreenUI } from '../tools/screen/executor.js';
 import { ElectronScreenBackend } from '../tools/screen/electron-backend.js';
@@ -51,6 +52,11 @@ import { SKILLS } from '../roles/skills/index.js';
 import { noteTaker, notesRequest } from '../roles/notes.js';
 import type { ScreenIndex } from '../tools/recorder/screen-store.js';
 import { FilesExecutor } from '../tools/files/executor.js';
+import { fileForUrl, MAX_VIEW_TEXT, mimeOf, ShownFile, teamFile, VIEW_SCHEME, viewKind } from '../tools/files/viewer.js';
+import type { ShownSet } from './history.js';
+
+// the preview next to the chat loads team files from jarvis-view://team/… (checked on every request)
+protocol.registerSchemesAsPrivileged([{ scheme: VIEW_SCHEME, privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true } }]);
 import { SkillsExecutor } from '../tools/skills/executor.js';
 import { WebExecutor } from '../tools/web/executor.js';
 import { pdfPages } from '../tools/documents/pdf-text.js';
@@ -84,8 +90,9 @@ let orchestrator: Orchestrator | null = null;
 let brain: ClaudeCLIBrain | null = null;
 const sessions = new SessionManager();
 let secrets: SecretStore;
-let accounts: AccountManager;
-let signInAbort: AbortController | null = null;
+/** The apps in the user's Claude account (connectors), as last reported by Claude Code. */
+let connectors: ConnectorRegistry;
+let connectorCheck: Promise<void> | null = null;
 const pendingConfirms = new Map<string, (yes: boolean) => void>();
 let requestSeq = 0;
 let lessons: LessonExecutor;
@@ -302,17 +309,6 @@ async function openBrowser(url: string) {
   await shell.openExternal(url);
 }
 
-/** Runs one browser sign-in at a time; "Cancel" in the UI aborts it. */
-async function withSignIn<T>(fn: (signal: AbortSignal) => Promise<T>): Promise<T> {
-  signInAbort?.abort();
-  const ctrl = new AbortController();
-  signInAbort = ctrl;
-  try {
-    return await fn(ctrl.signal);
-  } finally {
-    if (signInAbort === ctrl) signInAbort = null;
-  }
-}
 
 /**
  * Recognised speech: from the mic button it goes into that window's chat; from the
@@ -635,7 +631,8 @@ function createMainWindow(show = true) {
     ...glassOptions(),
     ...mainChromeOptions(),
     // Keep audio capture running while the window is hidden (push-to-talk, recording).
-    webPreferences: { preload: preloadPath(), contextIsolation: true, sandbox: true, nodeIntegration: false, backgroundThrottling: false },
+    // plugins: Chromium's own PDF viewer, for PDFs shown in the preview next to the chat.
+    webPreferences: { preload: preloadPath(), contextIsolation: true, sandbox: true, nodeIntegration: false, backgroundThrottling: false, plugins: true },
   });
   // first run: the page starts with the welcome already covering it (no glimpse of the app behind)
   const welcome = store.snapshot().onboarded === true ? '0' : '1';
@@ -821,22 +818,132 @@ let brainCommand: string | null = null;
  * teammates' folders are readable, and Claude Code's own tools are on, with every permission prompt
  * coming to Jarvis (expertApprove). The front desk, and the setting turned off, get none of this.
  */
-function expertWorkspace(role?: string, consult?: boolean) {
+function expertWorkspace(role?: string) {
   if (!control || !isRole(role) || role === 'jarvis' || store.snapshot().claudeTools === false) return null;
   const jdir = app.getPath('userData');
+  return { cwd: roleFolder(jdir, role), addDirs: [teamRoot(jdir)] };
+}
+
+/** Jarvis's permission-prompt tool for one run (every run: apps from the Claude account always ask Jarvis). */
+function approveLaunch(role?: string, consult?: boolean) {
+  if (!control) return null;
   return {
-    cwd: roleFolder(jdir, role),
-    addDirs: [teamRoot(jdir)],
-    approve: {
-      command: process.execPath,
-      args: [path.join(__dirname, '..', 'gateway', 'shim.mjs')],
-      env: { ELECTRON_RUN_AS_NODE: '1', JARVIS_CONTROL_URL: control.url, JARVIS_CONTROL_TOKEN: control.expertToken, JARVIS_ROLE: role, JARVIS_CONSULT: consult ? '1' : '0', JARVIS_SHIM_MODE: 'expert' },
-    },
+    command: process.execPath,
+    args: [path.join(__dirname, '..', 'gateway', 'shim.mjs')],
+    env: { ELECTRON_RUN_AS_NODE: '1', JARVIS_CONTROL_URL: control.url, JARVIS_CONTROL_TOKEN: control.expertToken, JARVIS_ROLE: role ?? '', JARVIS_CONSULT: consult ? '1' : '0', JARVIS_SHIM_MODE: 'expert' },
   };
 }
 
-/** Claude Code asks whether an expert may use one of its own tools: allowed, asked (popup) or refused. */
-async function expertApprove(role: string, req: { tool_name: string; input: Record<string, unknown> }) {
+/* ---------- apps from the user's Claude account (connectors) ---------- */
+
+/** The Tool Hub app for a connector known to Jarvis, by Tool Hub id. */
+function connectorById(appId: string) {
+  const c = connectors.byAppId(appId);
+  return c ? connectorApp(c.name) : undefined;
+}
+
+/** May this member use this connector now (on in the Tool Hub and given to them)? */
+function connectorUsable(role: RoleId, c: Connector): boolean {
+  const a = connectorApp(c.name);
+  return store.isEnabled(a) && canUse(role, a, store.snapshot().appRoles);
+}
+
+/** Connectors a member's run must not see (and the user's own MCP servers, always). */
+function hiddenFor(role?: string): string[] {
+  const r: RoleId = isRole(role) ? role : 'jarvis';
+  return hiddenServers(connectors, (c) => connectorUsable(r, c));
+}
+
+/** The connected apps a member may use, by name, for their prompt. */
+function connectedAppsFor(role: RoleId): string[] {
+  return connectors
+    .list()
+    .filter((c) => c.status === 'connected' && connectorUsable(role, c))
+    .map((c) => c.name);
+}
+
+/** What a run learned about the connectors; the Tool Hub updates when anything changed. */
+function learnConnectors(snap: ConnectorSnapshot) {
+  // a run that could not reach claude.ai reports none: keep what we knew
+  if (!snap.connectors.length && connectors.list().length) return;
+  if (connectors.update(snap)) send('connectors:changed');
+}
+
+/** Ask Claude Code for the account's connectors (no conversation, no tokens). One check at a time. */
+function checkConnectors(): Promise<void> {
+  if (connectorCheck) return connectorCheck;
+  connectorCheck = (async () => {
+    if (setupState?.step !== 'ready') await ensureBrain().catch(() => undefined);
+    if (setupState?.step !== 'ready') return;
+    const snap = await probeConnectors({ command: setupState.command, cwd: data('brain-cwd') });
+    // an explicit check is the truth, even when the account now has none
+    if (snap && connectors.update(snap)) send('connectors:changed');
+  })().finally(() => {
+    connectorCheck = null;
+  });
+  return connectorCheck;
+}
+
+/**
+ * Claude wants to use a tool of an app in the user's Claude account. Jarvis decides like the Gateway does
+ * for its own tools: the app must be on and given to this member, then reading / making changes / deleting
+ * follow the user's rule for that app (deleting always asks). Everything is logged.
+ */
+async function connectorApprove(role: RoleId, conn: { key: string; tool: string }, req: { tool_name: string; input: Record<string, unknown> }) {
+  const name = connectors.byKey(conn.key)?.name ?? conn.key.replace(/^claude_ai_/, '').replace(/_/g, ' ');
+  const a = connectorApp(name);
+  const rule = ruleForTool(conn.tool);
+  const ability = a.abilities.find((x) => x.name === rule)!;
+  const words = toolWords(conn.tool);
+  const who = role === 'jarvis' ? 'Jarvis' : fullName(role, people());
+  const log = (outcome: 'done' | 'blocked' | 'declined', detail: string) => activity.add({ role, appId: a.id, ability: conn.tool, outcome, detail });
+  const deny = (message: string) => ({ behavior: 'deny', message });
+  if (!store.isEnabled(a)) {
+    log('blocked', `${name} is off in the Tool Hub`);
+    return deny(`blocked: ${name} is turned off in Jarvis. The user can turn it on in the Tool Hub.`);
+  }
+  if (!canUse(role, a, store.snapshot().appRoles)) {
+    log('blocked', `${name} is not one of ${who}'s apps`);
+    return deny(`blocked: ${name} belongs to another member of the team. Ask them with the team tool instead.`);
+  }
+  const setting = store.effective(a, ability);
+  if (setting === 'off') {
+    log('blocked', `"${ability.title}" is off for ${name}`);
+    return deny(`blocked: "${ability.title}" is off for ${name}. The user can change it in the Tool Hub.`);
+  }
+  if (setting === 'allowed') {
+    log('done', `${words} (allowed)`);
+    return { behavior: 'allow', updatedInput: req.input };
+  }
+  const details = Object.entries(req.input ?? {})
+    .map(([k, v]) => {
+      const text = typeof v === 'string' ? v : JSON.stringify(v);
+      return `${k.replace(/_/g, ' ')}: ${text.length > 400 ? `${text.slice(0, 399)}…` : text}`;
+    })
+    .join('\n');
+  const yes = await confirm({
+    appId: a.id,
+    appName: name,
+    ability: conn.tool,
+    abilityTitle: words,
+    group: ability.group ?? 'act',
+    input: req.input,
+    summary: `${who} wants to ${words} in ${name}.${details ? `\n\n${details}` : ''}`,
+    title: `Let ${who} ${words} in ${name}?`,
+  });
+  log(yes ? 'done' : 'declined', yes ? `${words} (you said yes)` : 'user clicked No');
+  return yes
+    ? { behavior: 'allow', updatedInput: req.input }
+    : deny('user declined. Accept it and do not retry; ask the user in your reply if needed.');
+}
+
+/**
+ * Claude Code asks permission for a tool that is not Jarvis's own: an app from the Claude account
+ * (any member, the front desk too), or one of Claude Code's own tools (experts only).
+ */
+async function approveTool(role: string, req: { tool_name: string; input: Record<string, unknown> }) {
+  const conn = splitConnectorTool(req.tool_name);
+  if (conn) return connectorApprove(isRole(role) ? role : 'jarvis', conn, req);
   if (!isRole(role) || role === 'jarvis' || store.snapshot().claudeTools === false) {
     return { behavior: 'deny', message: 'Claude Code tools are turned off in Settings.' };
   }
@@ -900,6 +1007,49 @@ async function askToShare(role: RoleId, prompt: string) {
   return res;
 }
 
+/* ---------- a member shows the user files: the preview next to the chat ---------- */
+/** What was shown during the request being answered (saved with the reply, so the chat can reopen it). */
+type LiveSet = ShownSet & { id: string; role: RoleId; at: number; titled: boolean };
+let shownThisRequest: LiveSet[] = [];
+
+async function showUser(role: RoleId, title: string, files: ShownFile[]) {
+  const card = originIsMain(); // asked in the main chat: the chat shows a card for it right away
+  const w = await readyMainWindow(true);
+  // the preview needs room: a narrow window grows (never past the screen; a maximised one stays)
+  if (!w.isMaximized() && !w.isFullScreen()) {
+    const b = w.getBounds();
+    const area = screen.getDisplayMatching(b).workArea;
+    const width = Math.min(area.width - 24, Math.max(b.width, 1480));
+    const height = Math.min(area.height - 24, Math.max(b.height, 900));
+    if (width > b.width || height > b.height) {
+      const x = Math.min(Math.max(area.x + 12, b.x - Math.round((width - b.width) / 2)), area.x + area.width - width - 12);
+      const y = Math.min(Math.max(area.y + 12, b.y - Math.round((height - b.height) / 2)), area.y + area.height - height - 12);
+      w.setBounds({ x, y, width, height }, true);
+    }
+  }
+  // several calls in a row (a member may show files one by one, even at once) make one preview and one card
+  const last = shownThisRequest[shownThisRequest.length - 1];
+  let set: LiveSet;
+  if (last && last.role === role && Date.now() - last.at < 15_000) {
+    for (const f of files) if (!last.files.some((x) => x.url === f.url)) last.files.push(f);
+    if (title && last.files.length === files.length) last.title = title;
+    else if (!last.titled) last.title = title || `${last.files.length} files`;
+    last.titled ||= Boolean(title);
+    last.at = Date.now();
+    set = last;
+  } else {
+    set = { id: crypto.randomUUID(), title: title || (files.length === 1 ? files[0].name : `${files.length} files`), files: [...files], role, at: Date.now(), titled: Boolean(title) };
+    shownThisRequest.push(set);
+  }
+  const who = role === 'jarvis' ? 'Jarvis' : people()[role];
+  w.webContents.send('viewer:show', { id: set.id, title: set.title, files: set.files, who, color: roleById(role).color, card });
+}
+
+/** A team file the preview asked for, checked again (it must still be inside the Team folder). */
+function viewerFile(rel: unknown): string {
+  return teamFile(app.getPath('userData'), String(rel ?? ''));
+}
+
 function buildBrain(command: string) {
   brainCommand = command;
   coder = new Coder({ command });
@@ -913,8 +1063,14 @@ function buildBrain(command: string) {
         // the role decides which apps' tools this run sees (see the control server scope)
         env: { ELECTRON_RUN_AS_NODE: '1', JARVIS_CONTROL_URL: control.url, JARVIS_CONTROL_TOKEN: control.token, JARVIS_ROLE: role ?? '', JARVIS_CONSULT: consult ? '1' : '0' },
       },
-    workspace: (role, consult) => expertWorkspace(role, consult),
-    systemPrompt: (role) => rolePrompt(isRole(role) ? role : 'jarvis', people(), store.snapshot().claudeTools !== false),
+    workspace: (role) => expertWorkspace(role),
+    approve: (role, consult) => approveLaunch(role, consult),
+    hidden: (role) => hiddenFor(role),
+    onConnectors: (snap) => learnConnectors(snap),
+    systemPrompt: (role) => {
+      const r: RoleId = isRole(role) ? role : 'jarvis';
+      return rolePrompt(r, people(), store.snapshot().claudeTools !== false, connectedAppsFor(r));
+    },
     progressFor: (tool) => catalog.progressFor(tool),
     onEnvScrubbed: (removed) => {
       envNotice = `${removed.join(', ')} was set on this computer. Jarvis removed it for Claude so requests use your Claude plan, not API billing.`;
@@ -940,23 +1096,28 @@ function buildBrain(command: string) {
   });
 }
 
-async function accountList() {
-  return Promise.all(
-    (Object.keys(PROVIDERS) as AccountId[]).map(async (id) => ({ ...(await accounts.status(id)), consoleUrl: PROVIDERS[id].consoleUrl })),
-  );
+/** A Tool Hub app by id: Jarvis's own, or a connector from the Claude account. */
+function findApp(appId: string) {
+  return catalog.find(appId) ?? connectorById(appId);
 }
 
+/** The Tool Hub: Jarvis's own tools, then the apps in the user's Claude account. */
 async function hubList() {
   const snap = store.snapshot();
+  const own = catalog.all().map((a) => ({ app: a, connector: null as Connector | null }));
+  const fromClaude = connectors.list().map((c) => ({ app: connectorApp(c.name), connector: c as Connector | null }));
   return Promise.all(
-    catalog.all().map(async (a) => ({
+    [...own, ...fromClaude].map(async ({ app: a, connector: c }) => ({
       id: a.id,
       name: a.name,
       description: a.description,
       kind: a.kind,
       enabled: store.isEnabled(a),
-      connected: await catalog.isConnected(a),
-      account: APP_ACCOUNT[a.id] ?? null,
+      connected: c ? c.status === 'connected' : await catalog.isConnected(a),
+      status: c?.status ?? null,
+      maker: c ? (KNOWN[c.name]?.maker ?? null) : null,
+      category: c ? (KNOWN[c.name]?.category ?? 'Other') : null,
+      toolCount: c?.tools.length ?? 0,
       auth: a.mcp?.auth ?? null,
       members: membersOf(a, snap.appRoles),
       everyone: isShared(a.id),
@@ -971,6 +1132,18 @@ async function hubList() {
       })),
     })),
   );
+}
+
+/**
+ * Gmail, Calendar and Outlook used to have Jarvis's own sign-ins (a Google Cloud / Microsoft app of the user's).
+ * They now come from the Claude account, so the old sign-ins and client ids are removed from this computer.
+ */
+async function forgetOldSignIns() {
+  for (const id of ['google', 'microsoft']) {
+    await secrets.delete(`account:${id}`).catch(() => undefined);
+    await secrets.delete(`oauth-client-secret:${id}`).catch(() => undefined);
+  }
+  store.clearOAuthClients();
 }
 
 function registerIpc() {
@@ -1120,7 +1293,16 @@ function registerIpc() {
     const fromVoice = BrowserWindow.fromWebContents(target) === voiceWindow;
     const stream = opts?.stream === true;
     const conv = prepareConversation().conv;
+    shownThisRequest = [];
+    // what the member says before (and while) they work: "On it, about 2 minutes"
+    const notes: { role: RoleId; text: string }[] = [];
     const res = await orchestrator.handle(String(text), isRole(picked) ? picked : null, {
+      onNote: (r, note) => {
+        notes.push({ role: r, text: note });
+        if (target.isDestroyed()) return;
+        const name = r === 'jarvis' ? 'Jarvis' : `${people()[r]} · ${roleById(r).name}`;
+        target.send('ask:note', { text: note, roleName: name, roleColor: roleById(r).color, first: notes.length === 1 });
+      },
       spoken: fromVoice,
       // who answers, so the window can show their name and use their voice right away
       onRole: stream
@@ -1137,7 +1319,7 @@ function registerIpc() {
     const roleName = role === 'jarvis' ? 'Jarvis' : `${who} · ${roleById(role).name}`;
     // one shared history: what was said in the voice card or the box also shows in the main chat
     const win = BrowserWindow.fromWebContents(target);
-    const via = win === voiceWindow ? 'voice' : win === boxWindow ? 'box' : 'chat';
+    const via: 'voice' | 'box' | 'chat' = win === voiceWindow ? 'voice' : win === boxWindow ? 'box' : 'chat';
     const meta = res.kind === 'brain' ? `${res.model} · ${res.tokens?.toLocaleString() ?? 0} tokens` : 'handled locally · 0 tokens';
     if (res.command === 'new_conversation') {
       // "new conversation": nothing to keep; the next message starts a fresh one
@@ -1145,15 +1327,37 @@ function registerIpc() {
       send('history:changed', { newChat: true });
       return { ...res, role, roleName, person: who, roleColor: roleById(role).color, voice: roleVoice(role), conv: null };
     }
+    const shown: ShownSet[] = shownThisRequest.map((x) => ({ title: x.title, files: x.files }));
+    shownThisRequest = [];
     const items = history.add([
       { who: 'user', text: String(text), via },
-      { who: 'assistant', text: res.reply, via, roleName, color: roleById(role).color, meta, error: Boolean(res.isError) },
+      // only the first thing said while working is kept (the later ones are passing status)
+      ...notes.slice(0, 1).map((n) => ({ who: 'assistant' as const, text: n.text, via, roleName: n.role === 'jarvis' ? 'Jarvis' : `${people()[n.role]} · ${roleById(n.role).name}`, color: roleById(n.role).color, meta: 'while working' })),
+      { who: 'assistant', text: res.reply, via, roleName, color: roleById(role).color, meta, error: Boolean(res.isError), ...(shown.length ? { shown } : {}) },
     ]);
     history.setSession(conv, role, res.sessionId);
     if (win !== mainWindow && mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('history:add', items);
     send('history:changed', {});
     return { ...res, role, roleName, person: who, roleColor: roleById(role).color, voice: roleVoice(role), lessonShown: (lessons?.shown ?? 0) > before, conv };
   };
+  // the preview next to the chat: text of a team file, open it in its app, show it in its folder
+  ipcMain.handle('viewer:read', (_e, rel: string) => {
+    const full = viewerFile(rel);
+    const size = fs.statSync(full).size;
+    const fd = fs.openSync(full, 'r');
+    try {
+      const buf = Buffer.alloc(Math.min(size, MAX_VIEW_TEXT));
+      fs.readSync(fd, buf, 0, buf.length, 0);
+      return { text: buf.toString('utf8'), cut: size > MAX_VIEW_TEXT, kind: viewKind(full) };
+    } finally {
+      fs.closeSync(fd);
+    }
+  });
+  ipcMain.handle('viewer:open', async (_e, rel: string) => {
+    const err = await shell.openPath(viewerFile(rel));
+    if (err) throw new Error(err);
+  });
+  ipcMain.handle('viewer:reveal', (_e, rel: string) => shell.showItemInFolder(viewerFile(rel)));
   ipcMain.handle('history:prepare', () => prepareConversation());
   ipcMain.handle('history:list', (_e, query?: string) => ({ items: history.list(typeof query === 'string' ? query.slice(0, 200) : ''), current: history.currentId }));
   ipcMain.handle('history:open', (_e, id: string) => {
@@ -1203,10 +1407,14 @@ function registerIpc() {
       color: r.color,
       examples: r.examples,
       voice: roleVoice(r.id),
-      apps: catalog
-        .all()
-        .filter((a) => a.id !== 'team' && canUse(r.id, a, store.snapshot().appRoles))
-        .map((a) => a.name),
+      // their connected apps from the Claude account first (Gmail…), then Jarvis's own tools
+      apps: [
+        ...connectedAppsFor(r.id),
+        ...catalog
+          .all()
+          .filter((a) => a.id !== 'team' && canUse(r.id, a, store.snapshot().appRoles))
+          .map((a) => a.name),
+      ],
       notes: r.id === 'jarvis' ? null : roleMemory.notes(r.id),
       pending: r.id === 'jarvis' ? 0 : roleMemory.pendingCount(r.id),
       skills: SKILLS[r.id].map((k) => ({ id: k.id, when: k.when })),
@@ -1256,42 +1464,30 @@ function registerIpc() {
     return hubList();
   });
   ipcMain.handle('hub:setMembers', (_e, appId: string, members: unknown) => {
-    const a = catalog.find(appId);
+    const a = findApp(appId);
     if (!a) throw new Error('unknown app');
     if (isShared(a.id)) throw new Error(`${a.name} is for everyone on the team.`);
     store.setAppRoles(a.id, members === null ? null : cleanMembers(members));
     return hubList();
   });
   ipcMain.handle('hub:setAbility', (_e, appId: string, ability: string, setting: AbilitySetting) => {
-    const a = catalog.find(appId);
+    const a = findApp(appId);
     if (!a) throw new Error('unknown app');
     store.setAbility(a, ability, setting); // throws on destructive → allowed (criterion 29)
     return hubList();
   });
-  ipcMain.handle('accounts:list', accountList);
-  ipcMain.handle('accounts:setup', async (_e, id: AccountId, clientId: string, clientSecret?: string) => {
-    if (!(id in PROVIDERS)) throw new Error('unknown account');
-    store.setOAuthClient(id, clientId || null);
-    if (clientSecret !== undefined) await accounts.setClientSecret(id, clientSecret || null);
-    return accountList();
+  // apps from the user's Claude account: check what is connected, and where to connect more
+  ipcMain.handle('connectors:info', () => ({
+    checkedAt: connectors.checkedAt,
+    checking: connectorCheck !== null,
+    url: CONNECTORS_URL,
+    suggestions: SUGGESTED.filter((n) => !connectors.list().some((c) => c.name === n)).map((n) => ({ name: n, ...KNOWN[n] })),
+  }));
+  ipcMain.handle('connectors:refresh', async () => {
+    await checkConnectors();
+    return hubList();
   });
-  ipcMain.handle('accounts:connect', async (_e, id: AccountId) => {
-    await withSignIn((signal) => accounts.connect(id, signal));
-    for (const [appId, acc] of Object.entries(APP_ACCOUNT)) if (acc === id) store.setEnabled(appId, true);
-    return accountList();
-  });
-  ipcMain.handle('accounts:disconnect', async (_e, id: AccountId) => {
-    await accounts.disconnect(id);
-    for (const [appId, acc] of Object.entries(APP_ACCOUNT)) if (acc === id) store.setEnabled(appId, false);
-    return accountList();
-  });
-  ipcMain.on('auth:cancel', () => signInAbort?.abort());
-  ipcMain.handle('accounts:openConsole', (_e, id: AccountId) => openBrowser(PROVIDERS[id].consoleUrl));
-  ipcMain.handle('accounts:openGuide', async (_e, id: AccountId) => {
-    if (!(id in PROVIDERS)) return;
-    const err = await shell.openPath(path.join(app.getAppPath(), 'docs', `connect-${id}.md`));
-    if (err) throw new Error(`Could not open the guide: ${err}`);
-  });
+  ipcMain.handle('connectors:open', () => openBrowser(CONNECTORS_URL));
   ipcMain.handle('usage:summary', () => usage.summary());
   // a window started or stopped speaking (each window counts separately)
   const speakingWindows = new Set<number>();
@@ -1502,16 +1698,27 @@ app.on('web-contents-created', (_e, contents) => {
 });
 
 app.whenReady().then(async () => {
+  // team files for the preview: only inside the Team folder, never secrets; pages there cannot run scripts
+  protocol.handle(VIEW_SCHEME, async (req) => {
+    let full: string;
+    try {
+      full = fileForUrl(app.getPath('userData'), req.url);
+    } catch (err) {
+      return new Response(String(err instanceof Error ? err.message : err), { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' } });
+    }
+    const res = await net.fetch(pathToFileURL(full).toString(), { headers: req.headers });
+    const headers = new Headers(res.headers);
+    headers.set('content-type', mimeOf(full));
+    headers.set('x-content-type-options', 'nosniff');
+    headers.set('content-security-policy', `default-src 'none'; img-src ${VIEW_SCHEME}: data:; media-src ${VIEW_SCHEME}:; style-src 'unsafe-inline' ${VIEW_SCHEME}:; font-src ${VIEW_SCHEME}: data:`);
+    return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+  });
   store = new SettingsStore(data('settings.json'));
   activity = new ActivityLog(data('activity.jsonl'));
   usage = new UsageLog(data('usage.jsonl'), data('baseline.json'));
   secrets = await createKeyringStore();
-  accounts = new AccountManager({
-    secrets,
-    clientId: (id) => store.oauthClientId(id),
-    openBrowser,
-  });
-  await accounts.init();
+  connectors = new ConnectorRegistry(data('connectors.json'));
+  void forgetOldSignIns();
   ensureRoleFolders(app.getPath('userData'));
   seedCasebook(app.getPath('userData')); // profiles and reference files each member works from
   const screenExec = new ScreenExecutor(new ElectronScreenBackend(), screenUI, () => requestSeq);
@@ -1589,8 +1796,9 @@ app.whenReady().then(async () => {
     trash: (p) => shell.trashItem(p),
     onChange: () => send('team:filesChanged'),
     askToShare: (role, prompt) => askToShare(role, prompt),
+    showUser: (role, title, shown) => showUser(role, title, shown),
   });
-  catalog = new AppCatalog(store, secrets, accounts, {
+  catalog = new AppCatalog(store, secrets, {
     files,
     skills: new SkillsExecutor(app.getPath('userData')),
     web: new WebExecutor(),
@@ -1608,7 +1816,7 @@ app.whenReady().then(async () => {
   });
   control = await startControlServer(() => core, {
     approve: (runId, req) => supervisor.onPermission(runId, req),
-    expertApprove: (role, _consult, req) => expertApprove(role, req),
+    expertApprove: (role, _consult, req) => approveTool(role, req),
     // each team member sees only its own apps; a consulted member cannot consult others (one hop)
     hook: (p) => {
       const folder = typeof p.cwd === 'string' ? path.basename(p.cwd) : 'your project';
@@ -1639,6 +1847,8 @@ app.whenReady().then(async () => {
   registerIpc();
   createMainWindow();
   void ensureBrain().catch(() => undefined);
+  // learn which apps the Claude account has, shortly after start (the Tool Hub can check again any time)
+  setTimeout(() => void checkConnectors().catch(() => undefined), 8000);
   globalShortcut.register(HOTKEY_BOX, toggleBox);
   const hotkey = store.snapshot().pttHotkey || DEFAULT_PTT_HOTKEY;
   if (!voice.setHotkey(hotkey)) {

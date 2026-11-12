@@ -102,7 +102,7 @@ export class Orchestrator {
    * @param picked the team member chosen in the chat, or null for "Auto".
    * @param live spoken: the user talked (answer briefly); onRole: who answers, before they do; onText: the reply as it is written.
    */
-  async handle(input: string, picked: RoleId | null = null, live: { spoken?: boolean; onRole?: (role: RoleId) => void; onText?: (delta: string) => void } = {}): Promise<HandleResult> {
+  async handle(input: string, picked: RoleId | null = null, live: { spoken?: boolean; onRole?: (role: RoleId) => void; onText?: (delta: string) => void; onNote?: (role: RoleId, text: string) => void } = {}): Promise<HandleResult> {
     const routed = routeRole(input, picked, this.last, (this.deps.now?.() ?? new Date()).getTime(), this.deps.people?.() ?? {});
     const role = routed.role;
     const text = routed.text;
@@ -133,7 +133,7 @@ export class Orchestrator {
       const spoken = live.spoken ? ' [spoken: the words come from speech recognition and may have small mistakes, so read for meaning; answer in at most 3 short, plain sentences; no lists or headings, unless asked for detail]' : '';
       const base = `${timePrefix(now)}${level ? ` [level: ${level}]` : ''}${spoken}`;
       const withNotes = (n: string | undefined) => `${n ? `${n}\n` : ''}${base} ${text}`;
-      const opts = { onProgress: this.deps.onProgress, role, onText: live.onText };
+      const opts = { onProgress: this.deps.onProgress, role, onText: live.onText, onNote: live.onNote ? (t: string) => live.onNote!(role, t) : undefined };
       let res = await this.deps.brain.ask(withNotes(notes), decision.sessionId, model, opts);
       if (res.is_error && decision.sessionId && LOST_SESSION.test(res.reply)) {
         // an earlier conversation whose Claude session is gone: answer in a fresh one instead

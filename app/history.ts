@@ -26,6 +26,14 @@ export interface HistoryItem {
   via: 'chat' | 'voice' | 'box';
   meta?: string;
   error?: boolean;
+  /** Files the member showed the user in the preview while answering (reopened from the chat). */
+  shown?: ShownSet[];
+}
+
+/** One set of files shown in the preview. */
+export interface ShownSet {
+  title: string;
+  files: { name: string; rel: string; url: string; kind: string; size: number }[];
 }
 
 export interface Conversation {

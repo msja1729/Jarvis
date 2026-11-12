@@ -475,7 +475,7 @@ export class Onboarding {
       h('p', { className: 'ob-sub' }, 'Turn on what you want them to use. Anything that acts for you still asks you first; you can change all of this in the Tool Hub.'),
       h('div', { className: 'ob-card ob-mic' }, h('span', { className: 'ob-tool-ico' }, icon(TOOL_ICON.recorder)), h('span', { className: 'ob-tool-txt' }, h('b', {}, 'Microphone'), micMsg), meter, micBtn),
       grid,
-      h('p', { className: 'ob-sub small' }, 'Email and calendar (Gmail, Google Calendar, Outlook) can be connected any time in the Tool Hub.'),
+      h('p', { className: 'ob-sub small' }, 'Email, calendar and other apps (Gmail, Google Calendar, Microsoft 365, Notion, Spotify…) come from your Claude account: connect them any time in the Tool Hub.'),
       h('div', { className: 'ob-row' }, h('button', { className: 'ob-cta', type: 'button', onclick: () => void this.next('tools') }, 'Continue', h('span', { className: 'ob-arrow' }, '→'))),
     );
   }

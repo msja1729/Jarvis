@@ -14,9 +14,7 @@ import { checkAttachment, fitWithin } from '../gateway/image-guard.js';
 import { MAX_RESULT_CHARS } from '../gateway/trim.js';
 import { matchLocalCommand } from '../router/commands.js';
 import { modelFor } from '../router/model.js';
-import { GMAIL_APP } from '../tools/email/definition.js';
-import { formatEmail, formatEmailList } from '../tools/email/trim.js';
-import { GCAL_APP } from '../tools/calendar/definition.js';
+import { GCAL_APP, GMAIL_APP } from './fixtures/sample-apps.js';
 import { ROOT, SpyExecutor, makeCore } from './helpers.js';
 
 function countingBrain() {
@@ -80,46 +78,7 @@ describe('C09 fixed-cost reduction', () => {
   });
 });
 
-describe('C10 email list trimming', () => {
-  const many = Array.from({ length: 25 }, (_, i) => ({
-    id: `id${i}`,
-    from: `Person ${i} <p${i}@example.com>`,
-    subject: `Subject ${i} `.repeat(30),
-    date: 'Sat, 7 Nov 2026 10:00:00 +0530',
-    text: `<p>Body ${i}</p> ` + 'lorem ipsum '.repeat(200),
-  }));
-  it('C10 returns at most 10 items, each with a gist of at most 200 characters', () => {
-    const out = formatEmailList(many, 50);
-    const items = out.split('\n').filter((l) => /^\d+\. /.test(l));
-    expect(items).toHaveLength(10);
-    const gists = out.split('\n').filter((l) => l.startsWith('   '));
-    expect(gists).toHaveLength(10);
-    for (const g of gists) expect(g.trim().length).toBeLessThanOrEqual(200);
-    expect(out).not.toContain('<p>');
-  });
-  it('C10 the list passes through the Gateway uncut', async () => {
-    const h = makeCore([GMAIL_APP], { gmail: new SpyExecutor(() => ({ text: formatEmailList(many) })) });
-    h.settings.setEnabled('gmail', true);
-    const r = await h.core.callTool('gmail__list_emails', {});
-    expect(r.text.split('\n').filter((l) => /^\d+\. /.test(l))).toHaveLength(10);
-    expect(r.text).not.toContain('more available');
-  });
-});
-
-describe('C11 single email and third-party results', () => {
-  it('C11 a single email is plain text, without quotes or signature, and at most 4,000 chars', () => {
-    const body = `<html><body><p>Hi team,</p><p>${'Long update. '.repeat(600)}</p>\n-- \nRavi Kumar\nCEO</body></html>`;
-    const out = formatEmail({ id: '1', from: 'Ravi', to: 'me', subject: 'Update', date: 'today', text: '', body });
-    expect(out.length).toBeLessThanOrEqual(MAX_RESULT_CHARS);
-    expect(out).toContain('more available');
-    expect(out).not.toMatch(/<\/?p>|<html>/);
-    const quoted = formatEmail({ id: '2', from: 'A', subject: 'Re', date: 'd', text: '', body: 'Sounds good.\n\nOn Mon, Ravi wrote:\n> old text\n> more old' });
-    expect(quoted).toContain('Sounds good.');
-    expect(quoted).not.toContain('old text');
-    const sig = formatEmail({ id: '3', from: 'A', subject: 's', date: 'd', text: '', body: 'See you.\n-- \nAsha\n+91 99999' });
-    expect(sig).not.toContain('+91');
-  });
-
+describe('C11 third-party results', () => {
   it('C11 any third-party result is cut to 4,000 chars by the Gateway', async () => {
     const app = { id: 'notes', name: 'Notes', description: '', kind: 'mcp' as const, abilities: [{ name: 'get', title: 'Get', description: 'Get.', group: 'read' as const, inputSchema: { type: 'object' as const }, resultLimit: 50000 }] };
     const h = makeCore([app], { notes: new SpyExecutor(() => ({ text: 'y'.repeat(20000) })) });

@@ -12,7 +12,7 @@
  */
 import path from 'node:path';
 import type { AbilityGroup } from '../gateway/types.js';
-import { classifyCommand, inside, SECRET } from '../supervisor/policy.js';
+import { classifyCommand, CLAUDE_CONFIG, inside, SECRET } from '../supervisor/policy.js';
 
 export interface ExpertWorkspace {
   /** The expert's own folder (their working directory). */
@@ -54,6 +54,8 @@ export function judgeExpert(req: { tool_name: string; input: Record<string, unkn
   if (EDIT.has(name)) {
     if (!file) return v('ask', `change a file (${name})`, 'Jarvis could not see which file', 'write');
     if (SECRET.test(file)) return v('ask', `change ${shown(file)}`, 'it looks like a file with keys or passwords', 'write');
+    // .mcp.json can start programs and CLAUDE.md is read as instructions on the next run: never written by an expert
+    if (CLAUDE_CONFIG.test(file)) return v('deny', `change ${shown(file)}`, "it is a Claude Code settings or instructions file, which an expert never changes", 'write');
     if (inside(ws.own, file)) return v('allow', `${name === 'Write' ? 'save' : 'edit'} ${shown(file)}`, 'it is in their own folder', 'write');
     if (inside(ws.team, file))
       return v('deny', `change ${shown(file)}`, 'each member writes only in their own folder: ask that teammate (team tool) to do it', 'write');

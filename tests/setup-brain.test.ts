@@ -67,17 +67,16 @@ describe('C03 no API key reaches claude', () => {
 });
 
 describe('C04 CLI flags', () => {
-  it('C04 every run disables built-in tools and sets a turn cap', async () => {
+  it('C04 every run disables built-in tools (only tool search) and sets a turn cap', async () => {
     const { brain, captured } = stubBrain({});
     await brain.ask('hi', null, 'sonnet');
     const argv = captured()[0].argv;
     const at = (f: string) => argv[argv.indexOf(f) + 1];
-    expect(at('--tools')).toBe('');
+    expect(at('--tools')).toBe('ToolSearch');
     expect(at('--max-turns')).toBe('8');
     expect(at('--model')).toBe('sonnet');
-    expect(argv).toContain('--strict-mcp-config');
     expect(at('--permission-mode')).toBe('dontAsk');
-    expect(at('--allowedTools')).toBe('mcp__jarvis');
+    expect(at('--allowedTools')).toBe('mcp__jarvis,ToolSearch');
     expect(captured()[0].mcpTimeout).toBe('300000');
   });
 

@@ -317,7 +317,7 @@ describe('casebooks: profiles and reference files that make each member an exper
       expect(p, r).toMatch(/ask 1-3 short, specific questions first/);
       expect(p, r).toMatch(/Profile\//);
     }
-    expect(rolePrompt('pm')).toMatch(/never start a coding task before writing Projects\/<project>\/SPEC\.md/);
+    expect(rolePrompt('pm')).toMatch(/no coding task before Projects\/<project>\/SPEC\.md/);
     expect(rolePrompt('doctor')).toMatch(/OPQRST/);
     expect(rolePrompt('finance')).toMatch(/Investment policy/);
     expect(rolePrompt('pa')).toMatch(/Writing style/);

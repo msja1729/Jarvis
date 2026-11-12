@@ -25,6 +25,24 @@ export const FILES_APP: AppDef = {
       inputSchema: { type: 'object', properties: { prompt: { type: 'string', description: 'what to ask for, e.g. "Drop the blood test report here"' } } },
     },
     {
+      name: 'show_user',
+      title: 'Show you files',
+      description:
+        'Show the user files you made or found (Markdown, pictures, PDF, HTML, CSV, text, video): a large preview opens next to the chat, where they can flip through them and open any one big. Use it whenever you want the user to see a document, image or report, instead of pasting it into your reply. Paths: relative to your folder (or a teammate’s with owner), or full paths inside the Team folder.',
+      group: 'read',
+      defaultSetting: 'allowed', // it only shows the user their own team's files
+      progress: 'Opening a preview',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          files: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 12, description: 'all the files to show, in one call, e.g. ["Plans/Trip plan.md", "Plans/map.png"]' },
+          title: { type: 'string', description: 'a short title for the preview, e.g. "Your Goa trip plan"' },
+          owner: OWNER,
+        },
+        required: ['files'],
+      },
+    },
+    {
       name: 'list',
       title: 'See folders',
       description: 'List your folder (or a sub-folder, or a teammate’s folder with owner).',

@@ -18,8 +18,10 @@ await Promise.all([
   build({ ...common, entryPoints: ['supervisor/jarvis-claude-hook.ts'], outfile: 'dist/supervisor/jarvis-claude-hook.mjs', platform: 'node', format: 'esm', sourcemap: false }),
   build({ ...common, entryPoints: ['app/renderer/supervisor.ts'], outfile: 'dist/renderer/supervisor.js', platform: 'browser', format: 'iife', target: 'chrome130' }),
   build({ ...common, entryPoints: ['app/renderer/lesson.ts'], outfile: 'dist/renderer/lesson.js', platform: 'browser', format: 'iife', target: 'chrome130', sourcemap: false, minify: true }),
+  // Preview next to the chat (files the team shows you): Markdown, diagrams, code; loaded only when it opens.
+  build({ ...common, entryPoints: ['app/renderer/viewer.ts'], outfile: 'dist/renderer/viewer.js', platform: 'browser', format: 'iife', target: 'chrome130', sourcemap: false, minify: true }),
 ]);
-for (const f of ['index.html', 'styles.css', 'indicator.html', 'media-digest.html', 'pcm-worklet.js', 'lesson.html', 'lesson.css', 'supervisor.html', 'supervisor.css', 'onboard.css']) fs.copyFileSync(`app/renderer/${f}`, `dist/renderer/${f}`);
+for (const f of ['index.html', 'styles.css', 'indicator.html', 'media-digest.html', 'pcm-worklet.js', 'lesson.html', 'lesson.css', 'supervisor.html', 'supervisor.css', 'onboard.css', 'viewer.html', 'viewer.css']) fs.copyFileSync(`app/renderer/${f}`, `dist/renderer/${f}`);
 fs.cpSync('node_modules/katex/dist/katex.min.css', 'dist/renderer/katex/katex.min.css');
 fs.cpSync('node_modules/katex/dist/fonts', 'dist/renderer/katex/fonts', { recursive: true });
 console.log('build ok');

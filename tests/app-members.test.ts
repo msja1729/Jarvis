@@ -7,6 +7,7 @@ import { GatewayCore } from '../gateway/core.js';
 import { ActivityLog } from '../gateway/activity-log.js';
 import type { AppDef } from '../gateway/types.js';
 import { BUILTIN_APPS } from '../app/apps.js';
+import { connectorApp } from '../connectors/connectors.js';
 import { SpyExecutor, tmpDir } from './helpers.js';
 
 const notion: AppDef = {
@@ -16,7 +17,8 @@ const notion: AppDef = {
   kind: 'mcp',
   abilities: [{ name: 'search', title: 'Search', description: 'Search pages.', group: 'read', inputSchema: { type: 'object' } }],
 };
-const gmail = BUILTIN_APPS.find((a) => a.id === 'gmail')!;
+const gmail = connectorApp('Gmail'); // from the Claude account
+
 const web = BUILTIN_APPS.find((a) => a.id === 'web')!;
 
 describe('who can use each app', () => {
@@ -27,7 +29,7 @@ describe('who can use each app', () => {
   });
 
   it("the user's choice replaces the usual members, both ways", () => {
-    const choices = { gmail: ['pa', 'doctor'], notion: ['finance', 'pa'] };
+    const choices = { [gmail.id]: ['pa', 'doctor'], notion: ['finance', 'pa'] };
     expect(membersOf(gmail, choices)).toEqual(['pa', 'doctor']);
     expect(membersOf(notion, choices)).toEqual(['pa', 'finance']);
     expect(canUse('pm', notion, choices)).toBe(false);

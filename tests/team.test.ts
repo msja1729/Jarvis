@@ -1,6 +1,8 @@
 /** The Jarvis team: routing, expertise, scoped apps, one-hop consults, memory, per-role conversations. */
 import fs from 'node:fs';
 import path from 'node:path';
+import { canUse } from '../roles/access.js';
+import { connectorApp } from '../connectors/connectors.js';
 import { describe, expect, it } from 'vitest';
 import { routeRole, STICKY_MS } from '../router/roles.js';
 import { ROLE_IDS, ROLES, roleById, roleUsesApp } from '../roles/roles.js';
@@ -56,7 +58,7 @@ describe('each member\'s expertise', () => {
       expect(wordCount(rolePrompt(r)), r).toBeLessThan(r === 'jarvis' ? 500 : 700);
       expect(rolePrompt(r)).not.toMatch(/\d{4}-\d{2}-\d{2}/);
     }
-    expect(rolePrompt('jarvis')).toBe(JARVIS_SYSTEM_PROMPT);
+    expect(rolePrompt('jarvis').startsWith(JARVIS_SYSTEM_PROMPT)).toBe(true); // + the apps line
   });
 
   it('roles carry the right rules', () => {
@@ -77,9 +79,10 @@ describe('each member\'s expertise', () => {
 describe('each member only gets its own apps', () => {
   it('the doctor has no email or coding; the PA has the calendar; Jarvis has everything', () => {
     const doctor = roleById('doctor');
-    expect(roleUsesApp(doctor, 'gmail', false)).toBe(false);
+    expect(canUse('doctor', connectorApp('Gmail'))).toBe(false); // apps from the Claude account go by topic
     expect(roleUsesApp(doctor, 'coding', false)).toBe(false);
-    expect(roleUsesApp(roleById('pa'), 'gcal', false)).toBe(true);
+    expect(canUse('pa', connectorApp('Google Calendar'))).toBe(true);
+    expect(canUse('jarvis', connectorApp('Spotify'))).toBe(true);
     expect(roleUsesApp(roleById('pm'), 'github', true)).toBe(true); // user-added apps go to the PM
     expect(roleUsesApp(roleById('jarvis'), 'anything', true)).toBe(true);
   });
@@ -91,21 +94,20 @@ describe('each member only gets its own apps', () => {
       if (r.apps === '*') continue;
       for (const id of r.apps) if (id !== 'custom') expect(ids.has(id), `${r.id} → ${id}`).toBe(true);
     }
-    expect(roleUsesApp(roleById('pa'), 'outlookcal', false)).toBe(true);
-    expect(ids.has('spotify')).toBe(false);
+    expect(ids.has('gmail') || ids.has('outlook') || ids.has('spotify')).toBe(false); // outside apps come from the Claude account
   });
 
   it('the gateway only lists and runs the member\'s tools', async () => {
     const mail = new SpyExecutor();
-    const gmail = { id: 'gmail', name: 'Gmail', description: '', kind: 'builtin' as const, defaultEnabled: true, abilities: [{ name: 'list_emails', title: 'List emails', description: 'd', group: 'read' as const, inputSchema: { type: 'object' as const } }] };
-    const { core } = makeCore([gmail], { gmail: mail });
+    const gmail = { id: 'board', name: 'Project board', description: '', kind: 'builtin' as const, defaultEnabled: true, abilities: [{ name: 'list_emails', title: 'List', description: 'd', group: 'read' as const, inputSchema: { type: 'object' as const } }] };
+    const { core } = makeCore([gmail], { board: mail });
     const pa = roleById('pa');
     const doctor = roleById('doctor');
     const paTools = core.listTools((a) => roleUsesApp(pa, a.id, false)).map((t) => t.name);
     const docTools = core.listTools((a) => roleUsesApp(doctor, a.id, false)).map((t) => t.name);
-    expect(paTools.some((n) => n.startsWith('gmail__'))).toBe(true);
-    expect(docTools.some((n) => n.startsWith('gmail__'))).toBe(false);
-    const r = await core.callTool(paTools.find((n) => n.startsWith('gmail__'))!, {}, (a) => roleUsesApp(doctor, a.id, false));
+    expect(paTools.some((n) => n.startsWith('board__'))).toBe(true);
+    expect(docTools.some((n) => n.startsWith('board__'))).toBe(false);
+    const r = await core.callTool(paTools.find((n) => n.startsWith('board__'))!, {}, (a) => roleUsesApp(doctor, a.id, false));
     expect(r.isError).toBe(true);
     expect(r.text).toMatch(/belongs to another member of the team/);
   });

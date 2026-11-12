@@ -6,7 +6,8 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import { createInterface } from 'node:readline';
 import type { AskOptions, Brain, BrainResult, ModelChoice } from './brain.js';
-import { buildArgs, GatewayLaunch } from './args.js';
+import { buildArgs, CONNECTOR_ENV, GatewayLaunch, mcpConfigJson, TOOL_SEARCH } from './args.js';
+import { ConnectorSnapshot, snapshotFromInit } from '../connectors/connectors.js';
 import { sanitizeEnv } from './env.js';
 import { applyLine, looksLikeLimit, newStreamState, progressLabel } from './stream.js';
 
@@ -21,10 +22,16 @@ export interface ClaudeCLIBrainOptions {
   gateway: (role?: string, consult?: boolean) => GatewayLaunch | null;
   /**
    * Where a team member works and whether they get Claude Code's own tools: their own folder as the
-   * working directory, teammates' folders readable, every permission prompt to Jarvis. null = the
-   * default (Jarvis's own working folder, no built-in tools).
+   * working directory, teammates' folders readable. null = the default (Jarvis's own working folder,
+   * no built-in tools).
    */
-  workspace?: (role?: string, consult?: boolean) => { cwd: string; addDirs: string[]; approve: GatewayLaunch } | null;
+  workspace?: (role?: string, consult?: boolean) => { cwd: string; addDirs: string[] } | null;
+  /** Jarvis's permission-prompt tool for this run: every tool that is not Jarvis's own asks it first. */
+  approve?: (role?: string, consult?: boolean) => GatewayLaunch | null;
+  /** MCP servers this run must not see (connectors the member may not use, the user's own servers). */
+  hidden?: (role?: string, consult?: boolean) => string[];
+  /** What this run learned about the apps in the user's Claude account (from Claude Code's start-up report). */
+  onConnectors?: (snap: ConnectorSnapshot) => void;
   /** The fixed system prompt for a team role. */
   systemPrompt?: (role?: string) => string;
   /** Tool name (without mcp__jarvis__) → progress label. */
@@ -55,10 +62,12 @@ export class ClaudeCLIBrain implements Brain {
         maxTurns: this.opts.maxTurns,
         systemPrompt: this.opts.systemPrompt?.(ask.role),
         partial: Boolean(ask.onText),
-        builtinTools: ws ? { approve: ws.approve, addDirs: ws.addDirs } : undefined,
+        builtinTools: ws ? { addDirs: ws.addDirs } : undefined,
+        approve: this.opts.approve?.(ask.role, ask.consult) ?? null,
+        hidden: this.opts.hidden?.(ask.role, ask.consult),
       }),
     ];
-    const { env, removed } = sanitizeEnv(this.opts.baseEnv ?? process.env, { MCP_TOOL_TIMEOUT: '300000' });
+    const { env, removed } = sanitizeEnv(this.opts.baseEnv ?? process.env, { MCP_TOOL_TIMEOUT: '300000', ...CONNECTOR_ENV });
     if (removed.length && !this.warned) {
       this.warned = true;
       this.opts.onEnvScrubbed?.(removed);
@@ -83,7 +92,7 @@ export class ClaudeCLIBrain implements Brain {
 
     const lines = createInterface({ input: child.stdout });
     lines.on('line', (line) => {
-      for (const tool of applyLine(state, line, ask.onText)) {
+      for (const tool of applyLine(state, line, ask.onText, ask.onNote)) {
         ask.onProgress?.(progressLabel(tool, this.opts.progressFor ?? (() => undefined)));
       }
     });
@@ -96,6 +105,7 @@ export class ClaudeCLIBrain implements Brain {
       child.on('close', (code) => resolve(code));
     });
     ask.signal?.removeEventListener('abort', abort);
+    if (state.init) this.opts.onConnectors?.(snapshotFromInit(state.init));
 
     const r = state.result;
     const errorText = r?.text || state.lastAssistantText || stderr.trim();
@@ -132,4 +142,57 @@ export class ClaudeCLIBrain implements Brain {
       model: state.model ?? undefined,
     };
   }
+}
+
+/**
+ * Asks Claude Code which apps the user's Claude account has and whether each is signed in, without a
+ * conversation: it starts `claude` the way a request would and stops it at its start-up report, before
+ * anything is sent to the model. Resolves null if it could not tell (not signed in, timed out).
+ */
+export function probeConnectors(opts: { command: string; prefixArgs?: string[]; cwd: string; baseEnv?: NodeJS.ProcessEnv; timeoutMs?: number }): Promise<ConnectorSnapshot | null> {
+  const args = [
+    ...(opts.prefixArgs ?? []),
+    '-p',
+    'Reply with OK.',
+    '--output-format',
+    'stream-json',
+    '--verbose',
+    '--model',
+    'haiku',
+    '--max-turns',
+    '1',
+    '--tools',
+    TOOL_SEARCH,
+    '--mcp-config',
+    mcpConfigJson(null),
+    '--permission-mode',
+    'dontAsk',
+    '--permission-prompts',
+    'none',
+    '--setting-sources',
+    '',
+    '--disable-slash-commands',
+  ];
+  const { env } = sanitizeEnv(opts.baseEnv ?? process.env, { ...CONNECTOR_ENV });
+  fs.mkdirSync(opts.cwd, { recursive: true });
+  return new Promise((resolve) => {
+    let done = false;
+    const child = spawn(opts.command, args, { cwd: opts.cwd, env, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
+    const finish = (snap: ConnectorSnapshot | null) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      child.kill();
+      resolve(snap);
+    };
+    const timer = setTimeout(() => finish(null), opts.timeoutMs ?? 45_000);
+    const lines = createInterface({ input: child.stdout });
+    lines.on('line', (line) => {
+      const state = newStreamState();
+      applyLine(state, line);
+      if (state.init) finish(snapshotFromInit(state.init));
+    });
+    child.on('error', () => finish(null));
+    child.on('close', () => finish(null));
+  });
 }

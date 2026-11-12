@@ -1,7 +1,7 @@
 /**
  * One-off measurement for criterion 9 against the REAL claude CLI (uses Pro usage).
  * Also an end-to-end smoke test: real claude → shim → control server → GatewayCore
- * → fake Gmail executor.
+ * → a pretend mailbox app (tests/fixtures/sample-apps.ts).
  *
  *   npm run measure
  */
@@ -17,9 +17,7 @@ import { ActivityLog } from '../gateway/activity-log.js';
 import { GatewayCore } from '../gateway/core.js';
 import { startControlServer } from '../gateway/control-server.js';
 import { SettingsStore } from '../gateway/settings.js';
-import { GMAIL_APP } from '../tools/email/definition.js';
-import { GCAL_APP } from '../tools/calendar/definition.js';
-import { formatEmailList } from '../tools/email/trim.js';
+import { GCAL_APP, GMAIL_APP } from '../tests/fixtures/sample-apps.js';
 
 const claude = findClaude();
 if (!claude) throw new Error('claude not found');
@@ -39,11 +37,14 @@ const core = new GatewayCore({
     async call(ability) {
       calls.push(ability);
       return {
-        text: formatEmailList([
-          { id: 'a1', from: 'Ravi <ravi@example.com>', subject: 'Lunch tomorrow?', date: 'Sat, 7 Nov 2026', text: 'Shall we meet at 1pm near the office?' },
-          { id: 'a2', from: 'HR <hr@example.com>', subject: 'Leave policy update', date: 'Fri, 6 Nov 2026', text: 'Please review the attached leave policy.' },
-          { id: 'a3', from: 'Asha <asha@example.com>', subject: 'Design review', date: 'Fri, 6 Nov 2026', text: 'Slides for Monday are ready.' },
-        ]),
+        text: [
+          '1. Ravi <ravi@example.com> · Lunch tomorrow? · Sat, 7 Nov 2026 [id a1]',
+          '   Shall we meet at 1pm near the office?',
+          '2. HR <hr@example.com> · Leave policy update · Fri, 6 Nov 2026 [id a2]',
+          '   Please review the attached leave policy.',
+          '3. Asha <asha@example.com> · Design review · Fri, 6 Nov 2026 [id a3]',
+          '   Slides for Monday are ready.',
+        ].join('\n'),
       };
     },
   }),

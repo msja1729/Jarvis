@@ -57,9 +57,9 @@ describe('how an expert run is started', () => {
   const approve = { command: 'node', args: ['shim.mjs'], env: { JARVIS_SHIM_MODE: 'expert' } };
 
   it('built-in tools on, permission prompts go to Jarvis, nothing is ever skipped', () => {
-    const a = buildArgs({ prompt: 'hi', model: 'sonnet', sessionId: null, gateway, builtinTools: { approve, addDirs: [team] } });
+    const a = buildArgs({ prompt: 'hi', model: 'sonnet', sessionId: null, gateway, approve, builtinTools: { addDirs: [team] } });
     const at = (f: string) => a[a.indexOf(f) + 1];
-    expect(at('--tools')).toBe('Read,Write,Edit,Glob,Grep,WebSearch,WebFetch,Bash,TodoWrite'); // not all of them: tokens
+    expect(at('--tools')).toBe('Read,Write,Edit,Glob,Grep,WebSearch,WebFetch,Bash,TodoWrite,ToolSearch'); // not all of them: tokens
     expect(at('--permission-mode')).toBe('manual');
     expect(at('--permission-prompt-tool')).toBe(EXPERT_APPROVE_TOOL);
     expect(at('--add-dir')).toBe(team);
@@ -68,11 +68,27 @@ describe('how an expert run is started', () => {
     expect(JSON.parse(at('--mcp-config')).mcpServers).toHaveProperty('jarvis_approve');
   });
 
-  it('without them (front desk, or turned off in Settings) it stays tool-less as before', () => {
+  it('the front desk (or Claude Code tools turned off) gets only tool search, and apps still ask Jarvis', () => {
+    const a = buildArgs({ prompt: 'hi', model: 'sonnet', sessionId: null, gateway, approve });
+    const at = (f: string) => a[a.indexOf(f) + 1];
+    expect(at('--tools')).toBe('ToolSearch');
+    expect(at('--permission-mode')).toBe('manual');
+    expect(at('--permission-prompt-tool')).toBe(EXPERT_APPROVE_TOOL);
+    expect(at('--allowedTools')).toBe('mcp__jarvis,ToolSearch'); // apps from the Claude account are never pre-allowed
+    expect(a).not.toContain('--add-dir');
+  });
+
+  it('without Jarvis running (no approve channel) nothing outside Jarvis can be used', () => {
     const a = buildArgs({ prompt: 'hi', model: 'sonnet', sessionId: null, gateway });
-    expect(a[a.indexOf('--tools') + 1]).toBe('');
     expect(a[a.indexOf('--permission-mode') + 1]).toBe('dontAsk');
     expect(a).not.toContain('--permission-prompt-tool');
+  });
+
+  it("apps the member may not use, and the user's own MCP servers, are hidden from the run", () => {
+    const a = buildArgs({ prompt: 'hi', model: 'sonnet', sessionId: null, gateway, approve, hidden: ['mcp__claude_ai_Gmail', 'mcp__my_server'] });
+    expect(a[a.indexOf('--disallowedTools') + 1]).toBe('mcp__claude_ai_Gmail,mcp__my_server');
+    // the apps in the Claude account need Claude Code's normal MCP loading (strict mode turns them off)
+    expect(a).not.toContain('--strict-mcp-config');
   });
 
   it('the experts are told about the tools only when they have them', () => {
