@@ -45,6 +45,7 @@ import { modelFor } from '../router/model.js';
 import { FALLBACK_ROLE } from '../router/roles.js';
 import { ensureRoleFolders, ROLE_FOLDER, roleFolder, teamRoot } from '../roles/folders.js';
 import { askTitle, judgeExpert } from '../roles/expert-tools.js';
+import { receiveShared, ShareDeps } from './share.js';
 import { casebookContext, seedCasebook } from '../roles/casebook.js';
 import { SKILLS } from '../roles/skills/index.js';
 import { noteTaker, notesRequest } from '../roles/notes.js';
@@ -868,6 +869,36 @@ Jarvis asks you because ${v.why}.`,
     : { behavior: 'deny', message: `The user said no to: ${v.what}. Find another way, or ask them in your reply.` };
 }
 
+/* ---------- showing an expert something (a PDF, a photo, a video) ---------- */
+const shareWaiting = new Map<string, (files: string[] | null) => void>();
+const shareDeps = (): ShareDeps => ({
+  rendererDir: path.join(__dirname, '..', 'renderer'),
+  preloadPath: preloadPath(),
+  transcribe: voice?.engine.status().ready ? (pcm) => voice.transcribePcm(pcm) : null,
+});
+
+/** A member asked to be shown something: a drop box in the window the user is talking in; waits for the files. */
+async function askToShare(role: RoleId, prompt: string) {
+  const target = requestSender && !requestSender.isDestroyed() ? requestSender : (await readyMainWindow(true)).webContents;
+  const id = crypto.randomUUID();
+  const who = people()[role];
+  const files = await new Promise<string[] | null>((resolve) => {
+    // Claude waits at most 5 minutes for a tool (MCP_TOOL_TIMEOUT); leave room to read the files
+    const timer = setTimeout(() => resolve(null), 4 * 60_000);
+    shareWaiting.set(id, (f) => {
+      clearTimeout(timer);
+      resolve(f);
+    });
+    target.send('share:request', { id, name: who, color: roleById(role).color, prompt: prompt || `Drop it here for ${who}` });
+  });
+  shareWaiting.delete(id);
+  if (!target.isDestroyed()) target.send('share:close', id);
+  if (!files) return { text: 'The user did not share anything (they closed the box, or did not drop a file in time). Say they can try again whenever they are ready.' };
+  const res = await receiveShared(roleFolder(app.getPath('userData'), role), files, shareDeps());
+  send('team:filesChanged');
+  return res;
+}
+
 function buildBrain(command: string) {
   brainCommand = command;
   coder = new Coder({ command });
@@ -1059,7 +1090,7 @@ function registerIpc() {
     throw new Error('Uninstall works in the installed app.');
   });
   // the user's music stays paused from when they spoke until the answer has started (main releases 'reply')
-  ipcMain.handle('ask', async (e, text: string, picked?: string, opts?: { stream?: boolean }) => {
+  ipcMain.handle('ask', async (e, text: string, picked?: string, opts?: { stream?: boolean; files?: string[] }) => {
     try {
       // during a recorded meeting, spoken questions are answered quietly on the card (nothing is played into the meeting)
       const quiet = voice?.recorder.recording === true && BrowserWindow.fromWebContents(e.sender) === voiceWindow;
@@ -1070,8 +1101,17 @@ function registerIpc() {
       setTimeout(() => media?.hold('reply', false), 1500);
     }
   });
-  const askInner = async (e: Electron.IpcMainInvokeEvent, text: string, picked?: string, opts?: { stream?: boolean }) => {
+  const askInner = async (e: Electron.IpcMainInvokeEvent, text: string, picked?: string, opts?: { stream?: boolean; files?: string[] }) => {
     requestSender = e.sender;
+    // files shown with the message (paperclip or dropped): saved in the folder of the member who will answer
+    const files = Array.isArray(opts?.files) ? opts!.files.filter((f): f is string => typeof f === 'string' && fs.existsSync(f)) : [];
+    if (files.length && orchestrator) {
+      const to = orchestrator.whoAnswers(String(text), isRole(picked) ? picked : null);
+      const shared = await receiveShared(roleFolder(app.getPath('userData'), to === 'jarvis' ? FALLBACK_ROLE : to), files, shareDeps());
+      send('team:filesChanged');
+      // pictures cannot travel in the message itself: the member opens them with Read (they are in their folder)
+      text = `${text}\n\n[${shared.text}${shared.images?.length ? '\nOpen the pictures and scene images with your Read tool to see them.' : ''}]`;
+    }
     // not started yet (or Claude Code was just installed / logged in): check again now
     if (!orchestrator) await ensureBrain();
     if (!orchestrator) return { kind: 'local', reply: setupState && 'instructions' in setupState ? setupState.instructions : 'Claude Code is not ready yet.', isError: true };
@@ -1274,29 +1314,17 @@ function registerIpc() {
     if (err) throw new Error(err);
   });
   ipcMain.handle('settings:get', () => store.snapshot());
-  // files for the team (a bill, a form, a report, a photo): copied into Team/Inbox, where every member can read them
-  const attachInto = (paths: unknown) => {
-    const inbox = path.join(teamRoot(app.getPath('userData')), 'Inbox');
-    fs.mkdirSync(inbox, { recursive: true });
-    const day = new Date().toISOString().slice(0, 10);
-    const out: { name: string; path: string }[] = [];
-    for (const p of Array.isArray(paths) ? paths.slice(0, 6) : []) {
-      if (typeof p !== 'string' || !fs.existsSync(p) || !fs.statSync(p).isFile()) continue;
-      if (fs.statSync(p).size > 100 * 1024 * 1024) throw new Error(`${path.basename(p)} is over 100 MB.`);
-      const base = path.basename(p).replace(/[<>:"/\\|?*\x00-\x1f]/g, '_');
-      let dest = path.join(inbox, `${day} ${base}`);
-      for (let n = 2; fs.existsSync(dest); n++) dest = path.join(inbox, `${day} (${n}) ${base}`);
-      fs.copyFileSync(p, dest);
-      out.push({ name: path.basename(p), path: dest });
-    }
-    return out;
-  };
-  ipcMain.handle('attach:files', (_e, paths: unknown) => attachInto(paths));
+  // the paperclip: files chosen here go, with the message, to the member who answers it (their own folder)
   ipcMain.handle('attach:pick', async (e) => {
     const win = BrowserWindow.fromWebContents(e.sender);
-    const opts = { title: 'Add a file for your team', properties: ['openFile', 'multiSelections'] as ('openFile' | 'multiSelections')[] };
+    const opts = { title: 'Show your team a file', properties: ['openFile', 'multiSelections'] as ('openFile' | 'multiSelections')[] };
     const r = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
-    return r.canceled ? [] : attachInto(r.filePaths);
+    return r.canceled ? [] : r.filePaths.slice(0, 6).map((p) => ({ name: path.basename(p), path: p }));
+  });
+  // the user's answer to a member's drop box
+  ipcMain.on('share:reply', (_e, id: string, paths: unknown) => {
+    const files = Array.isArray(paths) ? paths.filter((p): p is string => typeof p === 'string' && fs.existsSync(p)) : null;
+    shareWaiting.get(String(id))?.(files && files.length ? files : null);
   });
   ipcMain.handle('meetings:openFolder', async () => {
     const dir = path.join(app.getPath('videos'), 'Jarvis Meetings');
@@ -1561,6 +1589,7 @@ app.whenReady().then(async () => {
     jarvisDir: app.getPath('userData'),
     trash: (p) => shell.trashItem(p),
     onChange: () => send('team:filesChanged'),
+    askToShare: (role, prompt) => askToShare(role, prompt),
   });
   catalog = new AppCatalog(store, secrets, accounts, {
     files,

@@ -94,6 +94,11 @@ export class Orchestrator {
     return s;
   }
 
+  /** Who would answer this message (no side effects): the files shown with it go to their folder. */
+  whoAnswers(input: string, picked: RoleId | null = null): RoleId {
+    return routeRole(input, picked, this.last, (this.deps.now?.() ?? new Date()).getTime(), this.deps.people?.() ?? {}).role;
+  }
+
   /**
    * @param picked the team member chosen in the chat, or null for "Auto".
    * @param live spoken: the user talked (answer briefly); onRole: who answers, before they do; onText: the reply as it is written.

@@ -15,6 +15,16 @@ export const FILES_APP: AppDef = {
   defaultEnabled: true,
   abilities: [
     {
+      name: 'ask_user_to_share',
+      title: 'Ask you to show something',
+      description:
+        'When the user wants to show you something ("I want to show you…", "look at this", "can you see this PDF/photo/video"), call this: a drop box appears for them and you wait. What they drop is saved in your folder (Shared with me) and given to you: pictures attached, PDFs to read with Read, videos as scene pictures plus a timed transcript. Then answer about it.',
+      group: 'read',
+      defaultSetting: 'allowed', // nothing happens unless the user drops something
+      progress: 'Waiting for your file',
+      inputSchema: { type: 'object', properties: { prompt: { type: 'string', description: 'what to ask for, e.g. "Drop the blood test report here"' } } },
+    },
+    {
       name: 'list',
       title: 'See folders',
       description: 'List your folder (or a sub-folder, or a teammate’s folder with owner).',

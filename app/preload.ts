@@ -9,8 +9,13 @@ const on = (channel: string) => (cb: (payload: any) => void) => {
 
 contextBridge.exposeInMainWorld('jarvis', {
   /** Files for the team (bills, forms, reports): copied into Team/Inbox; returns where. */
-  attachFiles: (paths: string[]) => ipcRenderer.invoke('attach:files', paths),
   pickAttachments: () => ipcRenderer.invoke('attach:pick'),
+  /** An expert asks to be shown something: the drop box, and the user's answer (file paths, or null). */
+  onShareRequest: on('share:request'),
+  onShareClose: on('share:close'),
+  shareReply: (id: string, paths: string[] | null) => ipcRenderer.send('share:reply', id, paths),
+  /** The hidden window that reads a shared video reports what it found. */
+  digestDone: (r: unknown) => ipcRenderer.send('digest:done', r),
   /** The real path of a file dropped on the window (Electron no longer puts it on File). */
   pathOf: (file: File) => webUtils.getPathForFile(file),
   setupCheck: () => ipcRenderer.invoke('setup:check'),

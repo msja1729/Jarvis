@@ -519,3 +519,13 @@ body.box .chats, body.box .chats-show, body.box .old-banner { display: none !imp
 .attachment > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .attachment-x { padding: 0 7px; height: 22px; line-height: 1; border-radius: 999px; font-size: 14px; }
 body.dropping #composer { border-color: var(--light); box-shadow: 0 0 0 3px rgb(255 255 255 / 0.12), var(--card-shadow); }
+
+/* ---------- a member's drop box ("I want to show you something") ---------- */
+.share-box { --c: #9a9a96; margin: 0 6px 10px; }
+.share-zone { display: flex; flex-direction: column; gap: 8px; padding: 18px 20px; border-radius: 20px; border: 1.5px dashed color-mix(in srgb, var(--c) 55%, transparent);
+  background: color-mix(in srgb, var(--c) 8%, rgb(24 24 24 / 0.92)); transition: border-color .2s, background .2s; }
+.share-zone.over, body.dropping .share-zone { border-style: solid; border-color: var(--c); background: color-mix(in srgb, var(--c) 16%, rgb(24 24 24 / 0.92)); }
+.share-who { display: flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: color-mix(in srgb, var(--c) 70%, white); }
+.share-who i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); box-shadow: 0 0 10px var(--c); }
+.share-prompt { font-size: 15px; }
+.voice-card .share-box { margin: 10px 0 0; }

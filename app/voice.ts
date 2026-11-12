@@ -269,7 +269,7 @@ export class VoiceController {
       : `Nothing was said in the last ${minutes} min of ${what} (or it is still being transcribed).`;
   }
 
-  private async transcribePcm(raw: Uint8Array): Promise<string> {
+  async transcribePcm(raw: Uint8Array): Promise<string> {
     // trim the silence around the words and even out the volume (soft or rushed speech)
     const pcm = prepareSpeech(raw);
     const wav = path.join(os.tmpdir(), `jarvis-ptt-${crypto.randomBytes(6).toString('hex')}.wav`);

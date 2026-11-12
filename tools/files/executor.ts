@@ -30,6 +30,8 @@ export interface FilesDeps {
   /** Moves a file or folder to the Recycle Bin / Trash. Falls back to deleting. */
   trash?: (p: string) => Promise<void>;
   onChange?: (role: RoleId) => void;
+  /** Shows the user a drop box for this member; resolves with what they shared (saved in the member's folder). */
+  askToShare?: (role: RoleId, prompt: string) => Promise<RawResult>;
 }
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '');
@@ -93,6 +95,11 @@ export class FilesExecutor implements AppExecutor {
 
   async call(ability: string, input: Record<string, unknown>, ctx?: CallContext): Promise<RawResult> {
     switch (ability) {
+      case 'ask_user_to_share': {
+        const self = this.self(ctx);
+        if (!this.deps.askToShare || self === 'jarvis') throw new Error('Sharing files is not available here.');
+        return this.deps.askToShare(self, str(input.prompt).trim().slice(0, 160));
+      }
       case 'list':
         return this.list(input, ctx);
       case 'read':

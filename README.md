@@ -7,7 +7,7 @@
 Talk to a personal assistant, a project manager, a doctor and a finance expert, by typing or by voice.
 They work in the apps you allow, remember what matters to you, and run on **your own Claude Pro or Max plan**.
 
-[**Download for Windows**](https://github.com/msja1729/Jarvis/releases/latest/download/Jarvis-Setup-0.5.0.exe) · [All releases](https://github.com/msja1729/Jarvis/releases) · [What Jarvis can do (PDF)](docs/Jarvis-Capabilities.pdf)
+[**Download for Windows**](https://github.com/msja1729/Jarvis/releases/latest/download/Jarvis-Setup-0.6.0.exe) · [All releases](https://github.com/msja1729/Jarvis/releases) · [What Jarvis can do (PDF)](docs/Jarvis-Capabilities.pdf)
 
 <img src="docs/images/chat.png" alt="Chatting with Sara, the doctor" width="860" />
 
@@ -39,7 +39,8 @@ Start a message with a name, like *"Sara, …"*, and you stay with her until you
 - **Meetings, with what was shown.** "Ryan, record this meeting and note my tasks": Jarvis records your microphone, your computer's sound (the call, a video you play) and the screen as a video, and takes a picture whenever a new slide or board appears. You get a transcript, minutes that include what was on the slides, and your tasks on the board with reminders. Once the notes are written, the video and pictures are deleted so they don't pile up (you can choose to keep them in **Videos → Jarvis Meetings**).
 - **"What did they just say?"** Say "listen along" during a lecture, a video or a call, and ask any time: "what did he just say?", "explain that", "what was the question?". Jarvis hears your computer's sound (not your microphone) and keeps only the text of the last 15 minutes, in memory.
 - **Help during a live meeting.** While a meeting is being recorded, press the push-to-talk key and ask "what should I answer?" or "what did we decide about this last time?": the answer appears quietly on the card, so nothing is played into the meeting.
-- **Bills and forms.** Drop a bill, receipt, form or report on the chat (or use the paperclip): Victor files bills in your budget and has Maya remind you before they're due; Maya fills forms from what the team knows, leaving passwords and ID numbers to you.
+- **Show them anything.** Say "Sara, I want to show you something" and she gives you a drop box: drop a PDF, a photo, a video or a recording. It's saved in her own folder (Shared with me) and she looks at it right away. Videos are taken in as pictures of each scene plus a timed transcript, on your computer. You can also drop files on the chat or use the paperclip.
+- **Bills and forms.** Show Victor a bill and he files it in your budget and has Maya remind you before it's due; show Maya a form and she fills it from what the team knows, leaving passwords and ID numbers to you.
 - **Medicines and follow-ups.** Tell Sara what the doctor prescribed (or record the appointment) and she sets a reminder for every dose, for exactly the number of days, plus the follow-up visit, and says them in her own voice.
 - **Reminders, a morning plan, an evening review and a project board** shared by Maya and Ryan: "Wrap up my day" (or a set time) tells you what got done, what's still open, what's due tomorrow and anything you missed.
 - **They work together.** Members ask each other for help and read each other's notes.
@@ -58,7 +59,7 @@ Start a message with a name, like *"Sara, …"*, and you stay with her until you
 
 ## Install (Windows 10/11)
 
-1. **[Download Jarvis-Setup-0.5.0.exe](https://github.com/msja1729/Jarvis/releases/latest/download/Jarvis-Setup-0.5.0.exe)** and run it.
+1. **[Download Jarvis-Setup-0.6.0.exe](https://github.com/msja1729/Jarvis/releases/latest/download/Jarvis-Setup-0.6.0.exe)** and run it.
    Windows may say *"Windows protected your PC"* because the installer is not code-signed yet: click **More info → Run anyway**.
 2. Jarvis opens and sets itself up with you: your name (and how to say it), connecting your Claude (it installs Claude Code and signs you in if needed), tools and microphone, the natural voices, and then the team introduces itself.
 

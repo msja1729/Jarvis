@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!-- hidden helper: reads only the local file the user shared (file:), nothing from the network -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; media-src file: blob:; connect-src file:; img-src 'self' blob: data:" />
+    <title>Jarvis media reader</title>
+  </head>
+  <body>
+    <script src="media-digest.js"></script>
+  </body>
+</html>

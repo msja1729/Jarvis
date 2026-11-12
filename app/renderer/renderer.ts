@@ -20,7 +20,7 @@ declare global {
       nameGet(): Promise<{ name: string; sayAs: string }>;
       appUninstall(): Promise<boolean>;
       mediaSpeaking(on: boolean): void;
-      ask(text: string, role?: string | null, opts?: { stream?: boolean }): Promise<any>;
+      ask(text: string, role?: string | null, opts?: { stream?: boolean; files?: string[] }): Promise<any>;
       onAskStart(cb: (s: { roleName: string; roleColor: string; voice: string }) => void): void;
       onAskPartial(cb: (d: string) => void): void;
       historyPrepare(): Promise<{ conv: string; isNew: boolean }>;
@@ -75,7 +75,9 @@ declare global {
       sendPcm(kind: string, data: Uint8Array, level: number): void;
       sendMeetingVideo(chunk: Uint8Array, mimeType: string): void;
       sendMeetingFrame(jpeg: Uint8Array): void;
-      attachFiles(paths: string[]): Promise<{ name: string; path: string }[]>;
+      onShareRequest(cb: (req: { id: string; name: string; color: string; prompt: string }) => void): void;
+      shareReply(id: string, paths: string[] | null): void;
+      onShareClose(cb: (id: string) => void): void;
       pickAttachments(): Promise<{ name: string; path: string }[]>;
       pathOf(file: File): string;
       openMeetingsFolder(): Promise<void>;
@@ -857,7 +859,8 @@ $('composer').addEventListener('submit', async (e) => {
   const typed = input.value.trim() || (attached.length ? 'Please look at the file I attached.' : '');
   if (!typed) return;
   const files = attached.map((a) => a.name);
-  const text = withAttachments(typed);
+  const text = typed;
+  const sendFiles = takeAttachments();
   input.value = '';
   stopSpeaking();
   if (MODE === 'main') {
@@ -876,7 +879,7 @@ $('composer').addEventListener('submit', async (e) => {
   setProgress(true);
   try {
     awaitingLive = voiceOn;
-    const r = await j.ask(text, pickedRole, { stream: voiceOn });
+    const r = await j.ask(text, pickedRole, { stream: voiceOn, files: sendFiles.length ? sendFiles : undefined });
     if (r.command === 'new_conversation' && MODE === 'main') {
       shownConv = null;
       clearChatView();
@@ -951,20 +954,68 @@ window.addEventListener('drop', async (e) => {
   document.body.classList.remove('dropping');
   const paths = [...(e.dataTransfer?.files ?? [])].map((f) => j.pathOf(f)).filter(Boolean);
   if (!paths.length) return;
-  try {
-    await addAttachments(await j.attachFiles(paths));
-  } catch (err) {
-    showNotice(cleanError(err));
+  if (shareOpen) {
+    shareOpen.give(paths);
+    return;
   }
+  await addAttachments(paths.slice(0, 6).map((p) => ({ name: p.split(/[\\/]/).pop() ?? p, path: p })));
 });
 /** The message text with the attached files named, so the expert reads them. */
-function withAttachments(text: string): string {
-  if (!attached.length) return text;
-  const list = attached.map((a) => a.path).join('; ');
+/** The files to send with the message (they go to the folder of the member who answers); clears the list. */
+function takeAttachments(): string[] {
+  const list = attached.map((a) => a.path);
   attached = [];
   renderAttachments();
-  return `${text}\n[Attached for you to read: ${list}]`;
+  return list;
 }
+
+/* ---------- a member asks to be shown something: their drop box ---------- */
+let shareOpen: { id: string; give(paths: string[]): void } | null = null;
+j.onShareRequest(({ id, name, color, prompt }) => {
+  shareOpen?.give([]); // only one box at a time
+  const box = el('div', { className: 'share-box' });
+  box.dataset.id = id;
+  box.style.setProperty('--c', color);
+  const choose = el('button', { type: 'button', className: 'primary' }, 'Choose files…');
+  const cancel = el('button', { type: 'button', className: 'chip' }, 'Not now');
+  const zone = el(
+    'div',
+    { className: 'share-zone' },
+    el('div', { className: 'share-who' }, el('i', {}), `${name} would like to see it`),
+    el('div', { className: 'share-prompt' }, prompt),
+    el('div', { className: 'muted small' }, 'Drop a PDF, photo, video or recording here. It is saved in their folder (Shared with me).'),
+    el('div', { className: 'row-buttons' }, choose, cancel),
+  );
+  box.append(zone);
+  const done = (paths: string[] | null) => {
+    if (shareOpen?.id !== id) return;
+    shareOpen = null;
+    box.remove();
+    j.shareReply(id, paths && paths.length ? paths : null);
+    if (MODE === 'voice') fitVoice();
+  };
+  shareOpen = { id, give: (paths) => done(paths) };
+  choose.addEventListener('click', async () => {
+    const picked = await j.pickAttachments().catch(() => []);
+    if (picked.length) done(picked.map((f) => f.path));
+  });
+  cancel.addEventListener('click', () => done(null));
+  zone.addEventListener('dragover', (ev) => {
+    ev.preventDefault();
+    zone.classList.add('over');
+  });
+  zone.addEventListener('dragleave', () => zone.classList.remove('over'));
+  if (MODE === 'voice') {
+    $('voice-card').append(box);
+    fitVoice();
+  } else {
+    if (MODE === 'main') show('chat');
+    $('composer').before(box);
+  }
+});
+j.onShareClose((id: string) => {
+  if (shareOpen?.id === id) shareOpen.give([]);
+});
 
 function submitText(text: string) {
   $<HTMLInputElement>('input').value = text;
