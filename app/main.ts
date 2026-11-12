@@ -1526,6 +1526,7 @@ function registerIpc() {
     if (taken) throw new Error(`${clean} is already on the team.`);
     store.setRoleName(role, clean || null);
     voice.engine.vocabulary = teamVocabulary();
+    send('team:renamed', {}); // every window (chat chips, floating box, voice card) shows the new name
   // keep the speech model loaded, so talking to the team is quick from the first sentence
   setTimeout(() => {
     if (voice.engine.status().ready) void voice.engine.warmUp();

@@ -79,8 +79,17 @@ function openTerminal(command: string): boolean {
   const { env } = sanitizeEnv(process.env);
   delete env.ELECTRON_RUN_AS_NODE;
   if (process.platform === 'win32') {
-    // detached: Windows gives the child its own console window, which stays open (-NoExit)
-    spawn('powershell.exe', ['-NoExit', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command], { detached: true, stdio: 'ignore', env }).unref();
+    // "start" always opens a new, visible console window (a plain detached spawn from a windowed app
+    // started from the Start menu never showed one: the sign-in did nothing). The command travels
+    // encoded, so its quotes and "&" are never read by cmd; the window stays open (-NoExit).
+    const encoded = Buffer.from(command, 'utf16le').toString('base64');
+    spawn('cmd.exe', [`/d /c start "Jarvis - Claude Code" powershell.exe -NoExit -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encoded}`], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true, // hides only cmd itself; the PowerShell window it starts is shown
+      windowsVerbatimArguments: true,
+      env,
+    }).unref();
   } else if (process.platform === 'darwin') {
     const script = `tell application "Terminal" to do script ${JSON.stringify(command)}\ntell application "Terminal" to activate`;
     spawn('osascript', ['-e', script], { detached: true, stdio: 'ignore', env }).unref();

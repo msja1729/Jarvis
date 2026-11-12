@@ -60,6 +60,7 @@ contextBridge.exposeInMainWorld('jarvis', {
   teamList: () => ipcRenderer.invoke('team:list'),
   teamSetVoice: (role: string, voice: string) => ipcRenderer.invoke('team:setVoice', role, voice),
   teamSetName: (role: string, name: string) => ipcRenderer.invoke('team:setName', role, name),
+  onTeamRenamed: on('team:renamed'),
   teamSaveNotes: (role: string, text: string) => ipcRenderer.invoke('team:saveNotes', role, text),
   teamForget: (role: string) => ipcRenderer.invoke('team:forget', role),
   teamRefresh: (role: string) => ipcRenderer.invoke('team:refresh', role),

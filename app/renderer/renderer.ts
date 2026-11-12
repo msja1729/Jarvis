@@ -42,6 +42,7 @@ declare global {
       onHistoryCleared(cb: () => void): void;
       teamList(): Promise<{ roles: TeamRole[]; voices: { id: string; name: string; accent: string; gender: string; grade: string }[] }>;
       teamSetVoice(role: string, voice: string): Promise<string>;
+      onTeamRenamed(cb: () => void): void;
       teamSetName(role: string, name: string): Promise<string>;
       teamSaveNotes(role: string, text: string): Promise<string>;
       teamForget(role: string): Promise<string>;
@@ -302,6 +303,9 @@ let teamCache: { roles: TeamRole[]; voices: { id: string; name: string; accent: 
 /** Who the chat talks to; null = Auto (Jarvis picks the right expert). */
 let pickedRole: string | null = null;
 
+// a member was renamed (here or in another window): every window shows the new name
+j.onTeamRenamed(() => void loadTeam());
+
 async function loadTeam() {
   teamCache = await j.teamList();
   renderRoleChips();
@@ -479,25 +483,30 @@ async function renderTeam() {
     const sub = el('div', { className: 'muted' }, r.id === 'jarvis' ? r.title : `${r.name} · ${r.title}`);
     const head = el('div', { className: 'team-head' }, el('span', { className: 'team-orb' }), el('div', {}, title, sub));
     if (r.id !== 'jarvis') {
+      // one button, one action at a time: "Rename" opens the name box, "Save" saves what is typed in it
+      // (it used to keep its "Rename" action too, which reopened the box with the old name and saved that)
       const rename = el('button', { type: 'button', className: 'chip team-rename', title: 'Rename' }, 'Rename');
+      let input: HTMLInputElement | null = null;
+      const err = el('div', { className: 'error small' });
+      const save = async () => {
+        if (!input) return;
+        try {
+          r.person = await j.teamSetName(r.id, input.value);
+          void renderTeam();
+        } catch (e) {
+          err.textContent = cleanError(e);
+        }
+      };
       rename.addEventListener('click', () => {
-        const input = el('input', { className: 'team-name-input', value: r.person, maxLength: 20 });
-        const err = el('div', { className: 'error small' });
-        const save = async () => {
-          try {
-            r.person = await j.teamSetName(r.id, input.value);
-            void renderTeam();
-          } catch (e) {
-            err.textContent = cleanError(e);
-          }
-        };
+        if (input) return void save();
+        input = el('input', { className: 'team-name-input', value: r.person, maxLength: 20 });
         input.addEventListener('keydown', (e) => {
           if (e.key === 'Enter') void save();
           if (e.key === 'Escape') void renderTeam();
         });
         title.replaceWith(el('div', {}, input, err));
         rename.textContent = 'Save';
-        rename.onclick = () => void save();
+        rename.title = 'Save the new name';
         input.focus();
         input.select();
       });

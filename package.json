@@ -1,6 +1,6 @@
 {
   "name": "jarvis",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "private": true,
   "description": "Your own team of AI experts on your desktop, running on your Claude plan through Claude Code.",
   "homepage": "https://github.com/msja1729/Jarvis",
