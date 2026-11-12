@@ -14,7 +14,14 @@
       <nav id="nav" class="glass">
         <span class="nav-pill" aria-hidden="true"></span>
         <div class="brand">
-          <span class="brand-orb" aria-hidden="true"></span>
+          <svg class="brand-logo" viewBox="0 0 40 40" aria-hidden="true">
+            <defs><radialGradient id="brand-core" cx="40%" cy="36%" r="70%"><stop offset="0" stop-color="#ffffff" /><stop offset="1" stop-color="#aabee6" /></radialGradient></defs>
+            <circle class="bl-ring" cx="20" cy="20" r="18.6" />
+            <circle class="bl-open" cx="20" cy="20" r="14.6" />
+            <circle class="bl-dots" cx="20" cy="20" r="11" />
+            <circle class="bl-fast" cx="20" cy="20" r="8" />
+            <circle class="bl-core" cx="20" cy="20" r="4.6" fill="url(#brand-core)" />
+          </svg>
           <span>JARVIS</span>
         </div>
         <button data-view="chat" class="active">
@@ -39,6 +46,21 @@
       </nav>
 
       <div id="frame">
+        <!-- the floating box's own title bar: drag it to move the box; open Jarvis or close the box -->
+        <div id="box-bar" class="box-bar">
+          <svg class="brand-logo box-logo" viewBox="0 0 40 40" aria-hidden="true">
+            <defs><radialGradient id="box-core" cx="40%" cy="36%" r="70%"><stop offset="0" stop-color="#ffffff" /><stop offset="1" stop-color="#aabee6" /></radialGradient></defs>
+            <circle class="bl-ring" cx="20" cy="20" r="18.6" />
+            <circle class="bl-open" cx="20" cy="20" r="14.6" />
+            <circle class="bl-dots" cx="20" cy="20" r="11" />
+            <circle class="bl-fast" cx="20" cy="20" r="8" />
+            <circle class="bl-core" cx="20" cy="20" r="4.6" style="fill: url(#box-core)" />
+          </svg><b>Jarvis</b>
+          <span class="spacer"></span>
+          <button type="button" id="box-min" class="box-btn" title="Minimise (it goes to the taskbar)" aria-label="Minimise"><svg viewBox="0 0 24 24"><path d="M6 12h12" /></svg></button>
+          <button type="button" id="box-open" class="box-btn" title="Open the Jarvis window" aria-label="Open the Jarvis window"><svg viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-8 8M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></svg></button>
+          <button type="button" id="box-close" class="box-btn close" title="Close the floating box (the shortcut brings it back)" aria-label="Close the floating box"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg></button>
+        </div>
         <header id="topbar" class="glass">
           <div class="hero"><h1 id="page-title">Chat</h1><p id="page-sub">Ask anything, by typing or with your voice</p></div>
           <div class="spacer"></div>
@@ -200,109 +222,168 @@
           </section>
 
           <section id="view-settings" class="view">
-            <div class="settings-grid">
-              <div class="card settings-card">
-                <h3 class="card-title">Conversation</h3>
-                <label>How your team explains things
-                  <select id="explain-level">
-                    <option value="auto">Automatic (picked from your question)</option>
-                    <option value="eli5">Like I'm five (simplest words, everyday examples)</option>
-                    <option value="student">Student (clear, friendly, explains terms)</option>
-                    <option value="professional">Professional (precise, technical, real code and trade-offs)</option>
-                  </select>
-                </label>
-                <p class="help">You can also just say it: "explain like I'm five" or "explain at an expert level".</p>
-                <div class="divider"></div>
-                <label class="switch-row"><span>Let your team use Claude Code's own tools too (files, commands, web pages)</span><input type="checkbox" id="claude-tools" class="switch" /></label>
-                <p class="help">Each expert works in their own folder (Team page &rarr; Open folder), so what they make is saved there. Reading the team folders, saving in their own folder and the web are allowed; running commands or anything outside the team folders asks you first; they never write in a teammate's folder.</p>
-                <label class="switch-row"><span>Speak replies aloud</span><input type="checkbox" id="voice-output" class="switch" /></label>
-                <label class="switch-row"><span>Pause music and videos while you talk and while your team speaks</span><input type="checkbox" id="pause-media" class="switch" /></label>
-                <label class="switch-row"><span>Keep chat history on this computer</span><input type="checkbox" id="keep-history" class="switch" /></label>
-                <div class="row-buttons"><button id="clear-history" type="button">Clear chat history</button><span id="history-status" class="muted"></span></div>
-              </div>
+            <div class="settings">
+              <nav class="set-nav" aria-label="Settings sections">
+                <a href="#set-you" class="active">You</a>
+                <a href="#set-conversation">Conversation</a>
+                <a href="#set-voice">Voice</a>
+                <a href="#set-meetings">Meetings</a>
+                <a href="#set-coding">Coding</a>
+                <a href="#set-setup">Setup</a>
+              </nav>
+              <div class="set-main">
+                <section class="set-sec" id="set-you">
+                  <h3 class="set-title">You</h3>
+                  <div class="set-card">
+                    <div class="set-row">
+                      <div class="set-text"><b>Your name</b><p>Your team uses it when they talk to you.</p></div>
+                      <div class="set-ctl"><input id="you-name" maxlength="30" autocomplete="off" placeholder="Your name" /><button id="you-save" type="button">Save</button></div>
+                    </div>
+                    <div class="set-block" id="you-say"></div>
+                  </div>
+                </section>
 
-              <div class="card settings-card">
-                <div class="app-head"><h3 class="card-title">Voice input</h3><span id="speech-pill" class="pill">Checking&hellip;</span></div>
-                <p class="help">Speech is turned into text on this computer (whisper.cpp). Your voice is never sent anywhere, only the text.</p>
-                <div id="speech-help" class="help hidden"></div>
-                <div class="row-buttons">
-                  <button id="speech-install" class="primary hidden">Download speech recognition</button>
-                  <button id="speech-check">Check again</button>
-                </div>
-                <div id="speech-progress" class="meter-bar hidden"><i></i><span></span></div>
-                <label>Push-to-talk shortcut (works in any app)
-                  <div class="row-buttons"><input id="ptt-hotkey" placeholder="Control+Alt+Space" autocomplete="off" /><button id="ptt-save">Save</button></div>
-                </label>
-                <p class="help">Press it, speak, and your team answers out loud. Listening stops after a short pause (or press it again).</p>
-                <label>Show or hide the answer card (works in any app)
-                  <div class="row-buttons"><input id="card-hotkey" placeholder="Control+Alt+J" autocomplete="off" /><button id="card-save">Save</button></div>
-                </label>
-                <p class="help">The written answer stays hidden while it is spoken. Press this shortcut to see it. The &times; on the card stops the speech.</p>
-                <div id="ptt-error" class="error"></div>
-              </div>
+                <section class="set-sec" id="set-conversation">
+                  <h3 class="set-title">Conversation</h3>
+                  <div class="set-card">
+                    <div class="set-row">
+                      <div class="set-text"><b>How your team explains things</b><p>You can also just say it: "explain like I'm five" or "explain at an expert level".</p></div>
+                      <div class="set-ctl wide">
+                        <select id="explain-level">
+                          <option value="auto">Automatic (picked from your question)</option>
+                          <option value="eli5">Like I'm five (simplest words, everyday examples)</option>
+                          <option value="student">Student (clear, friendly, explains terms)</option>
+                          <option value="professional">Professional (precise, technical, real code and trade-offs)</option>
+                        </select>
+                      </div>
+                    </div>
+                    <label class="set-row">
+                      <div class="set-text"><b>Claude Code's own tools</b><p>Files, commands and web pages too. Each expert works in their own folder (Team page &rarr; Open folder), so what they make is saved there. Reading the team folders, saving in their own folder and the web are allowed; running commands or anything outside the team folders asks you first; they never write in a teammate's folder.</p></div>
+                      <div class="set-ctl"><input type="checkbox" id="claude-tools" class="switch" /></div>
+                    </label>
+                    <label class="set-row">
+                      <div class="set-text"><b>Speak replies aloud</b><p>Your team reads every answer out loud: in the chat, in the floating box and when you ask by push-to-talk. Off, answers are only written (spoken questions get theirs on the voice card).</p></div>
+                      <div class="set-ctl"><input type="checkbox" id="voice-output" class="switch" /></div>
+                    </label>
+                    <label class="set-row">
+                      <div class="set-text"><b>Pause music and videos</b><p>While you talk and while your team speaks; they carry on afterwards.</p></div>
+                      <div class="set-ctl"><input type="checkbox" id="pause-media" class="switch" /></div>
+                    </label>
+                    <label class="set-row">
+                      <div class="set-text"><b>Keep chat history</b><p>Your conversations are saved on this computer only.</p></div>
+                      <div class="set-ctl"><input type="checkbox" id="keep-history" class="switch" /></div>
+                    </label>
+                    <div class="set-row">
+                      <div class="set-text"><b>Clear chat history</b><p id="history-status">Deletes every saved conversation.</p></div>
+                      <div class="set-ctl"><button id="clear-history" type="button">Clear history</button></div>
+                    </div>
+                  </div>
+                </section>
 
-              <div class="card settings-card">
-                <div class="app-head"><h3 class="card-title">Natural voice</h3><span id="tts-pill" class="pill">Checking&hellip;</span></div>
-                <p class="help">A realistic voice (Kokoro) made on this computer; nothing is sent anywhere. Each team member's voice is chosen on the Team page.</p>
-                <div class="row-buttons"><button id="tts-install" class="primary hidden">Download natural voice (about 326 MB)</button></div>
-                <div id="tts-progress" class="meter-bar hidden"><i></i><span></span></div>
-                <label>Speed <span id="tts-speed-label" class="muted"></span><input id="tts-speed" type="range" min="0.8" max="1.3" step="0.05" /></label>
-                <div class="row-buttons"><button id="tts-sample">Play sample</button><span class="help">The speed is the same for the whole team.</span></div>
-                <div id="tts-error" class="error"></div>
-              </div>
+                <section class="set-sec" id="set-voice">
+                  <h3 class="set-title">Voice</h3>
+                  <div class="set-card">
+                    <div class="set-row">
+                      <div class="set-text"><b>Speech recognition <span id="speech-pill" class="pill">Checking&hellip;</span></b><p>Speech is turned into text on this computer (whisper.cpp). Your voice is never sent anywhere, only the text.</p><div id="speech-help" class="set-note hidden"></div></div>
+                      <div class="set-ctl"><button id="speech-install" class="primary hidden">Download</button><button id="speech-check">Check again</button></div>
+                    </div>
+                    <div id="speech-progress" class="meter-bar set-meter hidden"><i></i><span></span></div>
+                    <div class="set-row">
+                      <div class="set-text"><b>Push-to-talk shortcut</b><p>Works in any app. Press it, speak, and your team answers out loud. Listening stops after a short pause (or press it again).</p></div>
+                      <div class="set-ctl"><input id="ptt-hotkey" placeholder="Control+Alt+Space" autocomplete="off" /><button id="ptt-save">Save</button></div>
+                    </div>
+                    <div class="set-row">
+                      <div class="set-text"><b>Show or hide the answer card</b><p>Works in any app. The written answer stays hidden while it is spoken; press this to see it. The &times; on the card stops the speech.</p></div>
+                      <div class="set-ctl"><input id="card-hotkey" placeholder="Control+Alt+J" autocomplete="off" /><button id="card-save">Save</button></div>
+                    </div>
+                    <div id="ptt-error" class="error set-error"></div>
+                    <div class="set-row">
+                      <div class="set-text"><b>Natural voice <span id="tts-pill" class="pill">Checking&hellip;</span></b><p>A realistic voice (Kokoro) made on this computer; nothing is sent anywhere. Each team member's voice is chosen on the Team page.</p></div>
+                      <div class="set-ctl"><button id="tts-install" class="primary hidden">Download (about 326 MB)</button></div>
+                    </div>
+                    <div id="tts-progress" class="meter-bar set-meter hidden"><i></i><span></span></div>
+                    <div class="set-row">
+                      <div class="set-text"><b>Speaking speed <span id="tts-speed-label" class="muted"></span></b><p>The same for the whole team.</p></div>
+                      <div class="set-ctl wide"><input id="tts-speed" type="range" min="0.8" max="1.3" step="0.05" /><button id="tts-sample">Play sample</button></div>
+                    </div>
+                    <div id="tts-error" class="error set-error"></div>
+                  </div>
+                </section>
 
-              <div class="card settings-card">
-                <h3 class="card-title">Meeting recorder</h3>
-                <p class="help">Say "Ryan, record this meeting" (or "Sara, record this appointment"). Jarvis records your microphone and your computer's sound, and transcribes it on this computer.</p>
-                <label class="switch-row"><span>Also record the screen: a video of the meeting, and a picture each time the screen changes (slides, a whiteboard, anything shown), so your team can see what was presented</span><input type="checkbox" id="record-screen" class="switch" /></label>
-                <label class="switch-row"><span>Keep the video and pictures after the notes are written</span><input type="checkbox" id="keep-meeting-media" class="switch" /></label>
-                <p class="help">Off: the video and pictures are only used to write the notes, then deleted, so they don't pile up (the notes and the text transcript stay). On: they stay in your Videos folder under Jarvis Meetings (about 14 MB a minute), even if you uninstall Jarvis. Always tell people when you record them.</p>
-                <div class="row-buttons"><button id="meetings-folder" type="button">Open the meetings folder</button></div>
-              </div>
+                <section class="set-sec" id="set-meetings">
+                  <h3 class="set-title">Meetings</h3>
+                  <div class="set-card">
+                    <p class="set-intro">Say "Ryan, record this meeting" (or "Sara, record this appointment"). Jarvis records your microphone and your computer's sound, and transcribes it on this computer. Always tell people when you record them.</p>
+                    <label class="set-row">
+                      <div class="set-text"><b>Record the screen too</b><p>A video of the meeting, and a picture each time the screen changes (slides, a whiteboard, anything shown), so your team can see what was presented.</p></div>
+                      <div class="set-ctl"><input type="checkbox" id="record-screen" class="switch" /></div>
+                    </label>
+                    <label class="set-row">
+                      <div class="set-text"><b>Keep the video and pictures</b><p>Off: they are only used to write the notes, then deleted (the notes and the text transcript stay). On: they stay in your Videos folder under Jarvis Meetings (about 14 MB a minute), even if you uninstall Jarvis.</p></div>
+                      <div class="set-ctl"><input type="checkbox" id="keep-meeting-media" class="switch" /></div>
+                    </label>
+                    <div class="set-row">
+                      <div class="set-text"><b>Meetings folder</b><p>Videos &rarr; Jarvis Meetings.</p></div>
+                      <div class="set-ctl"><button id="meetings-folder" type="button">Open folder</button></div>
+                    </div>
+                  </div>
+                </section>
 
-              <div class="card settings-card">
-                <h3 class="card-title">You</h3>
-                <label>Your name (your team uses it)
-                  <div class="row-buttons"><input id="you-name" maxlength="30" autocomplete="off" placeholder="Your name" /><button id="you-save" type="button">Save</button></div>
-                </label>
-                <div id="you-say"></div>
-              </div>
+                <section class="set-sec" id="set-coding">
+                  <h3 class="set-title">Coding supervisor</h3>
+                  <div class="set-card">
+                    <p class="set-intro">Say "Ryan, add a login page to my project". Claude Code works on the folder you pick, in the background; you get its questions with a recommendation, and updates.</p>
+                    <div class="set-row">
+                      <div class="set-text"><b>What may be approved without asking you</b><p>Always asked, at every level: deleting files, git push, installing software, using the network, anything outside the project folder, and files with keys or passwords.</p></div>
+                      <div class="set-ctl wide">
+                        <select id="sup-autonomy">
+                          <option value="careful">Careful: only reading; everything else comes to you</option>
+                          <option value="balanced">Balanced: reading, editing, tests and builds (recommended)</option>
+                          <option value="handsoff">Hands-off: also other commands; only risky things come to you</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div class="set-row">
+                      <div class="set-text"><b>Progress updates</b><p>How often you hear how it is going.</p></div>
+                      <div class="set-ctl wide">
+                        <select id="sup-updates">
+                          <option value="0">Only at the start, questions and the end</option>
+                          <option value="3">Every 3 minutes (if something happened)</option>
+                          <option value="5">Every 5 minutes (if something happened)</option>
+                          <option value="10">Every 10 minutes (if something happened)</option>
+                          <option value="15">Every 15 minutes (if something happened)</option>
+                        </select>
+                      </div>
+                    </div>
+                    <label class="set-row">
+                      <div class="set-text"><b>Speak questions and updates aloud</b><p>Otherwise they only appear on the coding card.</p></div>
+                      <div class="set-ctl"><input type="checkbox" id="sup-speak" class="switch" /></div>
+                    </label>
+                    <label class="set-row">
+                      <div class="set-text"><b>Your own Claude Code sessions</b><p>Also tell me when sessions I start myself (VS Code, terminal) finish or need me.</p><p class="set-note" id="sup-watch-help">This adds two small entries (marked "jarvis-claude-hook") to your Claude Code settings; turning it off removes exactly those.</p></div>
+                      <div class="set-ctl"><input type="checkbox" id="sup-watch" class="switch" /></div>
+                    </label>
+                    <div id="sup-watch-error" class="error set-error"></div>
+                  </div>
+                </section>
 
-              <div class="card settings-card">
-                <h3 class="card-title">Coding supervisor</h3>
-                <p class="help">With the Coding supervisor on (Tool Hub), say "Ryan, add a login page to my project". Claude Code works on the folder you pick, in the background; you get its questions with a recommendation, and updates.</p>
-                <label>What may be approved without asking you
-                  <select id="sup-autonomy">
-                    <option value="careful">Careful: only reading; everything else comes to you</option>
-                    <option value="balanced">Balanced: reading, editing project files, running tests and builds (recommended)</option>
-                    <option value="handsoff">Hands-off: also other commands; only risky things come to you</option>
-                  </select>
-                </label>
-                <p class="help">Always asked, at every level: deleting files, git push, installing software, using the network, anything outside the project folder, and files with keys or passwords.</p>
-                <label>Progress updates
-                  <select id="sup-updates">
-                    <option value="0">Only at the start, questions and the end</option>
-                    <option value="3">Every 3 minutes (if something happened)</option>
-                    <option value="5">Every 5 minutes (if something happened)</option>
-                    <option value="10">Every 10 minutes (if something happened)</option>
-                    <option value="15">Every 15 minutes (if something happened)</option>
-                  </select>
-                </label>
-                <label class="switch-row"><span>Speak questions and updates aloud</span><input type="checkbox" id="sup-speak" class="switch" /></label>
-                <label class="switch-row"><span>Also tell me when Claude Code sessions I start myself (VS Code, terminal) finish or need me</span><input type="checkbox" id="sup-watch" class="switch" /></label>
-                <p class="help" id="sup-watch-help">This adds two small entries (marked "jarvis-claude-hook") to your Claude Code settings; turning it off removes exactly those.</p>
-                <div id="sup-watch-error" class="error"></div>
-              </div>
-
-              <div class="card settings-card">
-                <h3 class="card-title">Setup &amp; uninstall</h3>
-                <div class="row-buttons">
-                  <button id="meet-again" type="button">Meet the team again</button>
-                  <button id="setup-again" type="button">Run the setup again</button>
-                </div>
-                <div class="divider"></div>
-                <p class="help">Uninstalling removes Jarvis and everything it kept on this computer: settings, chats, memory, team folders, voices, saved sign-ins and the Claude Code hooks it added. Claude Code itself, your own projects and any meeting videos you chose to keep are not touched.</p>
-                <div class="row-buttons"><button id="uninstall" type="button" class="chip danger">Uninstall Jarvis</button><span id="uninstall-msg" class="muted"></span></div>
+                <section class="set-sec" id="set-setup">
+                  <h3 class="set-title">Setup &amp; uninstall</h3>
+                  <div class="set-card">
+                    <div class="set-row">
+                      <div class="set-text"><b>Meet the team again</b><p>Replay the team's introductions.</p></div>
+                      <div class="set-ctl"><button id="meet-again" type="button">Meet the team</button></div>
+                    </div>
+                    <div class="set-row">
+                      <div class="set-text"><b>Run the setup again</b><p>The welcome from the start: your name, Claude, tools and voices.</p></div>
+                      <div class="set-ctl"><button id="setup-again" type="button">Run setup</button></div>
+                    </div>
+                    <div class="set-row">
+                      <div class="set-text"><b>Uninstall Jarvis</b><p>Removes Jarvis and everything it kept on this computer: settings, chats, memory, team folders, voices, saved sign-ins and the Claude Code hooks it added. Claude Code itself, your own projects and any meeting videos you chose to keep are not touched.</p><p class="set-note" id="uninstall-msg"></p></div>
+                      <div class="set-ctl"><button id="uninstall" type="button" class="chip danger">Uninstall</button></div>
+                    </div>
+                  </div>
+                </section>
               </div>
             </div>
           </section>
@@ -315,7 +396,8 @@
         <span class="mini-orb" id="vc-orb"></span><b id="vc-name">Jarvis</b>
         <span class="spacer"></span>
         <button id="vc-open" class="link" type="button">Open Jarvis</button>
-        <button id="vc-close" class="vc-x" type="button" aria-label="Close">×</button>
+        <button id="vc-min" class="vc-x" type="button" aria-label="Minimise" title="Minimise (it goes to the taskbar)"><svg viewBox="0 0 24 24"><path d="M6 12h12" /></svg></button>
+        <button id="vc-close" class="vc-x" type="button" aria-label="Close" title="Close (stops the speech)">×</button>
       </div>
       <div class="vc-you"><span class="muted">You said</span> <span id="vc-you"></span></div>
       <div id="vc-status" class="vc-status hidden" aria-label="Replying"><span class="dots"><i></i><i></i><i></i></span></div>

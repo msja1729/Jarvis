@@ -99,7 +99,7 @@
       </div>
     </div>
   </div>
-  <div class="meta"><span>Version 0.7.0 · Windows · November 2026</span><span>github.com/msja1729/Jarvis</span></div>
+  <div class="meta"><span>Version 0.8.0 · Windows · November 2026</span><span>github.com/msja1729/Jarvis</span></div>
 </div>
 
 <!-- ================= CONTENTS ================= -->
@@ -198,22 +198,22 @@ typing or by voice, from any app, and they work in the apps you connect, but onl
 
 <h3>Installing</h3>
 <ol class="steps">
-  <li>Download <b>Jarvis-Setup-0.1.0.exe</b> from the GitHub releases page and run it.</li>
+  <li>Download <b>Jarvis-Setup-0.8.0.exe</b> from the GitHub releases page and run it.</li>
   <li>Windows may show "Windows protected your PC" because the installer isn't code-signed yet: click <b>More info → Run anyway</b>.</li>
   <li>Choose where to install (or keep the default) and click Install. Jarvis opens when it finishes.</li>
 </ol>
 
 <h3>The welcome</h3>
-<p>The first time Jarvis opens, it walks you through setup with a short animated welcome:</p>
+<p>The first time Jarvis opens, it walks you through setup with a short animated welcome. A drifting world map stays behind every page.</p>
 <table>
   <thead><tr><th style="width:26%">Step</th><th>What happens</th></tr></thead>
   <tbody>
-    <tr><td><b>Title card</b></td><td>The Jarvis ring forms from particles, the core lights up and the name appears. Click <b>Let's set you up</b>.</td></tr>
-    <tr><td><b>1. Your name</b></td><td>What the team should call you. Every member learns it.</td></tr>
+    <tr><td><b>The opening</b></td><td>Stars rush in and settle into a turning globe of dots; your team lights up around it as glowing nodes with their names; they flow into the middle where the Jarvis logo forms (an outer ring, an open ring, a dotted ring and two short arcs turning around a glowing core); <b>J A R V I S</b> arrives with a sweep of light, and the globe slowly unrolls into the world map. Click anywhere to skip it. Then click <b>Let's set you up</b>.</td></tr>
+    <tr><td><b>1. Your name</b></td><td>What the team should call you ("Nice to meet you, …" appears as you type). Every member learns it.</td></tr>
     <tr><td><b>2. Connect your Claude</b></td><td>Two live checks: <b>Claude Code installed</b> and <b>Signed in</b>. Buttons open a window that installs Claude Code or signs you in through your browser. The page ticks each one by itself. Jarvis never sees or stores your Claude login.</td></tr>
-    <tr><td><b>3. Your team's tools</b></td><td>Switches for web search, lessons, documents, meeting recorder, screen look, reminders, project board and the coding supervisor, plus a <b>microphone test</b> with a live level bar.</td></tr>
-    <tr><td><b>4. Voices</b></td><td>Downloads the natural voices and speech recognition with progress bars (you can skip and do it later), and asks <b>how to say your name</b>: Claude suggests a spelling the voice reads correctly, and you can play it and adjust it.</td></tr>
-    <tr><td><b>Meet your team</b></td><td>Jarvis says hello, then each member introduces themselves in their own voice while their glowing orb follows their speech, their skills appear and their words light up as they're spoken. The introductions are written fresh by Claude for you, warm and a little playful. Mute and Skip are always available.</td></tr>
+    <tr><td><b>3. Your team's tools</b></td><td>Switches for web search, lessons, documents, meeting recorder, screen look, reminders, project board and the coding supervisor (all on to begin with). Email, calendar and other apps come from your Claude account (section 14).</td></tr>
+    <tr><td><b>4. Voices</b></td><td>Downloads the natural voices and speech recognition with progress bars (you can skip and do it later), and asks <b>how to say your name</b>: type it the way it sounds, syllable by syllable, and press <b>Hear it</b>.</td></tr>
+    <tr><td><b>Meet your team</b></td><td>Jarvis says hello, then each member introduces themselves in their own voice while their glowing orb follows their speech, their skills appear and each word appears exactly as it is said (following the voice itself). The introductions are written fresh by Claude for you, warm and a little playful. Mute and Skip are always available.</td></tr>
   </tbody>
 </table>
 <p class="small muted">You can replay the introductions (Settings → Meet the team again) or run the whole setup again at any time.</p>
@@ -228,10 +228,11 @@ typing or by voice, from any app, and they work in the apps you connect, but onl
   <tbody>
     <tr><td><b>Main window</b></td><td>Open Jarvis → Chat</td><td>Longer conversations, history, lessons, everything at once.</td></tr>
     <tr><td><b>Push-to-talk</b></td><td><code>Ctrl+Alt+Space</code> from any app</td><td>Talk without switching windows: press, speak, and it stops listening when you pause (or press again).</td></tr>
-    <tr><td><b>Voice card</b></td><td>Appears above the taskbar; <code>Ctrl+Alt+J</code> shows or hides it</td><td>Hands-free answers: the reply is spoken; the card stays hidden unless you want to read it. Hiding it doesn't stop the speech.</td></tr>
-    <tr><td><b>Floating box</b></td><td><code>Ctrl+Shift+Space</code></td><td>A small chat window that floats over your work.</td></tr>
+    <tr><td><b>Voice card</b></td><td>Appears above the taskbar; <code>Ctrl+Alt+J</code> shows or hides it</td><td>Hands-free answers: the reply is spoken; the card stays hidden unless you want to read it (hiding it doesn't stop the speech). It comes up by itself when a member needs something from you (a drop box) or when answers are not spoken. Drag its top row to move it, drag an edge to resize it, <b>–</b> minimises it to the taskbar, <b>×</b> closes it; it stays where you put it.</td></tr>
+    <tr><td><b>Floating box</b></td><td><code>Ctrl+Shift+Space</code></td><td>A small chat window that floats over your work, with the world map behind it. Drag its title bar to move it, drag an edge to resize it; its buttons minimise it, open the main window or close it.</td></tr>
   </tbody>
 </table>
+<p>Whatever you ask on the voice card or in the floating box also shows in the main chat right away, with the member's first words, and stays in the same conversation.</p>
 
 <h3>Choosing who you talk to</h3>
 <p>Start your message with a member's name and you stay with them until you name someone else:</p>
@@ -675,18 +676,19 @@ professional, and send you to emergency help for warning signs.</p>
 <!-- ================= 22 ================= -->
 <section>
 <h2><span class="num">22</span>Settings reference</h2>
+<p>Settings has a list of sections on the left (You, Conversation, Voice, Meetings, Coding, Setup) and one row per setting: what it does on the left, its switch or button on the right.</p>
 <table>
   <thead><tr><th style="width:30%">Setting</th><th>What it does</th></tr></thead>
   <tbody>
     <tr><td><b>Model</b></td><td>Automatic (fast model for look-ups, stronger for drafting and explaining, Opus 5.5 for Ryan), or always use one model.</td></tr>
-    <tr><td><b>Speak replies aloud</b></td><td>Natural voice on or off.</td></tr>
+    <tr><td><b>Speak replies aloud</b></td><td>One switch for every answer: in the chat, the floating box and push-to-talk. Off, answers are only written (spoken questions get theirs on the voice card).</td></tr>
     <tr><td><b>Pause music and videos…</b></td><td>Pause other media while you talk and while the team speaks (on by default).</td></tr>
     <tr><td><b>Keep chat history</b></td><td>Keep conversations on this computer; clear them.</td></tr>
     <tr><td><b>How Jarvis explains things</b></td><td>Automatic, Like I'm five, Student, Professional.</td></tr>
     <tr><td><b>Natural voice</b></td><td>Download, Jarvis's own voice, speaking speed (each member's voice is set on the Team page).</td></tr>
-    <tr><td><b>Voice shortcuts</b></td><td>Push-to-talk shortcut (default <code>Ctrl+Alt+Space</code>) and show/hide answer card (default <code>Ctrl+Alt+J</code>).</td></tr>
+    <tr><td><b>Voice shortcuts</b></td><td>Push-to-talk (default <code>Ctrl+Alt+Space</code>) and show/hide answer card (default <code>Ctrl+Alt+J</code>). Click a box and press the keys one at a time (no need to hold them), click away and Save. Any number of Ctrl, Alt, Shift and Windows keys plus one main key; shortcuts that would break other apps (a plain letter, Ctrl+Tab, Ctrl+C…) are refused with the reason.</td></tr>
     <tr><td><b>Coding supervisor</b></td><td>How much Ryan may approve, update interval, speak updates, watch your own Claude Code sessions.</td></tr>
-    <tr><td><b>You</b></td><td>Your name and how to say it (with Hear it and Suggest again).</td></tr>
+    <tr><td><b>You</b></td><td>Your name and how to say it (type it the way it sounds, then Hear it).</td></tr>
     <tr><td><b>Welcome &amp; uninstall</b></td><td>Meet the team again, run the setup again, uninstall Jarvis.</td></tr>
   </tbody>
 </table>

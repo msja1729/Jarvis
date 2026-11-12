@@ -77,6 +77,9 @@ export function applyLine(state: StreamState, line: string, onText?: (delta: str
       if (onText && ev.event?.type === 'content_block_delta' && ev.event.delta?.type === 'text_delta' && typeof ev.event.delta.text === 'string') onText(ev.event.delta.text);
       // a new block after a tool call starts a new paragraph
       if (onText && ev.event?.type === 'content_block_start' && ev.event.content_block?.type === 'text' && ev.event.index > 0) onText('\n');
+      // the member is about to use a tool (open a drop box, search…): what they said so far ("Sure, opening
+      // it now.") is complete, so a line break lets it be spoken now, not after the tool has finished
+      if (onText && ev.event?.type === 'content_block_start' && ev.event.content_block?.type === 'tool_use') onText('\n');
       break;
     case 'rate_limit_event':
       if (ev.rate_limit_info?.status === 'rejected') state.rateLimited = true;

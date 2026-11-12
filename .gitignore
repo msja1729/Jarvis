@@ -5,6 +5,7 @@ release/
 tests/.capture/
 
 # design references (kept locally, not published)
+*.mp4
 UI design
 UI design 2
 

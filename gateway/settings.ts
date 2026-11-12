@@ -46,7 +46,10 @@ export class SettingsStore {
   }
 
   snapshot(): JarvisSettings {
-    return structuredClone(this.data);
+    const s = structuredClone(this.data);
+    // "Speak replies aloud" is on until the user turns it off (it used to apply to typed chat only)
+    if (!s.voiceOutputChosen) s.voiceOutput = true;
+    return s;
   }
 
   isEnabled(app: AppDef): boolean {
@@ -217,6 +220,7 @@ export class SettingsStore {
 
   setVoiceOutput(on: boolean): void {
     this.data.voiceOutput = on;
+    this.data.voiceOutputChosen = true;
     this.save();
   }
 

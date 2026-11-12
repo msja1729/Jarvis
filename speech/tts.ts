@@ -13,7 +13,7 @@ import { cleanForSpeech } from './speakable.js';
 export interface TtsApi {
   ttsSpeak(text: string, opts?: { voice?: string }): Promise<number | null>;
   ttsStop(id?: number): void;
-  onTtsChunk(cb: (c: { id: number; rate: number; audio: Float32Array }) => void): void;
+  onTtsChunk(cb: (c: { id: number; rate: number; audio: Float32Array; words?: number; pause?: number }) => void): void;
   onTtsDone(cb: (d: { id: number; error?: string }) => void): void;
   onTtsStopAll(cb: () => void): void;
 }
@@ -23,6 +23,38 @@ let ctx: AudioContext | null = null;
 let sources: AudioBufferSourceNode[] = [];
 let nextTime = 0;
 let current: { id: number; text: string; onEnd?: () => void; done: boolean; chunks: number } | null = null;
+
+/** A piece of the reply being said: when it plays (audio clock), how long, its closing pause, how many words. */
+export interface SpokenPiece { start: number; duration: number; pause: number; words: number }
+let timeline: SpokenPiece[] = [];
+/** With the OS voice: how far into the text it has got (characters), and the text it is saying. */
+let systemAt: { text: string; char: number } | null = null;
+
+/**
+ * How many words of the reply being said have been said so far (whole words, plus how far into the
+ * next one), from the audio actually playing: the natural voice's pieces, or the OS voice's word marks.
+ * null when nothing is being said, or the natural voice has not started playing yet.
+ */
+export function wordsSpoken(): number | null {
+  if (systemAt) {
+    const before = systemAt.text.slice(0, systemAt.char).split(/\s+/).filter(Boolean).length;
+    return before + 0.5;
+  }
+  if (!ctx || !timeline.length) return null;
+  const now = ctx.currentTime;
+  if (now < timeline[0].start) return null;
+  let words = 0;
+  for (const p of timeline) {
+    const speaking = Math.max(0.05, p.duration - p.pause);
+    if (now >= p.start + speaking) {
+      words += p.words;
+      continue;
+    }
+    if (now >= p.start) words += (p.words * (now - p.start)) / speaking;
+    break;
+  }
+  return words;
+}
 
 /** A reply being spoken while it is still written. */
 interface Live {
@@ -83,7 +115,7 @@ export function speakAndWait(text: string, opts: { voice?: string } = {}, maxMs 
   });
 }
 
-function play(c: { rate: number; audio: Float32Array }) {
+function play(c: { rate: number; audio: Float32Array; words?: number; pause?: number }) {
   const out = output();
   ctx ??= new AudioContext();
   const buffer = ctx.createBuffer(1, c.audio.length, c.rate);
@@ -94,6 +126,7 @@ function play(c: { rate: number; audio: Float32Array }) {
   const at = Math.max(ctx.currentTime + 0.03, nextTime);
   src.start(at);
   nextTime = at + buffer.duration;
+  if (typeof c.words === 'number') timeline.push({ start: at, duration: buffer.duration, pause: c.pause ?? 0, words: c.words });
   sources.push(src);
   src.onended = () => {
     sources = sources.filter((s) => s !== src);
@@ -154,17 +187,32 @@ function systemSpeak(text: string, onEnd?: () => void, queue = false): void {
     return;
   }
   if (!queue) speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(cleanForSpeech(text).slice(0, 1500));
-  if (onEnd) {
-    u.onend = () => onEnd();
-    u.onerror = () => onEnd();
-  }
+  const said = cleanForSpeech(text).slice(0, 1500);
+  const u = new SpeechSynthesisUtterance(said);
+  // the OS voice says which word it is on, so captions can follow it exactly
+  u.onstart = () => (systemAt = { text: said, char: 0 });
+  u.onboundary = (e) => {
+    if (e.name === 'word' || e.name === undefined) systemAt = { text: said, char: e.charIndex };
+  };
+  const finished = () => {
+    if (systemAt?.text === said) systemAt = null;
+  };
+  u.onend = () => {
+    finished();
+    onEnd?.();
+  };
+  u.onerror = () => {
+    finished();
+    onEnd?.();
+  };
   speechSynthesis.speak(u);
 }
 
 /** Speak a reply. `onEnd` runs when speaking finishes (not when it is stopped). */
 export async function speak(text: string, onEnd?: () => void, opts: { voice?: string } = {}): Promise<void> {
   stopSpeaking();
+  timeline = [];
+  systemAt = null;
   const id = api ? await api.ttsSpeak(text, opts).catch(() => null) : null;
   if (id === null) {
     systemSpeak(text, onEnd);
@@ -273,6 +321,8 @@ export function stopSpeaking(): void {
   }
   sources = [];
   nextTime = 0;
+  timeline = [];
+  systemAt = null;
   if (current && api) api.ttsStop(current.id);
   current = null;
   if (live && api) for (const id of live.ids) api.ttsStop(id);

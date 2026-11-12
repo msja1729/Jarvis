@@ -22,7 +22,7 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); }
-body { color: var(--text); font: 300 15px/1.6 "Segoe UI", system-ui, -apple-system, sans-serif; display: flex; flex-direction: column; overflow: hidden;
+body { color: var(--text); font: 400 15px/1.6 "Segoe UI", system-ui, -apple-system, sans-serif; display: flex; flex-direction: column; overflow: hidden;
   background: radial-gradient(900px 500px at 70% -10%, rgb(57 135 229 / 0.10), transparent 70%), radial-gradient(700px 500px at 0% 110%, rgb(144 133 233 / 0.07), transparent 70%), var(--bg); }
 button { font: inherit; color: inherit; cursor: pointer; }
 svg { display: block; }

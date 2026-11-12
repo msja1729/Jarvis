@@ -2,8 +2,8 @@
 :root {
   --bg: #161616;
   --text: #f0efec;
-  --muted: #a3a29b;
-  --faint: #6a6a66;
+  --muted: #c0bfb9;
+  --faint: #8e8e89;
   --line: rgb(255 255 255 / 0.08);
   --line-strong: rgb(255 255 255 / 0.15);
   --blue: #3987e5;
@@ -14,7 +14,7 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; background: var(--bg); color: var(--text); font: 300 14px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif; overflow: hidden; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 400 14px/1.55 "Segoe UI", system-ui, -apple-system, sans-serif; overflow: hidden; }
 button, input { font: inherit; color: inherit; }
 button { cursor: pointer; }
 .hidden { display: none !important; }

@@ -63,6 +63,7 @@ declare global {
       settingsGet(): Promise<any>;
       settingsSet(patch: unknown): Promise<any>;
       toggleBox(): void;
+      minimizeBox(): void;
       onConfirm(cb: (req: ConfirmReq) => void): void;
       onConfirmCancel(cb: (id: string) => void): void;
       onNavigate(cb: (view: string) => void): void;
@@ -114,6 +115,9 @@ declare global {
       onTtsDone(cb: (d: { id: number; error?: string }) => void): void;
       onTtsStopAll(cb: () => void): void;
       voiceHide(): void;
+      onSettingsChanged(cb: (s: { voiceOutput: boolean }) => void): void;
+      voiceMinimize(): void;
+      onChatMirror(cb: (m: { kind: 'user' | 'note'; text: string; via?: string; roleName?: string; color?: string }) => void): void;
       showMain(): void;
     };
   }
@@ -133,13 +137,20 @@ const SETTING_LABEL: Record<string, string> = { off: 'Off', ask: 'Ask me first',
 let voiceOn = false;
 
 const MODE = new URLSearchParams(location.search).get('mode') ?? 'main';
+// "Speak replies aloud" applies in every window, and follows changes made in another one
+void j.settingsGet().then((s: { voiceOutput: boolean }) => (voiceOn = s.voiceOutput !== false));
+j.onSettingsChanged((s) => {
+  voiceOn = s.voiceOutput !== false;
+  if (!voiceOn) stopSpeaking(); // turned off while something is being read: it stops
+});
 // first run: cover the app with the welcome's backdrop before the first frame is painted
 if (MODE === 'main' && new URLSearchParams(location.search).get('welcome') === '1') {
   document.body.classList.add('onboarding');
   document.getElementById('onboard')?.classList.remove('hidden');
 }
 document.body.classList.add(MODE);
-if (MODE === 'main') startWorldMap(document.getElementById('worldmap') as HTMLCanvasElement);
+// the drifting world map behind the main window and the floating box
+if (MODE === 'main' || MODE === 'box') startWorldMap(document.getElementById('worldmap') as HTMLCanvasElement);
 
 /* Soft fade at the top/bottom of scrolling areas, only where there is more to scroll. */
 function trackFade(node: HTMLElement) {
@@ -239,8 +250,8 @@ let awaitingLive = false;
 j.onAskStart((s: { roleName: string; roleColor: string; voice: string }) => {
   if (!awaitingLive) return;
   liveText = '';
-  // the voice card always speaks; the main chat only when "Speak replies aloud" is on
-  liveSpeech = MODE === 'voice' || voiceOn ? speakStream({ voice: s.voice }) : null;
+  // spoken only with "Speak replies aloud" on (the main chat, the floating box and the voice card alike)
+  liveSpeech = voiceOn ? speakStream({ voice: s.voice }) : null;
   if (MODE === 'voice') {
     $('vc-name').textContent = s.roleName;
     ($('vc-orb') as HTMLElement).style.setProperty('--c', s.roleColor);
@@ -822,7 +833,22 @@ if (MODE === 'main') {
     convSelecting = false;
   });
   // what was said by voice or in the floating box appears here too, if that conversation is on screen
+  // a request said on the voice card (or typed in the box) shows here at once, with the member's first
+  // line ("On it…"); once it is answered, the saved conversation replaces these
+  j.onChatMirror((m: { kind: 'user' | 'note'; text: string; via?: string; roleName?: string; color?: string }) => {
+    if (viewingOld) return;
+    $('empty').classList.add('hidden');
+    const el = m.kind === 'user'
+      ? addMsg('user', m.text, m.via === 'voice' ? 'by voice' : 'floating box')
+      : addMsg('jarvis', m.text, 'while working', false, { name: m.roleName ?? 'Jarvis', color: m.color ?? '#9a9a96' });
+    el.classList.add('live-mirror');
+    if (m.kind === 'note') el.classList.add('interim');
+    setProgress(true);
+  });
   j.onHistoryAdd((items) => {
+    // the answer is in: what was shown while it was being answered makes way for the saved messages
+    messages.querySelectorAll('.live-mirror').forEach((n) => n.remove());
+    if (!$('send').hasAttribute('disabled')) setProgress(false);
     const conv = items[0]?.conv;
     if (!conv || viewingOld || (shownConv !== null && shownConv !== conv)) return;
     shownConv = conv;
@@ -1140,10 +1166,11 @@ async function voiceAsk(text: string): Promise<void> {
     voiceBusy = false;
     setVoiceStatus(false);
     // Spoken requests are answered out loud (usually already speaking while the reply was written),
-    // except during a recorded meeting: then the answer stays on the card, quietly, for longer.
-    if (!r.isError && !followUp && r.quiet) {
+    // except during a recorded meeting or with "Speak replies aloud" off: then the answer stays on the
+    // card, written, for longer.
+    if (!r.isError && !followUp && (r.quiet || !voiceOn)) {
       finishLive(r, false);
-      hideVoiceSoon(45000);
+      hideVoiceSoon(r.quiet ? 45000 : 30000);
     } else if (!r.isError && !followUp) finishLive(r, !r.lessonShown, () => hideVoiceSoon(6000)); // a lesson narrates itself
     else {
       finishLive({ ...r, isError: true }, false);
@@ -1165,12 +1192,21 @@ $('vc-close').addEventListener('click', () => {
   j.voiceHide();
 });
 $('vc-open').addEventListener('click', () => j.showMain());
+$('vc-min').addEventListener('click', () => j.voiceMinimize());
 $('mic').addEventListener('click', () => j.voiceToggle());
 
+/** A notice at the top of the chat; it has a × to close it. */
 function showNotice(text: string) {
   const n = $('notice');
-  n.textContent = text;
+  const x = el('button', { type: 'button', className: 'notice-x', title: 'Close', ariaLabel: 'Close' }, '×');
+  x.addEventListener('click', () => n.classList.add('hidden'));
+  n.replaceChildren(el('span', {}, text), x);
   n.classList.remove('hidden');
+}
+/** Closes the notice if it is about this (e.g. a shortcut that has now been changed). */
+function clearNotice(about: string) {
+  const n = $('notice');
+  if (n.textContent?.includes(about)) n.classList.add('hidden');
 }
 
 /* ---------- confirmation popup ---------- */
@@ -1358,6 +1394,8 @@ function whoRow(a: HubApp, team: TeamRole[]): HTMLElement {
 }
 
 /** "What it may do": each ability (or, for apps from the Claude account, its three rules) with its setting. */
+/** The apps whose rules list is open (kept open when the Tool Hub redraws after a change). */
+const openRules = new Set<string>();
 function rulesDetails(a: HubApp, label: string, note?: string): HTMLElement {
   const table = el('table', { className: 'abilities' });
   for (const ab of a.abilities) {
@@ -1374,6 +1412,8 @@ function rulesDetails(a: HubApp, label: string, note?: string): HTMLElement {
     table.append(el('tr', {}, el('td', {}, ab.title, el('div', { className: 'muted' }, ab.description)), el('td', {}, select)));
   }
   const details = el('details', {}, el('summary', {}, label), table);
+  details.open = openRules.has(a.id);
+  details.addEventListener('toggle', () => (details.open ? openRules.add(a.id) : openRules.delete(a.id)));
   if (note) details.append(el('p', { className: 'rules-note' }, note));
   return details;
 }
@@ -1817,6 +1857,7 @@ $('card-save').addEventListener('click', async () => {
   $('ptt-error').textContent = '';
   try {
     $<HTMLInputElement>('card-hotkey').value = await j.setCardHotkey($<HTMLInputElement>('card-hotkey').value || null);
+    clearNotice('voice card shortcut');
   } catch (err) {
     $('ptt-error').textContent = cleanError(err);
   }
@@ -1845,6 +1886,7 @@ $('ptt-save').addEventListener('click', async () => {
   $('ptt-error').textContent = '';
   try {
     $<HTMLInputElement>('ptt-hotkey').value = await j.setHotkey($<HTMLInputElement>('ptt-hotkey').value || null);
+    clearNotice('push-to-talk shortcut');
   } catch (err) {
     $('ptt-error').textContent = cleanError(err);
   }
@@ -1991,6 +2033,140 @@ areaImg.addEventListener('pointerup', () => {
 });
 $('area-ok').addEventListener('click', () => closeArea(true));
 $('area-cancel').addEventListener('click', () => closeArea(false));
+
+/* ---------- the floating box's title bar ---------- */
+if (MODE === 'box') {
+  $('box-close').addEventListener('click', () => j.toggleBox()); // hides it; the shortcut brings it back
+  $('box-open').addEventListener('click', () => j.showMain());
+  $('box-min').addEventListener('click', () => j.minimizeBox());
+}
+
+/* ---------- shortcut boxes: press the keys and the box shows them (Control+Alt+Space) ---------- */
+const KEY_NAMES: Record<string, string> = {
+  Space: 'Space', Enter: 'Enter', Tab: 'Tab', Backspace: 'Backspace', Delete: 'Delete', Insert: 'Insert', Home: 'Home', End: 'End',
+  PageUp: 'PageUp', PageDown: 'PageDown', ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right',
+  Minus: '-', Equal: '=', BracketLeft: '[', BracketRight: ']', Backslash: '\\', Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/', Backquote: '`',
+  NumpadAdd: 'numadd', NumpadSubtract: 'numsub', NumpadMultiply: 'nummult', NumpadDivide: 'numdiv', NumpadDecimal: 'numdec',
+};
+/** The key part of a shortcut, from the physical key (so Shift+1 is "1", not "!"); null for modifier keys. */
+function keyName(e: KeyboardEvent): string | null {
+  const c = e.code;
+  if (/^Key[A-Z]$/.test(c)) return c.slice(3);
+  if (/^Digit\d$/.test(c)) return c.slice(5);
+  if (/^Numpad\d$/.test(c)) return `num${c.slice(6)}`;
+  if (/^F\d{1,2}$/.test(c)) return c;
+  return KEY_NAMES[c] ?? null;
+}
+const MOD_OF: Record<string, string> = { ControlLeft: 'Control', ControlRight: 'Control', AltLeft: 'Alt', AltRight: 'Alt', ShiftLeft: 'Shift', ShiftRight: 'Shift', MetaLeft: 'Super', MetaRight: 'Super', OSLeft: 'Super', OSRight: 'Super' };
+const MOD_ORDER = ['Control', 'Alt', 'Shift', 'Super'];
+/**
+ * A shortcut box you fill by pressing keys one at a time (no need to hold them): Ctrl, then Alt, then K
+ * shows "Control+Alt+K". While it records, every key is caught (Tab or Enter do nothing else).
+ * Click elsewhere to finish, Esc to cancel; the × clears it. Windows allows any number of modifier
+ * keys and one main key, so a second main key replaces the first (and the box says so).
+ */
+function shortcutBox(input: HTMLInputElement) {
+  input.readOnly = true;
+  input.classList.add('shortcut');
+  input.placeholder = 'Click to record';
+  const row = input.closest('.set-row');
+  const hint = el('p', { className: 'shortcut-hint' });
+  row?.querySelector('.set-text')?.append(hint);
+  const clear = el('button', { type: 'button', className: 'shortcut-clear', title: 'Clear' }, '×');
+  input.after(clear);
+  let before = input.value;
+  let mods = new Set<string>();
+  let main: string | null = null;
+  let recording = false;
+  const show = () => {
+    const parts = [...MOD_ORDER.filter((m) => mods.has(m)), ...(main ? [main] : [])];
+    input.value = parts.join('+');
+  };
+  const say = (text: string) => (hint.textContent = text);
+  const start = () => {
+    recording = true;
+    before = input.value;
+    mods = new Set();
+    main = null;
+    input.value = '';
+    input.classList.add('recording');
+    say('Recording: press the keys one by one, then click anywhere else. Esc cancels.');
+  };
+  const stop = (keep: boolean) => {
+    if (!recording) return;
+    recording = false;
+    input.classList.remove('recording');
+    if (!keep || (!main && !mods.size)) {
+      input.value = before;
+      say('');
+      return;
+    }
+    if (!main) {
+      input.value = before;
+      say('A shortcut needs one key besides Ctrl, Alt, Shift or the Windows key (a letter, a number, Space, F1…). Try again.');
+      return;
+    }
+    say(input.value === before ? '' : 'Press Save to use it.');
+  };
+  input.addEventListener('focus', start);
+  input.addEventListener('mousedown', () => {
+    if (document.activeElement === input && !recording) start();
+  });
+  input.addEventListener('blur', () => stop(true));
+  input.addEventListener('keydown', (e) => {
+    if (!recording) return;
+    // nothing else happens while a shortcut is being recorded (Tab, Enter, Space…)
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.repeat) return;
+    if (e.key === 'Escape') {
+      stop(false);
+      input.blur();
+      return;
+    }
+    const mod = MOD_OF[e.code];
+    if (mod) mods.add(mod);
+    else {
+      const key = keyName(e);
+      if (!key) return;
+      if (main && main !== key) say(`A shortcut has one main key, so ${key} replaces ${main}. Ctrl, Alt, Shift and the Windows key can all be added.`);
+      else say('Recording: press the keys one by one, then click anywhere else. Esc cancels.');
+      main = key;
+    }
+    show();
+  });
+  clear.addEventListener('click', () => {
+    input.focus();
+    start();
+  });
+}
+if (MODE === 'main') {
+  shortcutBox($<HTMLInputElement>('ptt-hotkey'));
+  shortcutBox($<HTMLInputElement>('card-hotkey'));
+}
+
+/* ---------- Settings: the section list on the left ---------- */
+if (MODE === 'main') {
+  const view = $('view-settings');
+  const links = [...document.querySelectorAll<HTMLAnchorElement>('.set-nav a')];
+  const mark = (id: string) => links.forEach((a) => a.classList.toggle('active', a.getAttribute('href') === `#${id}`));
+  links.forEach((a) =>
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      const id = a.getAttribute('href')!.slice(1);
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      mark(id);
+    }),
+  );
+  view.addEventListener('scroll', () => {
+    const top = view.getBoundingClientRect().top + 90;
+    const secs = [...view.querySelectorAll<HTMLElement>('.set-sec')];
+    // at the very bottom the last section counts, even if it is short
+    const atEnd = view.scrollTop + view.clientHeight >= view.scrollHeight - 4;
+    const current = atEnd ? secs[secs.length - 1] : [...secs].reverse().find((sec) => sec.getBoundingClientRect().top <= top) ?? secs[0];
+    if (current) mark(current.id);
+  });
+}
 
 /* ---------- first-run welcome (replaces the old setup dialog) ---------- */
 let onboarding: Onboarding | null = null;

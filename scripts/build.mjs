@@ -22,6 +22,9 @@ await Promise.all([
   build({ ...common, entryPoints: ['app/renderer/viewer.ts'], outfile: 'dist/renderer/viewer.js', platform: 'browser', format: 'iife', target: 'chrome130', sourcemap: false, minify: true }),
 ]);
 for (const f of ['index.html', 'styles.css', 'indicator.html', 'media-digest.html', 'pcm-worklet.js', 'lesson.html', 'lesson.css', 'supervisor.html', 'supervisor.css', 'onboard.css', 'viewer.html', 'viewer.css']) fs.copyFileSync(`app/renderer/${f}`, `dist/renderer/${f}`);
+// the app icon on every Jarvis window (taskbar, window switcher), also when run from source
+fs.copyFileSync('build/icon.png', 'dist/app/icon.png');
+fs.copyFileSync('build/icon.ico', 'dist/app/icon.ico'); // every size drawn for itself, so it stays sharp
 fs.cpSync('node_modules/katex/dist/katex.min.css', 'dist/renderer/katex/katex.min.css');
 fs.cpSync('node_modules/katex/dist/fonts', 'dist/renderer/katex/fonts', { recursive: true });
 console.log('build ok');

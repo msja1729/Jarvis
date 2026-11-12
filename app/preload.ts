@@ -22,6 +22,8 @@ contextBridge.exposeInMainWorld('jarvis', {
   setupBaseline: () => ipcRenderer.invoke('setup:baseline'),
   ask: (text: string, role?: string | null, opts?: { stream?: boolean }) => ipcRenderer.invoke('ask', text, role ?? null, opts ?? {}),
   onAskStart: on('ask:start'),
+  /** The welcome has drawn its first frame: the window can be shown (nothing else flashes first). */
+  welcomePainted: () => ipcRenderer.send('welcome:painted'),
   /** What the member says before they start working ("On it, about 2 minutes"). */
   onAskNote: on('ask:note'),
   /** A member shows the user files: the preview next to the chat. */
@@ -78,6 +80,7 @@ contextBridge.exposeInMainWorld('jarvis', {
   settingsGet: () => ipcRenderer.invoke('settings:get'),
   settingsSet: (patch: unknown) => ipcRenderer.invoke('settings:set', patch),
   toggleBox: () => ipcRenderer.send('box:toggle'),
+  minimizeBox: () => ipcRenderer.send('box:minimize'),
   // voice
   onAudioStart: on('audio:start'),
   onAudioStop: on('audio:stop'),
@@ -106,6 +109,11 @@ contextBridge.exposeInMainWorld('jarvis', {
   onTtsDone: on('tts:done'),
   onTtsStopAll: on('tts:stop-all'),
   voiceHide: () => ipcRenderer.send('voice:hide'),
+  voiceMinimize: () => ipcRenderer.send('voice:minimize'),
+  /** A setting changed in another window (e.g. "Speak replies aloud"). */
+  onSettingsChanged: on('settings:changed'),
+  /** The main chat shows a request said on the voice card or typed in the box while it is answered. */
+  onChatMirror: on('chat:mirror'),
   onSupState: on('sup:state'),
   supAnswer: (id: string, a: unknown) => ipcRenderer.send('sup:answer', id, a),
   supStop: () => ipcRenderer.send('sup:stop'),

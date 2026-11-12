@@ -135,3 +135,15 @@ describe('"On it, about 2 minutes": what a member says before working', () => {
     for (const r of ['jarvis', 'pa', 'pm', 'doctor', 'finance'] as const) expect(rolePrompt(r)).toMatch(/roughly how long/);
   });
 });
+
+describe('what a member says before using a tool is spoken at once', () => {
+  it('a tool call ends the sentence being spoken (it is not held until the tool has finished)', () => {
+    const said: string[] = [];
+    const st = newStreamState();
+    const ev = (event: unknown) => JSON.stringify({ type: 'stream_event', event });
+    applyLine(st, ev({ type: 'content_block_start', index: 0, content_block: { type: 'text' } }), (d) => said.push(d));
+    applyLine(st, ev({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Sure, opening a drop box now.' } }), (d) => said.push(d));
+    applyLine(st, ev({ type: 'content_block_start', index: 1, content_block: { type: 'tool_use', name: 'mcp__jarvis__files__ask_user_to_share' } }), (d) => said.push(d));
+    expect(said.join('')).toBe('Sure, opening a drop box now.\n');
+  });
+});

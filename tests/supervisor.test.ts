@@ -232,9 +232,9 @@ describe('the coding session process', () => {
     await server.close();
   });
 
-  it('is a default app that stays off until the user turns it on', () => {
+  it('is a default app, on like the other tools (risky steps still wait for the user)', () => {
     expect(BUILTIN_APPS).toContain(CODING_APP);
-    expect(CODING_APP.defaultEnabled).toBe(false);
+    expect(CODING_APP.defaultEnabled).toBe(true);
   });
 });
 

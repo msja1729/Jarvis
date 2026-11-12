@@ -1,6 +1,6 @@
 {
   "name": "jarvis",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "description": "Your own team of AI experts on your desktop, running on your Claude plan through Claude Code.",
   "homepage": "https://github.com/msja1729/Jarvis",
@@ -38,6 +38,7 @@
       "!**/node_modules/@huggingface/transformers/.cache/**"
     ],
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         {
           "target": "nsis",

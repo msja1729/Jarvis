@@ -79,7 +79,9 @@ async function speak(msg: Extract<In, { type: 'speak' }>): Promise<void> {
         for (let i = 0; i < raw.length; i++) if (!Number.isFinite(raw[i])) raw[i] = 0;
         // trim the model's padding and add a natural pause for how the piece ends (own buffer, so it can be transferred)
         const copy = tidyPiece(raw, audio.sampling_rate, pauseAfter(piece));
-        parentPort!.postMessage({ type: 'chunk', id, index: index++, rate: audio.sampling_rate, audio: copy }, [copy.buffer as ArrayBuffer]);
+        // words and pause let the window show each word while it is being said
+        const words = piece.split(/\s+/).filter(Boolean).length;
+        parentPort!.postMessage({ type: 'chunk', id, index: index++, rate: audio.sampling_rate, audio: copy, words, pause: pauseAfter(piece) }, [copy.buffer as ArrayBuffer]);
       }
       parentPort!.postMessage({ type: 'done', id, cancelled: cancelled.has(id) });
     } catch (err) {

@@ -81,6 +81,8 @@ export interface JarvisSettings {
   /** Client ids of the Google / Microsoft sign-ins older versions used (cleared at start; apps now come from the Claude account). */
   oauthClients: Record<string, { clientId: string }>;
   voiceOutput: boolean;
+  /** The user set "Speak replies aloud" themselves; until then it counts as on (answers are spoken). */
+  voiceOutputChosen?: boolean;
   /** Natural voice chosen for each team role (Jarvis itself uses ttsVoice). */
   roleVoices?: Record<string, string>;
   /** Who may use each app (app id → team members), chosen in the Tool Hub; missing = the usual members. */

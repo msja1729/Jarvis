@@ -4,10 +4,10 @@ export const CODING_APP: AppDef = {
   id: 'coding',
   name: 'Coding supervisor',
   description:
-    'Jarvis runs Claude Code on a project folder you pick, in the background, and supervises it like a personal assistant: it brings you Claude\'s questions with its own recommendation, asks you before anything risky, and gives you progress updates. Off until you turn it on.',
+    'Jarvis runs Claude Code on a project folder you pick, in the background, and supervises it like a personal assistant: it brings you Claude\'s questions with its own recommendation, asks you before anything risky, and gives you progress updates.',
   kind: 'builtin',
-  // It can approve actions on the user's behalf, so the user switches it on.
-  defaultEnabled: false,
+  // On like every other tool (the user's choice, 2026-11-12); anything risky still waits for the user.
+  defaultEnabled: true,
   abilities: [
     {
       name: 'start',

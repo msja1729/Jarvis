@@ -187,7 +187,9 @@ describe('crisp graphics', () => {
 describe('title card', () => {
   it('hovering the first button never cancels its fade-in (it would vanish)', () => {
     const css = fs.readFileSync(path.join(__dirname, '..', 'app', 'renderer', 'onboard.css'), 'utf8');
-    expect(css).toMatch(/\.ob-title \.ob-cta:hover:not\(:disabled\)[^{]*\{ animation: ob-rise/);
+    // the fade-in is on a wrapper, so nothing the button does on hover can touch it
+    expect(css).toMatch(/\.ob-cta-wrap \{[^}]*animation: ob-rise/);
+    expect(css).not.toMatch(/\.ob-cta[^-{]*\{[^}]*animation:/);
   });
 
   it('the logo ring ends as one continuous circle, not separate dots', () => {

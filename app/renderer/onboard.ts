@@ -4,7 +4,9 @@
  * The last part is a little show: Maya (the PA) says hello, then each team member introduces
  * themselves in their own natural voice while their orb glows with what they say.
  */
-import { speakAndWait, speechLevel, stopSpeaking } from '../../speech/tts.js';
+import { speakAndWait, speechLevel, stopSpeaking, wordsSpoken } from '../../speech/tts.js';
+import { startIntro, T as INTRO } from './intro.js';
+import { startWorldMap } from './worldmap.js';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const jb = () => (window as any).jarvis;
@@ -173,7 +175,7 @@ class Orb {
 }
 
 /* ---------- the title card: particles gather into the Jarvis ring, then the name appears ---------- */
-function titleLogo(canvas: HTMLCanvasElement): () => void {
+function titleLogo(canvas: HTMLCanvasElement): { stop(): void; skip(): void } {
   const g = canvas.getContext('2d')!;
   const dpr = window.devicePixelRatio || 1;
   const N = 220;
@@ -181,7 +183,7 @@ function titleLogo(canvas: HTMLCanvasElement): () => void {
     const a = (i / N) * Math.PI * 2;
     return { a, sx: Math.random(), sy: Math.random(), d: Math.random() * 0.6, j: (Math.random() - 0.5) * 0.06 };
   });
-  const t0 = performance.now();
+  let t0 = performance.now();
   let raf = 0;
   const ease = (x: number) => 1 - Math.pow(1 - Math.min(1, Math.max(0, x)), 3);
   const loop = (now: number) => {
@@ -221,10 +223,42 @@ function titleLogo(canvas: HTMLCanvasElement): () => void {
       g.stroke();
       g.restore();
     }
+    // Jarvis's logo inside it: rings that draw themselves in, then keep turning, each at its own speed and way
+    const spinRing = (rad: number, from: number, len: number, width: number, alpha: number, appear: number) => {
+      const k = ease((t - appear) / 0.9);
+      if (k <= 0) return;
+      g.save();
+      g.lineWidth = width * dpr;
+      g.lineCap = 'round';
+      g.shadowColor = `rgba(200,215,255,${0.6 * k})`;
+      g.shadowBlur = 8 * dpr;
+      g.strokeStyle = `rgba(255,255,255,${alpha * k})`;
+      g.beginPath();
+      g.arc(cx, cx, rad, from, from + len * k);
+      g.stroke();
+      g.restore();
+    };
+    // the app's own mark: an open ring with a quarter missing, turning slowly
+    spinRing(R * 0.8, t * 0.55, Math.PI * 1.5, 1.8, 0.85, 1.45);
+    // a fine dotted ring turning the other way
+    const dotted = ease((t - 1.65) / 0.9);
+    if (dotted > 0) {
+      const n = 60;
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2 - t * 0.32;
+        g.fillStyle = `rgba(225,232,255,${(0.35 + 0.35 * (i % 3 === 0 ? 1 : 0)) * dotted})`;
+        g.beginPath();
+        g.arc(cx + Math.cos(a) * R * 0.66, cx + Math.sin(a) * R * 0.66, (i % 3 === 0 ? 1.5 : 0.9) * dpr, 0, 6.29);
+        g.fill();
+      }
+    }
+    // two short arcs, quicker, close to the core
+    spinRing(R * 0.53, t * 0.95 + 0.6, Math.PI * 0.42, 1.4, 0.7, 1.85);
+    spinRing(R * 0.53, t * 0.95 + 0.6 + Math.PI, Math.PI * 0.42, 1.4, 0.7, 1.85);
     // the core blooms once the ring has formed
     const bloom = ease((t - 1.7) / 1.2);
     if (bloom > 0) {
-      const r = R * 0.34 * bloom * (1 + 0.04 * Math.sin(t * 2.2));
+      const r = R * 0.3 * bloom * (1 + 0.04 * Math.sin(t * 2.2));
       const glow = g.createRadialGradient(cx, cx, 0, cx, cx, r * 3.2);
       glow.addColorStop(0, `rgba(210,225,255,${0.5 * bloom})`);
       glow.addColorStop(1, 'rgba(210,225,255,0)');
@@ -241,7 +275,12 @@ function titleLogo(canvas: HTMLCanvasElement): () => void {
     raf = requestAnimationFrame(loop);
   };
   raf = requestAnimationFrame(loop);
-  return () => cancelAnimationFrame(raf);
+  return {
+    stop: () => cancelAnimationFrame(raf),
+    skip: () => {
+      if (performance.now() - t0 < 3000) t0 = performance.now() - 3000;
+    },
+  };
 }
 
 export class Onboarding {
@@ -249,6 +288,11 @@ export class Onboarding {
   private stage: HTMLElement;
   private dots: HTMLElement;
   private backdrop: Backdrop;
+  /** The drifting world map behind every page (the opening unrolls into it). */
+  private mapCanvas: HTMLCanvasElement;
+  private sky: HTMLCanvasElement;
+  private stopMap: (() => void) | null = null;
+  private stopIntro: (() => void) | null = null;
   private st!: State;
   private cleanups: (() => void)[] = [];
   private poll = 0;
@@ -260,9 +304,11 @@ export class Onboarding {
     this.root = document.getElementById('onboard')!;
     this.root.replaceChildren();
     const bg = h('canvas', { className: 'ob-bg' });
+    this.mapCanvas = h('canvas', { className: 'ob-map' });
+    this.sky = h('canvas', { className: 'ob-sky' });
     this.stage = h('div', { className: 'ob-stage' });
     this.dots = h('div', { className: 'ob-dots' });
-    this.root.append(bg, h('div', { className: 'ob-glow' }), h('div', { className: 'ob-glow g2' }), this.stage, this.dots);
+    this.root.append(bg, this.mapCanvas, this.sky, this.stage, this.dots);
     this.backdrop = new Backdrop(bg);
   }
 
@@ -273,6 +319,7 @@ export class Onboarding {
     document.body.classList.add('onboarding');
     this.only = only;
     this.current = null;
+    if (from !== 'title') this.showMap(false); // straight to a later page: the map is already there
     void this.go(from);
   }
   private only = false;
@@ -302,11 +349,21 @@ export class Onboarding {
       await wait(240);
       if (run !== this.run) return; // another step was chosen meanwhile
     }
+    this.stage.dataset.step = step; // a page can be wider (the tools page lays its cards out four across)
     const scene = this[step]();
     scene.classList.add('ob-scene', `ob-${step}`);
     this.stage.replaceChildren(scene);
-    // two frames: the scene is laid out first, so its entrance always animates
+    // two frames: the scene is laid out first, so its entrance always animates; then the window may be shown
     requestAnimationFrame(() => requestAnimationFrame(() => scene.classList.add('in')));
+    // the welcome is in place: the window may be shown (its first frame is this page, nothing else)
+    setTimeout(() => jb().welcomePainted?.(), 0);
+  }
+
+  /** The drifting map appears (it fades in over the opening's last frame, so the hand-over is invisible). */
+  private showMap(fade = true) {
+    if (!this.stopMap) this.stopMap = startWorldMap(this.mapCanvas);
+    this.mapCanvas.classList.toggle('quick', !fade);
+    this.mapCanvas.classList.add('on');
   }
 
   private close() {
@@ -320,29 +377,72 @@ export class Onboarding {
       this.root.classList.add('hidden');
       document.body.classList.remove('onboarding');
       this.backdrop.stop();
+      this.stopIntro?.();
+      this.stopMap?.();
+      this.stopMap = null;
     }, 700);
     this.onDone();
   }
 
-  /* ---------- 1. title card ---------- */
+  /* ---------- 1. title card: the opening ---------- */
   private title(): HTMLElement {
     const logo = h('canvas', { className: 'ob-logo' });
-    this.cleanups.push(titleLogo(logo));
-    const word = h('h1', { className: 'ob-word' }, ...'JARVIS'.split('').map((ch, k) => h('span', { style: { animationDelay: `${2.1 + k * 0.09}s` } }, ch)));
-    return h(
-      'section',
-      {},
-      logo,
-      word,
-      h('p', { className: 'ob-tag' }, 'Your own team of AI experts, right on your desktop.'),
-      h('button', { className: 'ob-cta', type: 'button', onclick: () => this.next('title') }, 'Let’s set you up', h('span', { className: 'ob-arrow' }, '→')),
+    const letters = (cls: string) => h('h1', { className: cls, 'aria-hidden': cls.includes('shine') ? 'true' : 'false' }, ...'JARVIS'.split('').map((ch, k) => h('span', { style: `--k:${k}` }, ch)));
+    const word = h('div', { className: 'ob-wordwrap' }, letters('ob-word'), letters('ob-word shine'));
+    const cta = h('button', { className: 'ob-cta', type: 'button', onclick: () => this.next('title') }, 'Let’s set you up', h('span', { className: 'ob-arrow' }, '→'));
+    const scene = h('section', {}, logo, word, h('p', { className: 'ob-tag' }, 'Your own team of AI experts, right on your desktop.'), h('div', { className: 'ob-cta-wrap' }, cta), h('p', { className: 'ob-skip' }, 'Click anywhere to skip'));
+
+    let ball: { stop(): void; skip(): void } | null = null;
+    const startBall = () => {
+      if (ball) return;
+      ball = titleLogo(logo);
+      this.cleanups.push(() => ball?.stop());
+    };
+    // the team as the opening's constellation (Maya, Ryan, Sara, Victor)
+    const nodes = this.st.cards.filter((c) => c.id !== 'jarvis').map((c) => ({ label: `${c.person} · ${c.title}`, color: c.color }));
+    const intro = startIntro(
+      this.sky,
+      nodes,
+      () => {
+        const r = logo.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2, r: r.width / 2 };
+      },
+      { ball: startBall, map: () => this.showMap(true), start: () => scene.classList.add('go') },
     );
+    this.stopIntro = intro.stop;
+    // a click or a key during the opening jumps to its end
+    const skip = (e: Event) => {
+      if (scene.classList.contains('skip') || (e.target as HTMLElement).closest?.('.ob-cta')) return;
+      scene.classList.add('skip', 'go');
+      intro.skip();
+      startBall();
+      ball?.skip();
+    };
+    this.root.addEventListener('pointerdown', skip);
+    window.addEventListener('keydown', skip);
+    this.cleanups.push(() => {
+      this.root.removeEventListener('pointerdown', skip);
+      window.removeEventListener('keydown', skip);
+    });
+    // once it has played, the hint goes
+    const done = window.setTimeout(() => scene.classList.add('played'), (INTRO.mapDone + 0.6) * 1000);
+    this.cleanups.push(() => window.clearTimeout(done));
+    return scene;
   }
 
   /* ---------- 2. name ---------- */
   private name(): HTMLElement {
-    const input = h('input', { className: 'ob-name-input', placeholder: 'Your name', maxLength: 30, value: this.st.userName, autocomplete: 'given-name' });
+    const input = h('input', { className: 'ob-name-input', placeholder: 'Type your name', maxLength: 30, value: this.st.userName, autocomplete: 'given-name', spellcheck: false });
     const err = h('p', { className: 'ob-err' });
+    const hello = h('p', { className: 'ob-hello' });
+    const cont = h('button', { className: 'ob-cta', type: 'button' }, 'Continue', h('span', { className: 'ob-arrow' }, '→'));
+    // a warm hello that follows what you type
+    const greet = () => {
+      const v = input.value.trim().split(/\s+/)[0] ?? '';
+      hello.classList.toggle('show', v.length > 0);
+      if (v) hello.replaceChildren('Nice to meet you, ', h('b', {}, v), '.');
+      field.classList.toggle('filled', input.value.trim().length > 0);
+    };
     const go = async () => {
       try {
         await jb().onboardSetName(input.value);
@@ -352,17 +452,31 @@ export class Onboarding {
         err.textContent = String(e).replace(/^Error.*?: /, '');
       }
     };
+    cont.addEventListener('click', () => void go());
+    input.addEventListener('input', () => {
+      err.textContent = '';
+      greet();
+    });
     input.addEventListener('keydown', (e) => e.key === 'Enter' && void go());
-    setTimeout(() => input.focus(), 400);
+    const field = h('label', { className: 'ob-field' }, h('span', { className: 'ob-field-glow' }), input);
+    const orb = h('canvas', { className: 'ob-mini-orb' });
+    const o = new Orb(orb);
+    this.cleanups.push(() => o.stop());
+    setTimeout(() => {
+      input.focus();
+      greet();
+    }, 450);
     return h(
       'section',
       {},
+      orb,
       h('p', { className: 'ob-kicker' }, 'Step 1 of 4'),
-      h('h2', {}, 'First things first.', h('br'), 'What should we call you?'),
+      h('h2', {}, 'What should we call you?'),
       h('p', { className: 'ob-sub' }, 'Your team will use it when they talk to you. You can change it any time.'),
-      input,
+      field,
+      hello,
       err,
-      h('div', { className: 'ob-row' }, h('button', { className: 'ob-ghost', type: 'button', onclick: () => void this.next('name') }, 'Skip'), h('button', { className: 'ob-cta', type: 'button', onclick: () => void go() }, 'Continue', h('span', { className: 'ob-arrow' }, '→'))),
+      h('div', { className: 'ob-row' }, h('button', { className: 'ob-ghost', type: 'button', onclick: () => void this.next('name') }, 'Skip'), cont),
     );
   }
 
@@ -371,7 +485,7 @@ export class Onboarding {
     const rowInstall = this.checkRow('Claude Code installed', 'Jarvis thinks with Claude Code, on your own Claude plan.');
     const rowLogin = this.checkRow('Signed in to your Claude plan', 'You sign in in your browser. Jarvis never sees or keeps your login.');
     const action = h('button', { className: 'ob-cta', type: 'button' });
-    const help = h('p', { className: 'ob-sub small' });
+    const help = h('p', { className: 'ob-help' });
     const cont = h('button', { className: 'ob-cta', type: 'button', disabled: true, onclick: () => void this.next('claude') }, 'Continue', h('span', { className: 'ob-arrow' }, '→'));
     const run = this.run;
     const refresh = async () => {
@@ -381,6 +495,7 @@ export class Onboarding {
       rowInstall.set(s.step === 'install' ? 'todo' : 'ok');
       rowLogin.set(s.step === 'ready' ? 'ok' : s.step === 'login' ? 'todo' : 'wait');
       action.classList.toggle('hidden', s.step === 'ready');
+      help.classList.toggle('ok', s.step === 'ready');
       cont.disabled = s.step !== 'ready';
       if (s.step === 'install') {
         action.replaceChildren('Install Claude Code');
@@ -392,8 +507,6 @@ export class Onboarding {
         help.textContent = 'A terminal window opens; finish signing in in your browser (Claude Pro or Max). This page notices when you are done.';
       } else {
         help.textContent = 'All set. Jarvis is connected to your Claude plan.';
-        this.root.classList.add('ob-pulse');
-        setTimeout(() => this.root.classList.remove('ob-pulse'), 900);
         void jb().onboardPrepareIntros(); // Claude writes the team's introductions meanwhile
       }
     };
@@ -425,57 +538,20 @@ export class Onboarding {
       sw.addEventListener('change', () => void jb().hubSetEnabled(t.id, sw.checked));
       grid.append(h('label', { className: 'ob-tool' }, h('span', { className: 'ob-tool-ico' }, icon(TOOL_ICON[t.id] ?? TOOL_ICON.web)), h('span', { className: 'ob-tool-txt' }, h('b', {}, t.name), h('span', {}, shortDesc(t))), sw));
     }
-    // microphone: a live level meter so you can see it hears you
-    const meter = h('span', { className: 'ob-meter' }, h('i'));
-    const micMsg = h('span', { className: 'ob-sub small' }, this.st.mic === 'denied' ? 'Microphone access is blocked.' : 'Talk to your team and record meetings.');
-    const micBtn = h('button', { className: 'ob-ghost', type: 'button' }, this.st.mic === 'denied' ? 'Open settings' : 'Test my mic');
-    let stream: MediaStream | null = null;
-    micBtn.addEventListener('click', async () => {
-      if (this.st.mic === 'denied') return void jb().onboardMicSettings();
-      try {
-        await jb().onboardAskMic();
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const ac = new AudioContext();
-        const an = ac.createAnalyser();
-        ac.createMediaStreamSource(stream).connect(an);
-        const buf = new Float32Array(an.fftSize);
-        micBtn.classList.add('hidden');
-        micMsg.textContent = 'Say hi! The bar moves when it hears you.';
-        let heard = false;
-        const tick = () => {
-          an.getFloatTimeDomainData(buf);
-          let s = 0;
-          for (const v of buf) s += v * v;
-          const lvl = Math.min(1, Math.sqrt(s / buf.length) * 6);
-          (meter.firstChild as HTMLElement).style.transform = `scaleX(${0.04 + lvl})`;
-          if (lvl > 0.25 && !heard) {
-            heard = true;
-            micMsg.textContent = 'Heard you loud and clear.';
-            meter.classList.add('ok');
-          }
-          if (stream) requestAnimationFrame(tick);
-        };
-        tick();
-        this.cleanups.push(() => {
-          stream?.getTracks().forEach((t) => t.stop());
-          stream = null;
-          void ac.close();
-        });
-      } catch {
-        micMsg.textContent = 'Jarvis could not use the microphone. You can allow it in your system settings.';
-        micBtn.replaceChildren('Open settings');
-        this.st.mic = 'denied';
-      }
-    });
+    // the microphone needs nothing here; only if the system blocks it, say so (with the way to fix it)
+    const micBlocked =
+      this.st.mic === 'denied'
+        ? h('div', { className: 'ob-card ob-mic' }, h('span', { className: 'ob-tool-ico' }, icon(TOOL_ICON.recorder)), h('span', { className: 'ob-tool-txt' }, h('b', {}, 'Microphone access is blocked'), h('span', {}, 'Allow it in your system settings so you can talk to your team.')), h('button', { className: 'ob-ghost', type: 'button', onclick: () => void jb().onboardMicSettings() }, 'Open settings'))
+        : null;
     return h(
       'section',
       {},
       h('p', { className: 'ob-kicker' }, 'Step 3 of 4'),
       h('h2', {}, 'Pick your team’s tools'),
       h('p', { className: 'ob-sub' }, 'Turn on what you want them to use. Anything that acts for you still asks you first; you can change all of this in the Tool Hub.'),
-      h('div', { className: 'ob-card ob-mic' }, h('span', { className: 'ob-tool-ico' }, icon(TOOL_ICON.recorder)), h('span', { className: 'ob-tool-txt' }, h('b', {}, 'Microphone'), micMsg), meter, micBtn),
+      micBlocked,
       grid,
-      h('p', { className: 'ob-sub small' }, 'Email, calendar and other apps (Gmail, Google Calendar, Microsoft 365, Notion, Spotify…) come from your Claude account: connect them any time in the Tool Hub.'),
+      h('p', { className: 'ob-note' }, 'Email, calendar and other apps (Gmail, Google Calendar, Microsoft 365, Notion, Spotify…) come from your Claude account: connect them any time in the Tool Hub.'),
       h('div', { className: 'ob-row' }, h('button', { className: 'ob-cta', type: 'button', onclick: () => void this.next('tools') }, 'Continue', h('span', { className: 'ob-arrow' }, '→'))),
     );
   }
@@ -606,12 +682,24 @@ export class Onboarding {
       const reveal = (n: number) => {
         for (; shown < Math.min(n, spans.length); shown++) spans[shown].classList.add('on');
       };
+      // each word appears as it is said: the voice reports how far it has got (the natural voice by the
+      // audio actually playing, the OS voice word by word); muted, the words come at a speaking pace
       const started = performance.now();
-      let speechStart = 0;
+      let synced = false;
+      let pace = 0;
       const timer = window.setInterval(() => {
-        if (!speechStart && (speechLevel() > 0.02 || orb.fake || this.muted || performance.now() - started > 1800)) speechStart = performance.now();
-        if (speechStart) reveal(Math.floor(((performance.now() - speechStart) / 1000) * 2.7) + 1);
-      }, 60);
+        const said = wordsSpoken();
+        if (said !== null) {
+          synced = true;
+          if (said > 0) reveal(Math.floor(said) + 1);
+          return;
+        }
+        if (synced) return; // between two pieces of the voice: keep what has been said
+        const noTiming = this.muted || (!this.st.voice.installed && performance.now() - started > 2500);
+        if (!noTiming) return;
+        pace ||= performance.now();
+        reveal(Math.floor(((performance.now() - pace) / 1000) * 2.6) + 1);
+      }, 40);
       if (this.muted) await wait(words.length * 370 + 600);
       else {
         orb.speaking = true;
@@ -691,9 +779,8 @@ export class Onboarding {
  */
 export function sayMyName(name: string, opts: { compact?: boolean } = {}): HTMLElement {
   const field = h('input', { className: 'ob-sayas', placeholder: 'e.g. Pree-yaan-kaa', maxLength: 60, autocomplete: 'off', spellcheck: false });
-  const note = h('span', { className: 'ob-sub small' }, 'Asking Claude how to say it…');
+  const note = h('span', { className: 'ob-sub small' }, 'Type how it sounds, syllable by syllable, then press “Hear it”.');
   const play = h('button', { className: 'ob-ghost small', type: 'button' }, '▶  Hear it');
-  const suggest = h('button', { className: 'ob-ghost small', type: 'button' }, 'Suggest again');
   const save = async () => {
     const v = field.value.trim();
     try {
@@ -703,17 +790,6 @@ export function sayMyName(name: string, opts: { compact?: boolean } = {}): HTMLE
       note.textContent = String(e).replace(/^Error.*?: /, '');
     }
   };
-  const ask = async () => {
-    suggest.disabled = true;
-    note.textContent = 'Asking Claude how to say it…';
-    const s = await jb().nameSuggest(name).catch(() => null);
-    suggest.disabled = false;
-    if (s) {
-      field.value = s;
-      await save();
-      note.textContent = 'Press “Hear it”. Not quite right? Change the spelling and listen again.';
-    } else note.textContent = 'Type how it sounds, syllable by syllable, then press “Hear it”.';
-  };
   play.addEventListener('click', async () => {
     await save();
     play.disabled = true;
@@ -722,20 +798,19 @@ export function sayMyName(name: string, opts: { compact?: boolean } = {}): HTMLE
   });
   field.addEventListener('change', () => void save());
   field.addEventListener('keydown', (e) => e.key === 'Enter' && play.click());
-  suggest.addEventListener('click', () => void ask());
   void jb()
     .nameGet()
     .then((r: { sayAs: string }) => {
       if (r.sayAs) {
         field.value = r.sayAs;
-        note.textContent = 'Press “Hear it” to check.';
-      } else void ask();
+        note.textContent = 'Press “Hear it” to check. Not quite right? Change the spelling and listen again.';
+      }
     });
   return h(
     'div',
     { className: `ob-card ob-name-say${opts.compact ? ' compact' : ''}` },
     h('div', { className: 'ob-dl-top' }, h('b', {}, `How should we say “${name}”?`)),
-    h('div', { className: 'ob-say-row' }, field, play, suggest),
+    h('div', { className: 'ob-say-row' }, field, play),
     note,
   );
 }

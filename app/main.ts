@@ -52,6 +52,7 @@ import { SKILLS } from '../roles/skills/index.js';
 import { noteTaker, notesRequest } from '../roles/notes.js';
 import type { ScreenIndex } from '../tools/recorder/screen-store.js';
 import { FilesExecutor } from '../tools/files/executor.js';
+import { shortcutProblem } from './shortcut-check.js';
 import { fileForUrl, MAX_VIEW_TEXT, mimeOf, ShownFile, teamFile, VIEW_SCHEME, viewKind } from '../tools/files/viewer.js';
 import type { ShownSet } from './history.js';
 
@@ -224,6 +225,7 @@ async function originWindow(): Promise<BrowserWindow> {
 /** Lets the floating box grow to fit a popup, then puts it back exactly as it was. */
 async function withRoom<T>(w: BrowserWindow, size: { width: number; height: number } | 'large', fn: () => Promise<T>): Promise<T> {
   if (w === mainWindow) return fn();
+  if (w === voiceWindow) voiceEnlarged = true; // the card does not resize itself while a popup needs the room
   const before = w.getBounds();
   const area = screen.getDisplayMatching(before).workArea;
   const want = size === 'large' ? { width: Math.round(area.width * 0.8), height: Math.round(area.height * 0.85) } : size;
@@ -238,6 +240,7 @@ async function withRoom<T>(w: BrowserWindow, size: { width: number; height: numb
   try {
     return await fn();
   } finally {
+    if (w === voiceWindow) voiceEnlarged = false;
     if (!w.isDestroyed()) {
       w.setBounds(before);
       // A popup had to show the hidden voice card; hide it again (speech carries on).
@@ -327,12 +330,23 @@ async function deliverSpeech(text: string, target: Electron.WebContents | null):
   }
   const w = await readyVoiceWindow();
   placeVoiceWindow(w, w.getBounds().height);
-  // The card stays hidden (Jarvis still speaks) unless the user showed it with the card shortcut.
-  if (voiceCardShown) w.showInactive();
+  // The card stays hidden while Jarvis speaks the answer, unless the user showed it with the card shortcut;
+  // with "Speak replies aloud" off the answer is only written, so the card shows it.
+  if (voiceCardShown || store.snapshot().voiceOutput === false) w.showInactive();
   w.webContents.send('voice:ask', text);
 }
 
+// for the real-app tests only (JARVIS_TEST_HOOKS=1): say something as if by push-to-talk, show the card
+if (process.env.JARVIS_TEST_HOOKS === '1') {
+  (globalThis as Record<string, unknown>).__jarvisTest = {
+    speak: (text: string) => deliverSpeech(text, null),
+    showCard: () => toggleVoiceCard(),
+    voiceWindow: () => voiceWindow,
+  };
+}
+
 const VOICE_WIDTH = 480;
+const VOICE_MIN_WIDTH = 360;
 const DEFAULT_CARD_HOTKEY = 'Control+Alt+J';
 /** Whether the user asked to see the voice card (card shortcut). Hidden by default. */
 let voiceCardShown = false;
@@ -365,10 +379,30 @@ function setCardHotkey(accelerator: string): boolean {
   return ok;
 }
 
+/** A popup (screen picker, drop box…) has made the card bigger for a moment. */
+let voiceEnlarged = false;
+/** Where the user put the card (moved or resized it): its left edge, its bottom edge and its size. */
+let voiceUserPlace: { x: number; bottom: number; width: number; height: number } | null = null;
+/** True while Jarvis itself moves the card (so it is not taken as the user moving it). */
+let voicePlacing = false;
+
+/**
+ * Sizes the card to its content. By default it sits above the taskbar in the middle of the screen; once
+ * the user has moved or resized it, it stays where they put it (growing upwards from its bottom edge) and
+ * keeps their width, and the height they gave it at least.
+ */
 function placeVoiceWindow(w: BrowserWindow, height: number) {
   const area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
-  const h = Math.max(80, Math.min(Math.round(height), Math.round(area.height * 0.6)));
-  w.setBounds({ x: Math.round(area.x + (area.width - VOICE_WIDTH) / 2), y: area.y + area.height - h - 12, width: VOICE_WIDTH, height: h });
+  const u = voiceUserPlace;
+  const width = u ? Math.min(area.width, Math.max(VOICE_MIN_WIDTH, u.width)) : VOICE_WIDTH;
+  const h = Math.max(80, Math.min(Math.max(Math.round(height), u?.height ?? 0), Math.round(area.height * 0.85)));
+  let x = u ? u.x : Math.round(area.x + (area.width - width) / 2);
+  let y = u ? u.bottom - h : area.y + area.height - h - 12;
+  x = Math.min(Math.max(area.x, x), area.x + area.width - width);
+  y = Math.min(Math.max(area.y, y), area.y + area.height - h);
+  voicePlacing = true;
+  w.setBounds({ x, y, width, height: h });
+  setTimeout(() => (voicePlacing = false), 120);
 }
 
 async function readyVoiceWindow(): Promise<BrowserWindow> {
@@ -378,14 +412,33 @@ async function readyVoiceWindow(): Promise<BrowserWindow> {
       height: 160,
       frame: false,
       ...glassOptions(),
-      resizable: false,
+      // move it by its top row, resize it from its edges, minimise it with its – button
+      resizable: true,
+      minWidth: VOICE_MIN_WIDTH,
+      minHeight: 80,
       skipTaskbar: true,
       alwaysOnTop: true,
       show: false,
       title: 'Jarvis',
+      ...windowIcon(),
       webPreferences: { preload: preloadPath(), contextIsolation: true, sandbox: true, nodeIntegration: false, backgroundThrottling: false },
     });
     voiceWindow.setAlwaysOnTop(true, 'floating');
+    // the user moved or resized it: from now on it stays where they put it
+    const remember = () => {
+      const w = voiceWindow;
+      if (!w || w.isDestroyed() || voicePlacing || voiceEnlarged || w.isMinimized()) return;
+      const b = w.getBounds();
+      voiceUserPlace = { x: b.x, bottom: b.y + b.height, width: b.width, height: voiceUserPlace?.height ?? 0 };
+    };
+    voiceWindow.on('moved', remember);
+    voiceWindow.on('resized', () => {
+      remember();
+      const w = voiceWindow;
+      if (voiceUserPlace && w && !voicePlacing && !voiceEnlarged) voiceUserPlace.height = w.getBounds().height;
+    });
+    // minimised it shows on the taskbar (so it can be brought back); otherwise it stays out of it
+    voiceWindow.on('restore', () => voiceWindow?.setSkipTaskbar(true));
     voiceWindow.on('closed', () => (voiceWindow = null));
     await voiceWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), { query: { mode: 'voice' } });
   }
@@ -615,6 +668,15 @@ function send(channel: string, payload?: unknown) {
   for (const w of [mainWindow, boxWindow, voiceWindow]) if (w && !w.isDestroyed()) w.webContents.send(channel, payload);
 }
 
+/** Jarvis's own icon for its windows (the taskbar and window switcher show it, not Electron's). */
+function windowIcon(): { icon?: string } {
+  // on Windows the .ico: each size is drawn for itself (sharp at 16-48 px), not shrunk from a big picture
+  const ico = path.join(__dirname, 'icon.ico');
+  const png = path.join(__dirname, 'icon.png');
+  const p = process.platform === 'win32' && fs.existsSync(ico) ? ico : png;
+  return fs.existsSync(p) ? { icon: p } : {};
+}
+
 function preloadPath() {
   return path.join(__dirname, 'preload.cjs');
 }
@@ -626,6 +688,7 @@ function createMainWindow(show = true) {
     minWidth: 720,
     minHeight: 520,
     title: 'Jarvis',
+    ...windowIcon(),
     // shown only once its first frame is painted, so it never flashes an empty or half-built screen
     show: false,
     ...glassOptions(),
@@ -637,7 +700,20 @@ function createMainWindow(show = true) {
   // first run: the page starts with the welcome already covering it (no glimpse of the app behind)
   const welcome = store.snapshot().onboarded === true ? '0' : '1';
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), { query: { mode: 'main', welcome } });
-  if (show) mainWindow.once('ready-to-show', () => mainWindow?.show());
+  if (show && welcome === '1') {
+    // first run: shown only once the welcome's opening has drawn (never a glimpse of the app or a half-built page)
+    const w = mainWindow;
+    let shown = false;
+    const reveal = () => {
+      if (shown || w.isDestroyed()) return;
+      shown = true;
+      ipcMain.removeListener('welcome:painted', onPainted);
+      w.show();
+    };
+    const onPainted = (e: Electron.IpcMainEvent) => e.sender === w.webContents && reveal();
+    ipcMain.on('welcome:painted', onPainted);
+    setTimeout(reveal, 4000); // whatever happens, the window appears
+  } else if (show) mainWindow.once('ready-to-show', () => mainWindow?.show());
   mainWindow.on('closed', () => (mainWindow = null));
 }
 
@@ -652,16 +728,21 @@ function toggleBox() {
   }
   boxWindow = new BrowserWindow({
     width: 460,
-    height: 320,
+    height: 340,
+    minWidth: 340,
+    minHeight: 220,
     frame: false,
     alwaysOnTop: true,
-    resizable: true,
+    resizable: true, // drag any edge to resize; move it by its title bar
     skipTaskbar: true,
+    ...windowIcon(),
     title: 'Jarvis',
     ...glassOptions(),
     webPreferences: { preload: preloadPath(), contextIsolation: true, sandbox: true, nodeIntegration: false },
   });
   boxWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), { query: { mode: 'box' } });
+  // minimised, it shows in the taskbar (so you can bring it back); otherwise it stays out of it
+  boxWindow.on('restore', () => boxWindow?.setSkipTaskbar(true));
   boxWindow.on('closed', () => (boxWindow = null));
 }
 
@@ -988,6 +1069,13 @@ const shareDeps = (): ShareDeps => ({
 /** A member asked to be shown something: a drop box in the window the user is talking in; waits for the files. */
 async function askToShare(role: RoleId, prompt: string) {
   const target = requestSender && !requestSender.isDestroyed() ? requestSender : (await readyMainWindow(true)).webContents;
+  // the drop box must be seen: a hidden or minimised voice card (or floating box) comes up with it
+  const shareWin = BrowserWindow.fromWebContents(target);
+  if (shareWin && shareWin !== mainWindow && !shareWin.isDestroyed()) {
+    if (shareWin.isMinimized()) shareWin.restore();
+    if (shareWin === voiceWindow) placeVoiceWindow(shareWin, shareWin.getBounds().height);
+    if (!shareWin.isVisible()) shareWin.showInactive();
+  }
   const id = crypto.randomUUID();
   const who = people()[role];
   const files = await new Promise<string[] | null>((resolve) => {
@@ -1294,6 +1382,12 @@ function registerIpc() {
     const stream = opts?.stream === true;
     const conv = prepareConversation().conv;
     shownThisRequest = [];
+    // said on the voice card or typed in the box: the main chat shows it at once (not only once answered)
+    const mirror = (m: Record<string, unknown>) => {
+      if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents !== target) mainWindow.webContents.send('chat:mirror', m);
+    };
+    const fromWin = BrowserWindow.fromWebContents(target);
+    mirror({ kind: 'user', text: String(text), via: fromWin === voiceWindow ? 'voice' : 'box' });
     // what the member says before (and while) they work: "On it, about 2 minutes"
     const notes: { role: RoleId; text: string }[] = [];
     const res = await orchestrator.handle(String(text), isRole(picked) ? picked : null, {
@@ -1302,6 +1396,7 @@ function registerIpc() {
         if (target.isDestroyed()) return;
         const name = r === 'jarvis' ? 'Jarvis' : `${people()[r]} · ${roleById(r).name}`;
         target.send('ask:note', { text: note, roleName: name, roleColor: roleById(r).color, first: notes.length === 1 });
+        if (notes.length === 1) mirror({ kind: 'note', text: note, roleName: name, color: roleById(r).color });
       },
       spoken: fromVoice,
       // who answers, so the window can show their name and use their voice right away
@@ -1542,9 +1637,16 @@ function registerIpc() {
       const sp = typeof patch.ttsSpeed === 'number' && Number.isFinite(patch.ttsSpeed) ? Math.min(MAX_SPEED, Math.max(MIN_SPEED, patch.ttsSpeed)) : undefined;
       store.setTts(undefined, sp);
     }
+    // every window (the main chat, the floating box, the voice card) follows the change at once
+    send('settings:changed', store.snapshot());
     return store.snapshot();
   });
   ipcMain.on('box:toggle', toggleBox);
+  ipcMain.on('box:minimize', () => {
+    if (!boxWindow || boxWindow.isDestroyed()) return;
+    boxWindow.setSkipTaskbar(false);
+    boxWindow.minimize();
+  });
   ipcMain.handle('tts:status', () => {
     const snap = store.snapshot();
     return { ...kokoro.status(), voice: roleVoice(FALLBACK_ROLE), speed: snap.ttsSpeed ?? 1, voices: VOICES };
@@ -1564,7 +1666,7 @@ function registerIpc() {
     const target = e.sender;
     // names are said the way the user taught us (only the sound changes, never the written text)
     const { id, done } = kokoro.speak(applyPronunciations(String(text), snap.pronunciations), v, speed, (c) => {
-      if (!target.isDestroyed()) target.send('tts:chunk', { id: c.id, rate: c.rate, audio: c.audio });
+      if (!target.isDestroyed()) target.send('tts:chunk', { id: c.id, rate: c.rate, audio: c.audio, words: c.words, pause: c.pause });
     });
     void done.then((r) => !target.isDestroyed() && target.send('tts:done', { id, error: r.error, cancelled: r.cancelled }));
     return id;
@@ -1573,7 +1675,12 @@ function registerIpc() {
   ipcMain.on('voice:resize', (e, height: number) => {
     const w = BrowserWindow.fromWebContents(e.sender);
     // Only the voice card sizes itself, and not while a popup has enlarged it.
-    if (w && w === voiceWindow && !w.isDestroyed() && w.getBounds().width === VOICE_WIDTH) placeVoiceWindow(w, Number(height) || 160);
+    if (w && w === voiceWindow && !w.isDestroyed() && !voiceEnlarged && !w.isMinimized()) placeVoiceWindow(w, Number(height) || 160);
+  });
+  ipcMain.on('voice:minimize', () => {
+    if (!voiceWindow || voiceWindow.isDestroyed()) return;
+    voiceWindow.setSkipTaskbar(false);
+    voiceWindow.minimize();
   });
   ipcMain.on('voice:hide', () => {
     voiceCardShown = false; // next spoken request starts hidden again
@@ -1582,6 +1689,8 @@ function registerIpc() {
   ipcMain.handle('voice:cardHotkey', () => cardHotkey);
   ipcMain.handle('voice:setCardHotkey', (_e, accelerator: string | null) => {
     const wanted = accelerator?.trim() || DEFAULT_CARD_HOTKEY;
+    const problem = accelerator?.trim() ? shortcutProblem(wanted) : null;
+    if (problem) throw new Error(problem);
     if (!setCardHotkey(wanted)) {
       setCardHotkey(store.snapshot().voiceCardHotkey || DEFAULT_CARD_HOTKEY);
       throw new Error(`"${wanted}" is already used by another app or is not a valid shortcut.`);
@@ -1592,6 +1701,8 @@ function registerIpc() {
   ipcMain.on('main:show', () => void readyMainWindow(true));
   ipcMain.handle('voice:setHotkey', (_e, accelerator: string | null) => {
     const wanted = accelerator?.trim() || DEFAULT_PTT_HOTKEY;
+    const problem = accelerator?.trim() ? shortcutProblem(wanted) : null;
+    if (problem) throw new Error(problem);
     if (!voice.setHotkey(wanted)) {
       voice.setHotkey(store.snapshot().pttHotkey || DEFAULT_PTT_HOTKEY);
       throw new Error(`"${wanted}" is already used by another app or is not a valid shortcut.`);
@@ -1850,14 +1961,26 @@ app.whenReady().then(async () => {
   // learn which apps the Claude account has, shortly after start (the Tool Hub can check again any time)
   setTimeout(() => void checkConnectors().catch(() => undefined), 8000);
   globalShortcut.register(HOTKEY_BOX, toggleBox);
+  // a Jarvis that is just closing may still hold the shortcuts for a moment: try a few times before warning
+  const keep = (register: () => boolean, warn: () => void) => {
+    let tries = 0;
+    const attempt = () => {
+      if (register()) return;
+      if (++tries < 7) setTimeout(attempt, 800);
+      else warn();
+    };
+    attempt();
+  };
   const hotkey = store.snapshot().pttHotkey || DEFAULT_PTT_HOTKEY;
-  if (!voice.setHotkey(hotkey)) {
-    setTimeout(() => send('notice', `The push-to-talk shortcut ${hotkey} is used by another app. Pick another one in Settings → Voice.`), 3000);
-  }
+  keep(
+    () => voice.setHotkey(hotkey),
+    () => send('notice', `The push-to-talk shortcut ${hotkey} is used by another app. Pick another one in Settings → Voice.`),
+  );
   const cardKey = store.snapshot().voiceCardHotkey || DEFAULT_CARD_HOTKEY;
-  if (!setCardHotkey(cardKey)) {
-    setTimeout(() => send('notice', `The voice card shortcut ${cardKey} is used by another app. Pick another one in Settings → Voice.`), 3500);
-  }
+  keep(
+    () => setCardHotkey(cardKey),
+    () => send('notice', `The voice card shortcut ${cardKey} is used by another app. Pick another one in Settings → Voice.`),
+  );
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();

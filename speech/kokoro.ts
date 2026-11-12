@@ -16,7 +16,7 @@ export interface KokoroStatus {
 }
 
 export interface ChunkSink {
-  (chunk: { id: number; index: number; rate: number; audio: Float32Array }): void;
+  (chunk: { id: number; index: number; rate: number; audio: Float32Array; words?: number; pause?: number }): void;
 }
 
 type Pending = { onChunk: ChunkSink; resolve: (r: { cancelled: boolean; error?: string }) => void };
@@ -129,10 +129,10 @@ export class KokoroEngine {
       w.once('error', reject);
       w.postMessage({ type: 'init', modelDir: this.dir, repo: KOKORO_REPO });
     });
-    w.on('message', (m: { type: string; id: number; index: number; rate: number; audio: Float32Array; cancelled?: boolean; error?: string }) => {
+    w.on('message', (m: { type: string; id: number; index: number; rate: number; audio: Float32Array; words?: number; pause?: number; cancelled?: boolean; error?: string }) => {
       const p = this.pending.get(m.id);
       if (!p) return;
-      if (m.type === 'chunk') p.onChunk({ id: m.id, index: m.index, rate: m.rate, audio: m.audio });
+      if (m.type === 'chunk') p.onChunk({ id: m.id, index: m.index, rate: m.rate, audio: m.audio, words: m.words, pause: m.pause });
       if (m.type === 'done') {
         this.pending.delete(m.id);
         p.resolve({ cancelled: Boolean(m.cancelled), error: m.error });

@@ -35,6 +35,29 @@ const LINKS: [number, number][] = [
 const SECONDS_PER_LOOP = 180; // one full trip around the world
 const FPS = 30;
 
+/** Where the map sits in a W×H window: the same for the app's background and the welcome's unwrapping globe. */
+export function mapLayout(W: number, H: number) {
+  // The whole world fits: as wide as the window, or as tall as most of it.
+  const pitch = Math.max(3, Math.min(W / MAP_COLS, (H * 0.86) / MAP_ROWS));
+  const tileW = pitch * MAP_COLS;
+  const tileH = pitch * MAP_ROWS;
+  return { pitch, tileW, tileH, top: (H - tileH) * 0.56, dot: Math.max(0.7, pitch * 0.24) };
+}
+
+/** Every land cell of the map: its grid column/row and its longitude/latitude (cell centres). */
+export function landCells(): { col: number; row: number; lon: number; lat: number }[] {
+  const out: { col: number; row: number; lon: number; lat: number }[] = [];
+  landBits().forEach((r, row) =>
+    r.forEach((on, col) => {
+      if (on) out.push({ col, row, lon: -180 + ((col + 0.5) / MAP_COLS) * 360, lat: MAP_LAT_TOP - ((row + 0.5) / MAP_ROWS) * (MAP_LAT_TOP - MAP_LAT_BOTTOM) });
+    }),
+  );
+  return out;
+}
+
+/** The map's dot colour (the welcome fades its globe to exactly this). */
+export const MAP_DOT_ALPHA = 0.11;
+
 function landBits(): boolean[][] {
   return LAND_ROWS.map((hex) => {
     const bits = BigInt(`0x${hex}`).toString(2).padStart(MAP_COLS, '0');
@@ -42,7 +65,8 @@ function landBits(): boolean[][] {
   });
 }
 
-export function startWorldMap(canvas: HTMLCanvasElement): void {
+/** Draws the drifting map on the canvas; returns a function that stops it. */
+export function startWorldMap(canvas: HTMLCanvasElement): () => void {
   const ctx = canvas.getContext('2d')!;
   const land = landBits();
   const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -66,18 +90,18 @@ export function startWorldMap(canvas: HTMLCanvasElement): void {
     const H = canvas.clientHeight;
     canvas.width = Math.round(W * dpr);
     canvas.height = Math.round(H * dpr);
-    // The whole world fits: as wide as the window, or as tall as most of it.
-    const pitch = Math.max(3, Math.min(W / MAP_COLS, (H * 0.86) / MAP_ROWS));
-    tileW = pitch * MAP_COLS;
-    tileH = pitch * MAP_ROWS;
-    top = (H - tileH) * 0.56;
+    const L = mapLayout(W, H);
+    const pitch = L.pitch;
+    tileW = L.tileW;
+    tileH = L.tileH;
+    top = L.top;
     tile = document.createElement('canvas');
     tile.width = Math.round(tileW * dpr);
     tile.height = Math.round(tileH * dpr);
     const t = tile.getContext('2d')!;
     t.scale(dpr, dpr);
-    const r = Math.max(0.7, pitch * 0.24);
-    t.fillStyle = 'rgba(255,255,255,0.11)';
+    const r = L.dot;
+    t.fillStyle = `rgba(255,255,255,${MAP_DOT_ALPHA})`;
     for (let y = 0; y < MAP_ROWS; y++) {
       for (let x = 0; x < MAP_COLS; x++) {
         if (!land[y][x]) continue;
@@ -138,7 +162,9 @@ export function startWorldMap(canvas: HTMLCanvasElement): void {
     });
   }
 
+  let stopped = false;
   function frame(now: number) {
+    if (stopped) return;
     requestAnimationFrame(frame);
     if (document.hidden || !tile) return;
     if (still ? drawnStill : now - last < 1000 / FPS) return;
@@ -156,11 +182,16 @@ export function startWorldMap(canvas: HTMLCanvasElement): void {
   }
 
   build();
-  window.addEventListener('resize', () => {
+  const onResize = () => {
     build();
     last = 0;
     drawnStill = false;
-  });
+  };
+  window.addEventListener('resize', onResize);
   start = performance.now();
   requestAnimationFrame(frame);
+  return () => {
+    stopped = true;
+    window.removeEventListener('resize', onResize);
+  };
 }
