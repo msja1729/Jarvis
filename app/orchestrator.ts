@@ -45,7 +45,6 @@ export interface OrchestratorDeps {
   brain: Brain;
   sessions: SessionManager;
   usage: UsageLog;
-  modelOverride: () => ModelChoice | null;
   /** Executes a local command in the UI/app; returns a short confirmation. `role` is who was asked (e.g. who records a meeting). */
   runLocal: (cmd: LocalCommand, role: RoleId) => Promise<string | LocalReply> | string | LocalReply;
   onProgress?: (label: string) => void;
@@ -118,7 +117,7 @@ export class Orchestrator {
       return { kind: 'local', command: cmd, reply, followUp, newConversation: cmd === 'new_conversation', role: asked, speaker: role };
     }
 
-    const model = modelFor(role, text, this.deps.modelOverride());
+    const model = modelFor(role);
     const sessions = this.sessionsFor(role);
     const decision = sessions.current();
     const now = this.deps.now?.() ?? new Date();

@@ -156,7 +156,7 @@ describe('explanation level', () => {
       },
     };
     let level: string | null = 'eli5';
-    const orch = new Orchestrator({ brain, sessions: new SessionManager(), usage: new UsageLog(null, null), modelOverride: () => null, runLocal: () => 'x', level: () => level });
+    const orch = new Orchestrator({ brain, sessions: new SessionManager(), usage: new UsageLog(null, null), runLocal: () => 'x', level: () => level });
     await orch.handle('what is a black hole');
     level = null;
     await orch.handle('what is a black hole');

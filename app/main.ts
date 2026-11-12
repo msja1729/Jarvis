@@ -58,7 +58,7 @@ import type { Lesson } from '../tools/lesson/spec.js';
 import { bgraToGray, chooseSide, SIDE_FRACTION, Side } from '../tools/lesson/placement.js';
 import { AppCatalog } from './apps.js';
 import { KokoroEngine } from '../speech/kokoro.js';
-import { DEFAULT_VOICE, isVoice, MAX_SPEED, MIN_SPEED, VOICES } from '../speech/kokoro-files.js';
+import { isVoice, MAX_SPEED, MIN_SPEED, VOICES } from '../speech/kokoro-files.js';
 import { glassOptions, mainChromeOptions } from './glass.js';
 import { DEFAULT_PTT_HOTKEY, VoiceController } from './voice.js';
 import { Orchestrator } from './orchestrator.js';
@@ -107,7 +107,8 @@ async function announce(role: RoleId, title: string, text: string) {
   const w = await readyVoiceWindow();
   placeVoiceWindow(w, w.getBounds().height);
   w.showInactive();
-  w.webContents.send('voice:announce', { name: role === 'jarvis' ? 'Jarvis' : `${people()[role]} · ${roleById(role).name}`, color: roleById(role).color, voice: roleVoice(role), title, text });
+  if (role === 'jarvis') role = FALLBACK_ROLE;
+  w.webContents.send('voice:announce', { name: `${people()[role]} · ${roleById(role).name}`, color: roleById(role).color, voice: roleVoice(role), title, text });
 }
 
 const PLAN_PROMPT =
@@ -148,15 +149,15 @@ function plannerTick() {
   })();
 }
 
-/** The natural voice of a team member (Jarvis itself keeps the voice from Settings → Natural voice). */
 /** The team members' names (the user's choices, else Maya, Ryan, Sara, Victor). */
 const people = () => peopleNames(store.snapshot().roleNames ?? {});
 
 function roleVoice(role: RoleId): string {
   const snap = store.snapshot();
-  if (role === 'jarvis') return isVoice(snap.ttsVoice) ? snap.ttsVoice : DEFAULT_VOICE;
-  const chosen = snap.roleVoices?.[role];
-  return isVoice(chosen) ? chosen : roleById(role).defaultVoice;
+  // Jarvis is the app, not a team member: anything it says is said in the PA's voice
+  const who = role === 'jarvis' ? FALLBACK_ROLE : role;
+  const chosen = snap.roleVoices?.[who];
+  return isVoice(chosen) ? chosen : roleById(who).defaultVoice;
 }
 let supervisor: Supervisor;
 let supWindow: BrowserWindow | null = null;
@@ -924,7 +925,6 @@ function buildBrain(command: string) {
     brain,
     sessions,
     usage,
-    modelOverride: () => store.snapshot().modelOverride,
     // a new conversation starts with the member's notes and their filled-in Profile files
     memory: { prefix: (r) => memoryPrefix(r), remember: (r, u, a) => roleMemory.remember(r, u, a) },
     people,
@@ -1054,7 +1054,7 @@ function registerIpc() {
     // Claude starts writing them when Claude is connected; if they are still not ready, the hand-written ones play
     const late = new Promise<Intros>((r) => setTimeout(() => r(fallbackIntros(people(), store.snapshot().userName)), 8000));
     const intros = await Promise.race([(introsPromise ??= writeIntros()), late]);
-    return { intros, cards: introCards(people()), voices: Object.fromEntries(ROLES.map((r) => [r.id, roleVoice(r.id)])) };
+    return { intros, cards: introCards(people()), voices: Object.fromEntries(ROLES.filter((r) => r.id !== 'jarvis').map((r) => [r.id, roleVoice(r.id)])) };
   });
   ipcMain.handle('onboard:prepareIntros', () => {
     introsPromise ??= writeIntros();
@@ -1193,7 +1193,8 @@ function registerIpc() {
     return true;
   });
   ipcMain.handle('team:list', () => ({
-    roles: ROLES.map((r) => ({
+    // Jarvis is the app, not a member: only the four experts are on the team
+    roles: ROLES.filter((r) => r.id !== 'jarvis').map((r) => ({
       id: r.id,
       name: r.name,
       person: people()[r.id],
@@ -1229,9 +1230,8 @@ function registerIpc() {
     return people()[role];
   });
   ipcMain.handle('team:setVoice', (_e, role: string, voice: string) => {
-    if (!isRole(role) || !isVoice(voice)) throw new Error('unknown role or voice');
-    if (role === 'jarvis') store.setTts(voice, undefined);
-    else store.setRoleVoice(role, voice);
+    if (!isRole(role) || role === 'jarvis' || !isVoice(voice)) throw new Error('unknown role or voice');
+    store.setRoleVoice(role, voice);
     return roleVoice(role);
   });
   ipcMain.handle('team:saveNotes', (_e, role: string, text: string) => {
@@ -1331,8 +1331,7 @@ function registerIpc() {
     fs.mkdirSync(dir, { recursive: true });
     await shell.openPath(dir);
   });
-  ipcMain.handle('settings:set', (_e, patch: { modelOverride?: 'haiku' | 'sonnet' | null; voiceOutput?: boolean; pauseMedia?: boolean; recordScreen?: boolean; keepMeetingMedia?: boolean; claudeTools?: boolean; ttsVoice?: string; ttsSpeed?: number; explainLevel?: ExplainLevel }) => {
-    if (patch.modelOverride !== undefined) store.setModelOverride(patch.modelOverride);
+  ipcMain.handle('settings:set', (_e, patch: { voiceOutput?: boolean; pauseMedia?: boolean; recordScreen?: boolean; keepMeetingMedia?: boolean; claudeTools?: boolean; ttsSpeed?: number; explainLevel?: ExplainLevel }) => {
     if (patch.voiceOutput !== undefined) store.setVoiceOutput(patch.voiceOutput);
     if (patch.pauseMedia !== undefined) {
       store.setPauseMedia(patch.pauseMedia === true);
@@ -1342,17 +1341,17 @@ function registerIpc() {
     if (patch.claudeTools !== undefined) store.setClaudeTools(patch.claudeTools === true);
     if (patch.keepMeetingMedia !== undefined) store.setKeepMeetingMedia(patch.keepMeetingMedia === true);
     if (patch.explainLevel !== undefined) store.setExplainLevel(patch.explainLevel);
-    if (patch.ttsVoice !== undefined || patch.ttsSpeed !== undefined) {
-      const v = isVoice(patch.ttsVoice) ? patch.ttsVoice : undefined;
+    // each member's voice is chosen on the Team page; Settings only sets the speaking speed
+    if (patch.ttsSpeed !== undefined) {
       const sp = typeof patch.ttsSpeed === 'number' && Number.isFinite(patch.ttsSpeed) ? Math.min(MAX_SPEED, Math.max(MIN_SPEED, patch.ttsSpeed)) : undefined;
-      store.setTts(v, sp);
+      store.setTts(undefined, sp);
     }
     return store.snapshot();
   });
   ipcMain.on('box:toggle', toggleBox);
   ipcMain.handle('tts:status', () => {
     const snap = store.snapshot();
-    return { ...kokoro.status(), voice: isVoice(snap.ttsVoice) ? snap.ttsVoice : DEFAULT_VOICE, speed: snap.ttsSpeed ?? 1, voices: VOICES };
+    return { ...kokoro.status(), voice: roleVoice(FALLBACK_ROLE), speed: snap.ttsSpeed ?? 1, voices: VOICES };
   });
   ipcMain.handle('tts:install', async (e) => {
     await kokoro.install((label, fraction) => !e.sender.isDestroyed() && e.sender.send('tts:progress', { label, fraction }));
@@ -1364,7 +1363,7 @@ function registerIpc() {
     const snap = store.snapshot();
     const fromWin = BrowserWindow.fromWebContents(e.sender);
     const own = fromWin && fromWin === lessonWindow ? roleVoice(lessonBy) : fromWin && fromWin === supWindow ? roleVoice('pm') : null;
-    const v = isVoice(opts?.voice) ? opts.voice : (own ?? (isVoice(snap.ttsVoice) ? snap.ttsVoice : DEFAULT_VOICE));
+    const v = isVoice(opts?.voice) ? opts.voice : (own ?? roleVoice(FALLBACK_ROLE));
     const speed = Math.min(MAX_SPEED, Math.max(MIN_SPEED, snap.ttsSpeed ?? 1));
     const target = e.sender;
     // names are said the way the user taught us (only the sound changes, never the written text)
@@ -1562,7 +1561,7 @@ app.whenReady().then(async () => {
     consult: async (role, question) => {
       if (!brain) return { reply: 'Jarvis is not set up yet.', isError: true };
       const notes = memoryPrefix(role);
-      const res = await brain.ask(`${notes ? `${notes}\n` : ''}${timePrefix()} (A teammate asks you.) ${question}`, null, modelFor(role, question, store.snapshot().modelOverride), { role, consult: true });
+      const res = await brain.ask(`${notes ? `${notes}\n` : ''}${timePrefix()} (A teammate asks you.) ${question}`, null, modelFor(role), { role, consult: true });
       return { reply: res.reply, isError: res.is_error, name: fullName(role, people()) };
     },
     onAsk: () => undefined,

@@ -170,7 +170,6 @@ describe('separate conversations per member', () => {
       brain,
       sessions: new SessionManager(),
       usage: new UsageLog(null, null),
-      modelOverride: () => null,
       runLocal: () => 'x',
       memory: { prefix: (r) => (r === 'doctor' ? '[your notes about the user:\n- Vegetarian.\n]' : ''), remember: async (r, u) => void remembered.push(`${r}:${u}`) },
     });
@@ -228,7 +227,7 @@ describe('faster spoken replies', () => {
         return { reply: 'Hello.', session_id: 'S', tokens_used: 1, is_error: false };
       },
     };
-    const orch = new Orchestrator({ brain, sessions: new SessionManager(), usage: new UsageLog(null, null), modelOverride: () => null, runLocal: () => 'x' });
+    const orch = new Orchestrator({ brain, sessions: new SessionManager(), usage: new UsageLog(null, null), runLocal: () => 'x' });
     const text: string[] = [];
     await orch.handle('Maya, what can you do?', null, { spoken: true, onRole: (r) => roles.push(r), onText: (d) => text.push(d) });
     await orch.handle('what can you do?', 'pa');

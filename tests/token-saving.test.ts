@@ -13,7 +13,7 @@ import { startControlServer } from '../gateway/control-server.js';
 import { checkAttachment, fitWithin } from '../gateway/image-guard.js';
 import { MAX_RESULT_CHARS } from '../gateway/trim.js';
 import { matchLocalCommand } from '../router/commands.js';
-import { pickModel } from '../router/model.js';
+import { modelFor } from '../router/model.js';
 import { GMAIL_APP } from '../tools/email/definition.js';
 import { formatEmail, formatEmailList } from '../tools/email/trim.js';
 import { GCAL_APP } from '../tools/calendar/definition.js';
@@ -50,7 +50,6 @@ describe('C08 local commands use zero claude runs', () => {
       brain,
       sessions: new SessionManager(),
       usage: new UsageLog(null, null),
-      modelOverride: () => null,
       runLocal: (c) => {
         handled.push(c);
         return 'done';
@@ -234,20 +233,11 @@ describe('C15 no audio to Claude', () => {
   });
 });
 
-describe('C16 model by task', () => {
-  it.each([
-    ['read my 5 latest mails', 'haiku'],
-    ["what's on my calendar today?", 'haiku'],
-    ['list unread emails', 'haiku'],
-    ['Reply to Ravi saying I will join', 'sonnet'],
-    ['Draft a mail to HR', 'sonnet'],
-    ['Explain binary search on the whiteboard', 'sonnet'],
-    ['Look at my screen and explain this error', 'sonnet'],
-  ])('C16 "%s" → %s', (text, model) => {
-    expect(pickModel(text)).toBe(model);
-  });
-  it('C16 the user override wins', () => {
-    expect(pickModel('read my mail', 'sonnet')).toBe('sonnet');
+describe('C16 model per member', () => {
+  it('C16 everyone uses Sonnet, the Project Manager uses Opus', () => {
+    expect(modelFor('pa')).toBe('sonnet');
+    expect(modelFor('doctor')).toBe('sonnet');
+    expect(modelFor('pm')).toBe('opus');
   });
 });
 
@@ -278,7 +268,7 @@ describe('C18 usage panel', () => {
     usage.setBaseline(1000);
     let tokens = 900;
     const brain: Brain = { ask: async () => ({ reply: 'ok', session_id: 's', tokens_used: tokens, is_error: false }) };
-    const orch = new Orchestrator({ brain, sessions: new SessionManager(), usage, modelOverride: () => null, runLocal: () => '' });
+    const orch = new Orchestrator({ brain, sessions: new SessionManager(), usage, runLocal: () => '' });
     const cheap = await orch.handle('hello there');
     tokens = 3500;
     const pricey = await orch.handle('summarize everything');

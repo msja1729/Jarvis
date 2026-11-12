@@ -33,10 +33,12 @@ describe('every team member has a folder of their own', () => {
   it('creates Team/<Role> folders with a README and a Skills folder, once', () => {
     const dir = tmpDir();
     ensureRoleFolders(dir);
-    for (const r of ROLE_IDS) {
+    for (const r of ROLE_IDS.filter((x) => x !== 'jarvis')) {
       expect(fs.existsSync(path.join(dir, 'Team', ROLE_FOLDER[r], 'README.md')), r).toBe(true);
       expect(fs.existsSync(path.join(dir, 'Team', ROLE_FOLDER[r], 'Skills')), r).toBe(true);
     }
+    // Jarvis is the app, not a team member: no folder of its own
+    expect(fs.existsSync(path.join(dir, 'Team', ROLE_FOLDER.jarvis))).toBe(false);
     fs.writeFileSync(path.join(roleFolder(dir, 'pm'), 'README.md'), 'mine');
     ensureRoleFolders(dir);
     expect(fs.readFileSync(path.join(roleFolder(dir, 'pm'), 'README.md'), 'utf8')).toBe('mine'); // never overwritten
@@ -185,10 +187,9 @@ describe('web results', () => {
 });
 
 describe('the Project Manager thinks with Opus 5.5', () => {
-  it('PM requests use Opus 5.5, others by task; the Settings override still wins', () => {
-    expect(modelFor('pm', 'what is on the board')).toBe('opus');
-    expect(modelFor('doctor', 'what is on the board')).toBe('haiku');
-    expect(modelFor('pm', 'anything', 'sonnet')).toBe('sonnet');
+  it('PM requests use Opus 5.5; everyone else always uses Sonnet', () => {
+    expect(modelFor('pm')).toBe('opus');
+    for (const r of ['jarvis', 'pa', 'doctor', 'finance'] as const) expect(modelFor(r)).toBe('sonnet');
     const args = buildArgs({ prompt: 'hi', model: 'opus', sessionId: null, gateway: null });
     expect(args[args.indexOf('--model') + 1]).toBe('claude-opus-5-5');
     const h = buildArgs({ prompt: 'hi', model: 'haiku', sessionId: null, gateway: null });
@@ -200,10 +201,10 @@ describe('the Project Manager thinks with Opus 5.5', () => {
     const brain: Brain = {
       ask: async (_t: string, _s: string | null, m: ModelChoice, _o?: AskOptions) => (models.push(m), { reply: 'ok', session_id: 's', tokens_used: 1, is_error: false }),
     };
-    const orch = new Orchestrator({ brain, sessions: new SessionManager(), usage: new UsageLog(null, null), modelOverride: () => null, runLocal: () => '' });
+    const orch = new Orchestrator({ brain, sessions: new SessionManager(), usage: new UsageLog(null, null), runLocal: () => '' });
     await orch.handle('Ryan, list my tasks');
     await orch.handle('Sara, list my tasks');
-    expect(models).toEqual(['opus', 'haiku']);
+    expect(models).toEqual(['opus', 'sonnet']);
   });
 });
 
@@ -211,7 +212,7 @@ describe('recording for a team member', () => {
   it('"Ryan, record this meeting and take notes" is a local command for the Project Manager', async () => {
     const seen: { cmd: string; role: string }[] = [];
     const brain: Brain = { ask: async () => ({ reply: 'x', session_id: null, tokens_used: 0, is_error: false }) };
-    const orch = new Orchestrator({ brain, sessions: new SessionManager(), usage: new UsageLog(null, null), modelOverride: () => null, runLocal: (cmd, role) => (seen.push({ cmd, role }), 'ok') });
+    const orch = new Orchestrator({ brain, sessions: new SessionManager(), usage: new UsageLog(null, null), runLocal: (cmd, role) => (seen.push({ cmd, role }), 'ok') });
     await orch.handle('Ryan, record this meeting and take notes');
     await orch.handle('Sara, record this appointment');
     await orch.handle('record this meeting');

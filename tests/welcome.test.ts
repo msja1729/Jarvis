@@ -20,7 +20,10 @@ describe('meet the team', () => {
     expect(f.members.finance).toMatch(/Not official financial advice/);
     expect(f.outro).toMatch(/Jyo/);
     expect(fallbackIntros(people).hello).toMatch(/^Hey there!/);
-    expect(INTRO_ORDER[0]).toBe('jarvis');
+    // Maya (the PA) hosts: she says hello and goodbye, Jarvis is not on the team
+    expect(INTRO_ORDER).toEqual(['pa', 'pm', 'doctor', 'finance']);
+    expect(f.hello).toMatch(/I'm Maya/);
+    expect(f.hello + f.outro).not.toMatch(/I'm Jarvis|front desk/);
   });
 
   it('asks Claude for spoken, human intros with every member and their skills', () => {

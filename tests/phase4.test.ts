@@ -100,7 +100,6 @@ describe('C22 meeting recorder', () => {
       brain: { ask: async (t) => (calls.push(t), { reply: 'ok', session_id: 's', tokens_used: 1, is_error: false }) },
       sessions: new SessionManager(),
       usage: new UsageLog(null, null),
-      modelOverride: () => null,
       runLocal: () => ({ reply: 'Recording stopped (3 min).', followUp: 'Summarize the meeting I just recorded.' }),
     });
     const r = await orch.handle('stop recording');

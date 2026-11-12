@@ -309,7 +309,7 @@ function roleChip(label: string, color: string, on: boolean, title: string) {
 function pickRole(id: string | null) {
   pickedRole = id;
   const r = teamCache?.roles.find((x) => x.id === id);
-  $<HTMLInputElement>('input').placeholder = r ? `Ask ${r.id === 'jarvis' ? 'Jarvis' : `${r.person} (${r.name})`}…` : 'Ask anything… Jarvis passes it to the right expert';
+  $<HTMLInputElement>('input').placeholder = r ? `Ask ${r.id === 'jarvis' ? 'Jarvis' : `${r.person} (${r.name})`}…` : 'Ask anything… say a name to choose who answers';
   renderRoleChips();
 }
 
@@ -1499,24 +1499,13 @@ confirmTwice($<HTMLButtonElement>('activity-clear'), 'Delete all', () => 'Delete
 
 /* ---------- settings ---------- */
 /* ---------- natural voice settings ---------- */
-const SAMPLE = "Hello, I'm Jarvis. This is how I'll sound when I read your messages and answers aloud.";
+const SAMPLE = 'Hello! This is how your team will sound at this speed.';
 async function renderTts() {
   const st = await j.ttsStatus();
   const pill = $('tts-pill');
   pill.textContent = st.installed ? 'Ready' : 'Not installed';
   pill.className = `pill${st.installed ? ' ok' : ''}`;
   $('tts-install').classList.toggle('hidden', st.installed);
-  const sel = $<HTMLSelectElement>('tts-voice');
-  if (!sel.options.length) {
-    const groups = new Map<string, HTMLOptGroupElement>();
-    for (const v of st.voices) {
-      const key = `${v.accent} ${v.gender.toLowerCase()}`;
-      if (!groups.has(key)) groups.set(key, el('optgroup', { label: key }));
-      groups.get(key)!.append(el('option', { value: v.id }, `${v.name}  ·  grade ${v.grade}`));
-    }
-    sel.append(...groups.values());
-  }
-  sel.value = st.voice;
   const speed = $<HTMLInputElement>('tts-speed');
   speed.value = String(st.speed);
   $('tts-speed-label').textContent = `${Number(st.speed).toFixed(2)}×`;
@@ -1540,10 +1529,6 @@ j.onTtsProgress(({ label, fraction }) => {
   const bar = $('tts-progress');
   (bar.querySelector('i') as HTMLElement).style.width = `${Math.round(fraction * 100)}%`;
   bar.querySelector('span')!.textContent = `${label} ${Math.round(fraction * 100)}%`;
-});
-$('tts-voice').addEventListener('change', async () => {
-  await j.settingsSet({ ttsVoice: $<HTMLSelectElement>('tts-voice').value });
-  void speak(SAMPLE);
 });
 $('tts-speed').addEventListener('input', () => {
   $('tts-speed-label').textContent = `${Number($<HTMLInputElement>('tts-speed').value).toFixed(2)}×`;
@@ -1605,7 +1590,6 @@ $('ptt-save').addEventListener('click', async () => {
 
 async function renderSettings(s?: any) {
   const snap = s ?? (await j.settingsGet());
-  $<HTMLSelectElement>('model-override').value = snap.modelOverride ?? '';
   $<HTMLInputElement>('voice-output').checked = snap.voiceOutput;
   $<HTMLInputElement>('pause-media').checked = snap.pauseMedia !== false;
   $<HTMLInputElement>('record-screen').checked = snap.recordScreen !== false;
@@ -1615,10 +1599,6 @@ async function renderSettings(s?: any) {
   $<HTMLSelectElement>('explain-level').value = snap.explainLevel ?? 'auto';
   voiceOn = snap.voiceOutput;
 }
-$('model-override').addEventListener('change', async (e) => {
-  const v = (e.target as HTMLSelectElement).value;
-  renderSettings(await j.settingsSet({ modelOverride: v || null }));
-});
 $('pause-media').addEventListener('change', async (e) => {
   renderSettings(await j.settingsSet({ pauseMedia: (e.target as HTMLInputElement).checked }));
 });

@@ -8,7 +8,7 @@ import { LessonExecutor } from '../tools/lesson/executor.js';
 import { defaultSetting } from '../gateway/settings.js';
 import { BUILTIN_APPS } from '../app/apps.js';
 import { JARVIS_SYSTEM_PROMPT, wordCount } from '../brain/system-prompt.js';
-import { pickModel } from '../router/model.js';
+import { modelFor } from '../router/model.js';
 
 describe('graph expressions', () => {
   it('understand normal maths, including implicit multiplication and powers', () => {
@@ -132,8 +132,7 @@ describe('the Lessons app', () => {
   it('Claude is told to teach with lessons, and explanations use the stronger model', () => {
     expect(JARVIS_SYSTEM_PROMPT).toMatch(/lesson tool/);
     expect(wordCount(JARVIS_SYSTEM_PROMPT)).toBeLessThan(500);
-    expect(pickModel('teach me photosynthesis')).toBe('sonnet');
-    expect(pickModel('help me understand derivatives')).toBe('sonnet');
+    expect(modelFor('doctor')).toBe('sonnet');
   });
 });
 

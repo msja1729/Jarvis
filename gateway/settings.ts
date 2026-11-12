@@ -28,7 +28,7 @@ export function defaultSetting(ability: AbilityDef): AbilitySetting {
 }
 
 export function emptySettings(): JarvisSettings {
-  return { apps: {}, customApps: [], modelOverride: null, voiceOutput: false, oauthClients: {} };
+  return { apps: {}, customApps: [], voiceOutput: false, oauthClients: {} };
 }
 
 export class SettingsStore {
@@ -97,11 +97,6 @@ export class SettingsStore {
     if (roles) next[appId] = [...new Set(roles)];
     else delete next[appId];
     this.data.appRoles = next;
-    this.save();
-  }
-
-  setModelOverride(model: JarvisSettings['modelOverride']): void {
-    this.data.modelOverride = model;
     this.save();
   }
 

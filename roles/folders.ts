@@ -45,7 +45,8 @@ research and anything they write for you. You can open, edit or add files here y
 
 /** Creates the team folders (once) with a short README and starter sub-folders. Never touches existing files. */
 export function ensureRoleFolders(jarvisDir: string): void {
-  for (const r of ROLES) {
+  // Jarvis is the app, not a team member: no folder of its own (an existing one is left alone)
+  for (const r of ROLES.filter((x) => x.id !== 'jarvis')) {
     const dir = roleFolder(jarvisDir, r.id);
     fs.mkdirSync(path.join(dir, SKILLS_DIR), { recursive: true });
     for (const sub of STARTER[r.id] ?? []) fs.mkdirSync(path.join(dir, sub), { recursive: true });

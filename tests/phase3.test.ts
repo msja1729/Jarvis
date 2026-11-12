@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { checkAttachment, imageSize } from '../gateway/image-guard.js';
 import { defaultSetting, SettingsStore } from '../gateway/settings.js';
 import { JARVIS_SYSTEM_PROMPT, wordCount } from '../brain/system-prompt.js';
-import { pickModel } from '../router/model.js';
+import { modelFor } from '../router/model.js';
 import { SCREEN_APP } from '../tools/screen/definition.js';
 import { CapturedImage, ScreenBackend, ScreenChoice, ScreenExecutor, ScreenSource, ScreenUI, toPixelRect } from '../tools/screen/executor.js';
 import { makeCore } from './helpers.js';
@@ -164,9 +164,7 @@ describe('C14 screenshots are cropped and scaled to at most 1280 px', () => {
 
 describe('phase 3 routing and prompt', () => {
   it('screen and drawing requests use the larger model', () => {
-    expect(pickModel('look at my screen and explain this error')).toBe('sonnet');
-    expect(pickModel('what did I draw?')).toBe('sonnet');
-    expect(pickModel('fix this diagram')).toBe('sonnet');
+    expect(modelFor('pa')).toBe('sonnet');
   });
   it('the system prompt is still under 500 words', () => {
     expect(wordCount(JARVIS_SYSTEM_PROMPT)).toBeLessThan(500);

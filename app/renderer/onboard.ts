@@ -1,7 +1,7 @@
 /**
  * First-run welcome, in the main window:
  *   title card → your name → connect Claude → tools & microphone → voices → meet the team.
- * The last part is a little show: Jarvis says hello, then each team member introduces
+ * The last part is a little show: Maya (the PA) says hello, then each team member introduces
  * themselves in their own natural voice while their orb glows with what they say.
  */
 import { speakAndWait, speechLevel, stopSpeaking } from '../../speech/tts.js';
@@ -625,15 +625,17 @@ export class Onboarding {
     };
 
     void (async () => {
-      setWho('Jarvis', 'Front desk', JARVIS_COLOR);
       caption.replaceChildren(h('span', { className: 'on ob-thinking' }, 'Getting everyone together…'));
       const { intros, cards, voices } = await jb().onboardIntros();
       if (run !== this.run) return;
+      // Maya, the PA, hosts the welcome
+      const host = (cards as Card[]).find((c) => c.id === 'pa') ?? (cards as Card[])[0];
+      setWho(host.person, `${host.name} · ${host.title}`, host.color);
       await wait(500);
-      await say(intros.hello, voices.jarvis);
+      await say(intros.hello, voices.pa);
       if (run !== this.run) return;
       // the roster arrives
-      setWho('Your team', 'Four experts, one front desk', JARVIS_COLOR);
+      setWho('Your team', 'Four experts, on your computer', JARVIS_COLOR);
       caption.classList.remove('show');
       const slots = new Map<string, HTMLElement>();
       (cards as Card[]).forEach((c, k) => {
@@ -663,9 +665,9 @@ export class Onboarding {
       chips.classList.remove('show');
       roster.querySelectorAll('.ob-member').forEach((m) => m.classList.remove('dim'));
       roster.classList.add('all');
-      setWho('Jarvis', 'and your team', JARVIS_COLOR);
+      setWho(host.person, 'and your team', host.color);
       scene.classList.add('ob-finale');
-      await say(intros.outro, voices.jarvis);
+      await say(intros.outro, voices.pa);
       if (run !== this.run) return;
       end.replaceChildren(
         h('button', { className: 'ob-ghost', type: 'button', onclick: () => void this.go('meet') }, 'Replay'),

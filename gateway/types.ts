@@ -66,7 +66,6 @@ export interface JarvisSettings {
   apps: Record<string, AppSettings>;
   /** User-added apps (definitions are stored, credentials are not). */
   customApps: AppDef[];
-  modelOverride: 'haiku' | 'sonnet' | null;
   /** Natural voice (Kokoro voice id) and speaking speed. */
   ttsVoice?: string;
   ttsSpeed?: number;

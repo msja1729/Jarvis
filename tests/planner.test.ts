@@ -243,7 +243,7 @@ describe('conversations and Claude sessions', () => {
         return { reply: 'ok', session_id: sid ?? `s${++n}`, tokens_used: 1, is_error: false };
       },
     };
-    const orch = new Orchestrator({ brain, sessions: new SessionManager(), usage: new UsageLog(null, null), modelOverride: () => null, runLocal: () => '' });
+    const orch = new Orchestrator({ brain, sessions: new SessionManager(), usage: new UsageLog(null, null), runLocal: () => '' });
     const a = await orch.handle('Sara, hi');
     expect(a.sessionId).toBe('s1');
     await orch.handle('Sara, and?');

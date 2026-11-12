@@ -163,13 +163,6 @@
             <div class="settings-grid">
               <div class="card settings-card">
                 <h3 class="card-title">Conversation</h3>
-                <label>Model
-                  <select id="model-override">
-                    <option value="">Automatic (Haiku for look-ups, Sonnet for most answers, Opus 5.5 for the Project Manager)</option>
-                    <option value="haiku">Always Haiku (fastest)</option>
-                    <option value="sonnet">Always Sonnet</option>
-                  </select>
-                </label>
                 <label>How your team explains things
                   <select id="explain-level">
                     <option value="auto">Automatic (picked from your question)</option>
@@ -213,9 +206,8 @@
                 <p class="help">A realistic voice (Kokoro) made on this computer; nothing is sent anywhere. Each team member's voice is chosen on the Team page.</p>
                 <div class="row-buttons"><button id="tts-install" class="primary hidden">Download natural voice (about 326 MB)</button></div>
                 <div id="tts-progress" class="meter-bar hidden"><i></i><span></span></div>
-                <label>Jarvis's voice<select id="tts-voice"></select></label>
                 <label>Speed <span id="tts-speed-label" class="muted"></span><input id="tts-speed" type="range" min="0.8" max="1.3" step="0.05" /></label>
-                <div class="row-buttons"><button id="tts-sample">Play sample</button><span class="help">Grades are Kokoro's quality ratings (A is the most natural).</span></div>
+                <div class="row-buttons"><button id="tts-sample">Play sample</button><span class="help">The speed is the same for the whole team.</span></div>
                 <div id="tts-error" class="error"></div>
               </div>
 

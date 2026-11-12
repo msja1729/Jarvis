@@ -101,7 +101,6 @@ describe('C05 follow-ups use the earlier conversation', () => {
       brain,
       sessions: new SessionManager(),
       usage: new UsageLog(null, null),
-      modelOverride: () => null,
       runLocal: () => '',
     });
     await orch.handle('what is the latest mail from Ravi?');
