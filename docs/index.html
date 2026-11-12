@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Jarvis: A Personal Team of AI Experts</title>
+<meta name="description" content="An honest review of Jarvis, a desktop app that turns Claude into a team of specialist assistants: what it does, where it is better than existing AI agents, and its limits." />
+<link rel="icon" href="images/icon.png" />
+<style>
+  :root {
+    --bg: #fbfbfa; --paper: #ffffff; --text: #1d1f23; --soft: #4a4f57; --muted: #6b7079; --line: #e3e4e7;
+    --head: #f4f5f7; --accent: #2b6fd6; --accent-tint: #e8f0fc;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121315; --paper: #1a1c1f; --text: #ecedef; --soft: #c3c6cc; --muted: #9a9ea6; --line: #2e3136; --head: #23262a; --accent: #6ea6ff; --accent-tint: #1d2a40; }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.65 "Segoe UI", system-ui, -apple-system, Helvetica, Arial, sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 48px 20px 72px; }
+  h1 { font-size: 34px; line-height: 1.2; margin: 0 0 8px; letter-spacing: -0.01em; }
+  .byline { color: var(--muted); font-size: 14px; margin: 0 0 24px; }
+  .lead { font-size: 18px; color: var(--soft); margin: 0 0 12px; }
+  .links { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 8px; }
+  .links a { font-size: 14px; text-decoration: none; color: var(--accent); border: 1px solid var(--line); background: var(--paper); padding: 6px 12px; border-radius: 999px; }
+  .links a:hover { border-color: var(--accent); }
+  h2 { font-size: 23px; margin: 44px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+  p { margin: 0 0 14px; }
+  .point { margin: 0 0 16px; }
+  .point b { color: var(--text); }
+  .table { overflow-x: auto; margin: 6px 0 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
+  table { border-collapse: collapse; width: 100%; font-size: 15px; }
+  th, td { text-align: left; vertical-align: top; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  th { background: var(--head); font-weight: 600; }
+  tr:last-child td { border-bottom: 0; }
+  td:first-child { font-weight: 600; white-space: nowrap; }
+  ul { margin: 0 0 16px; padding-left: 22px; }
+  li { margin: 6px 0; }
+  figure { margin: 8px 0 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
+  figure svg { width: 100%; height: auto; display: block; }
+  figcaption { color: var(--muted); font-size: 13px; text-align: center; margin-top: 6px; }
+  a { color: var(--accent); }
+  footer { margin-top: 48px; color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 16px; }
+  @media (max-width: 600px) { h1 { font-size: 27px; } td:first-child { white-space: normal; } }
+  @media print { body { background: #fff; } .links { display: none; } main { padding-top: 0; } h2 { break-after: avoid; } figure, .table, .point { break-inside: avoid; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Jarvis: A Personal Team of AI Experts</h1>
+  <p class="byline">Jarvis project · November 2026 · version 0.8.1</p>
+  <p class="lead">Jarvis is a Windows desktop app that turns Claude into a small team of specialist assistants who live on the computer: they are spoken to from any app, can hear meetings and see the screen, remember the user in their own field, and act in the user's apps only within rules the user sets. This review states where that makes Jarvis better than existing agents, and where it does not.</p>
+  <div class="links">
+    <a href="https://github.com/msja1729/Jarvis">Source code on GitHub</a>
+    <a href="https://github.com/msja1729/Jarvis/releases/latest">Download for Windows</a>
+    <a href="jarvis-capabilities.html">Full capabilities guide</a>
+  </div>
+
+  <h2>What Jarvis is</h2>
+  <p>Jarvis gives the user four AI specialists, each with a name, a voice, a field and a memory of their own. The user talks to them by name ("Sara, I've had a headache since yesterday") and stays with that member until naming another.</p>
+  <div class="table"><table>
+    <thead><tr><th>Member</th><th>Field</th><th>Example request</th></tr></thead>
+    <tbody>
+      <tr><td>Maya</td><td>Personal assistant: schedule, email, reminders, daily plan</td><td>"Maya, what does my day look like?"</td></tr>
+      <tr><td>Ryan</td><td>Project manager and tech lead: projects, meetings, coding</td><td>"Ryan, add a login page to my project"</td></tr>
+      <tr><td>Sara</td><td>Health coach: symptoms, lab reports, food, sleep</td><td>"Sara, what should I eat for dinner?"</td></tr>
+      <tr><td>Victor</td><td>Money and business: budgets, debt, bills, investing basics</td><td>"Victor, help me make a monthly budget"</td></tr>
+    </tbody>
+  </table></div>
+  <p>A fifth role, Jarvis itself, is the front desk: it passes each request to the right member. The members ask each other for help when a request crosses fields.</p>
+
+  <h2>What it can do</h2>
+  <div class="table"><table>
+    <thead><tr><th>Feature</th><th>What the user gets</th></tr></thead>
+    <tbody>
+      <tr><td>Voice from any app</td><td>Press a shortcut anywhere, speak, and the answer is spoken back. Speech recognition and voices run on the computer.</td></tr>
+      <tr><td>Experts who remember</td><td>Each member keeps files about the user (health profile, budget, roadmap, writing style) and uses them in every answer.</td></tr>
+      <tr><td>Works in the user's apps</td><td>Gmail, Google Calendar, Microsoft 365, Notion, Slack, Spotify and more, connected once through the user's Claude account.</td></tr>
+      <tr><td>Meeting recorder</td><td>Records the microphone, the computer's sound and the screen; writes minutes and puts the user's tasks on a board with reminders.</td></tr>
+      <tr><td>Reminders and daily plan</td><td>Spoken reminders on time, a morning plan and an evening review.</td></tr>
+      <tr><td>Coding supervisor</td><td>Ryan runs Claude Code on a project in the background and brings the user its questions, with a recommendation.</td></tr>
+      <tr><td>Show and be shown</td><td>The user drops in a PDF, photo or video; members open a large preview of the documents and pictures they make.</td></tr>
+      <tr><td>Lessons</td><td>Narrated, step-by-step explanations with diagrams, graphs and equations.</td></tr>
+      <tr><td>Live help</td><td>"What did he just say?" during a lecture or call; quiet answers during a recorded meeting.</td></tr>
+      <tr><td>Says what it is doing</td><td>Before working, a member says what it will do and how long it will take.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>Where Jarvis is genuinely better</h2>
+  <p>Jarvis does not have a better model: it runs on Claude itself. Its advantage is everything built around the model, which general assistants (Claude, ChatGPT) and coding agents (Claude Code, OpenAI Codex) do not offer together.</p>
+  <p class="point"><b>1. It lives on the computer, not in a window.</b> A global push-to-talk key works in any app, and the answer is spoken back while the user keeps working; music pauses on its own. Speech recognition (whisper.cpp) and the natural voices (Kokoro) run on the computer, so no audio leaves it. Other agents are used inside their own window, browser tab or terminal.</p>
+  <p class="point"><b>2. It can hear and see what the user is working on.</b> It records a meeting's microphone, the computer's sound and the screen together, captures each new slide, and turns it all into minutes, tasks and reminders. During a lecture or a call the user can ask "what did he just say?". Other agents know only what the user pastes or uploads.</p>
+  <p class="point"><b>3. Permissions are enforced in code, per expert and per action.</b> Every tool call passes a gateway that decides by app, by expert and by kind of action: reading is allowed, changes ask first, deleting or paying always asks. An expert cannot even see an app it is not allowed to use, and every action is logged. Claude and Codex approve tools or commands, but have no way to say "the health expert may never touch my email".</p>
+  <p class="point"><b>4. Specialists with a method and a memory of their own.</b> Each expert follows its field's procedure: red-flag checks first in health, the user's investment policy before any money decision, a written spec before any coding. Each keeps structured files about the user (lab history, balance sheet, roadmap) in a folder the user can open and correct. General assistants keep one short, general memory; coding agents keep instruction files per project.</p>
+  <p class="point"><b>5. It speaks up at the right time.</b> Spoken reminders, medicine schedules for the exact number of days, a morning plan and an evening review. Chat assistants and coding agents answer only when asked.</p>
+  <p class="point"><b>6. Coding agents, supervised for non-programmers.</b> Ryan runs Claude Code in the background, handles routine questions itself, brings the user only real decisions with a recommendation, and reports progress by voice. Some rules can never be switched off: deleting files, git push, installing software, network use and anything outside the project always come to the user. With raw Claude Code or Codex, the user watches a terminal and judges every step alone.</p>
+
+  <h2>How it works</h2>
+  <figure>
+    <svg viewBox="0 0 760 360" role="img" aria-label="Every action passes through the Jarvis permission gateway" font-family="Segoe UI, system-ui, sans-serif" font-size="13">
+      <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#a6aab2"/></marker></defs>
+      <text x="24" y="34" font-size="15" font-weight="600" fill="currentColor">Every action passes through the Jarvis permission gateway</text>
+      <g fill="none" stroke="#a6aab2" stroke-width="1.25">
+        <path d="M225 96H280" marker-end="url(#arr)"/><path d="M480 96H535" marker-end="url(#arr)"/>
+        <path d="M635 124V162" marker-end="url(#arr)"/>
+        <path d="M125 218V264" marker-end="url(#arr)"/><path d="M380 218V264" marker-end="url(#arr)"/><path d="M635 218V264" marker-end="url(#arr)"/>
+      </g>
+      <g fill="none" stroke="#a6aab2" stroke-width="1.25">
+        <rect x="25" y="68" width="200" height="56" rx="8"/><rect x="280" y="68" width="200" height="56" rx="8"/><rect x="535" y="68" width="200" height="56" rx="8"/>
+        <rect x="25" y="264" width="200" height="72" rx="8"/><rect x="280" y="264" width="200" height="72" rx="8"/><rect x="535" y="264" width="200" height="72" rx="8"/>
+      </g>
+      <rect x="24" y="162" width="712" height="56" rx="8" fill="#2b6fd6" fill-opacity="0.12" stroke="#2b6fd6" stroke-width="2"/>
+      <g text-anchor="middle" fill="currentColor">
+        <text x="125" y="92" font-weight="600">You</text><text x="125" y="108" font-size="11.5" opacity="0.7">speak from any app, or type</text>
+        <text x="380" y="92" font-weight="600">Jarvis front desk</text><text x="380" y="108" font-size="11.5" opacity="0.7">picks the right expert</text>
+        <text x="635" y="92" font-weight="600">Claude Code (your plan)</text><text x="635" y="108" font-size="11.5" opacity="0.7">the expert thinks and acts</text>
+        <text x="380" y="186" font-weight="600">Permission gateway</text><text x="380" y="202" font-size="11.5">allowed, asks you first, or blocked, per app and per expert; every action logged</text>
+        <text x="125" y="288" font-weight="600">Jarvis's own tools</text><text x="125" y="304" font-size="11.5" opacity="0.7">screen, meeting recorder,</text><text x="125" y="320" font-size="11.5" opacity="0.7">folders, reminders, lessons</text>
+        <text x="380" y="288" font-weight="600">Your connected apps</text><text x="380" y="304" font-size="11.5" opacity="0.7">Gmail, Calendar, Notion,</text><text x="380" y="320" font-size="11.5" opacity="0.7">Slack, Spotify and more</text>
+        <text x="635" y="288" font-weight="600">Claude Code's tools</text><text x="635" y="304" font-size="11.5" opacity="0.7">files and commands,</text><text x="635" y="320" font-size="11.5" opacity="0.7">in the expert's own folder</text>
+      </g>
+      <text x="645" y="148" font-size="11.5" fill="currentColor" opacity="0.7">wants to use a tool</text>
+    </svg>
+    <figcaption>How a request flows: 3 steps, 1 gateway, 3 kinds of tools</figcaption>
+  </figure>
+  <p>The front desk sends each request to the right expert, who thinks with Claude on the user's own plan; before any tool or app is used, the permission gateway allows it, asks the user, or blocks it, and the answer is spoken and written back.</p>
+
+  <h2>Honest limits</h2>
+  <ul>
+    <li><b>Not a smarter model.</b> On pure reasoning or coding, Jarvis is exactly as good as the Claude model underneath; it does not out-code Claude Code or Codex.</li>
+    <li><b>Depends on Anthropic.</b> It needs Claude Code and a Claude Pro or Max plan, and its use counts against that plan's limits.</li>
+    <li><b>Information, not professionals.</b> The health and money experts follow careful playbooks, but give information, not a diagnosis or regulated financial advice; the playbooks have not yet been reviewed by professionals.</li>
+    <li><b>Not yet formally measured.</b> Its advantage over plain Claude has been checked by hand, not in a side-by-side evaluation.</li>
+    <li><b>Desktop and Windows only.</b> There is no phone app; the installer is not code-signed; fast speech recognition needs an NVIDIA graphics card, and a spoken answer starts about 3.5 to 5.5 seconds after the user stops talking.</li>
+    <li><b>Apps come from Claude's directory.</b> Outside apps are limited to claude.ai's connectors (for example, personal Outlook.com addresses are not supported).</li>
+  </ul>
+
+  <h2>Technology</h2>
+  <div class="table"><table>
+    <thead><tr><th>Part</th><th>Built with</th></tr></thead>
+    <tbody>
+      <tr><td>Desktop app</td><td>Electron and TypeScript (Windows 10/11)</td></tr>
+      <tr><td>AI</td><td>Claude, through Claude Code on the user's own plan</td></tr>
+      <tr><td>Tools</td><td>Model Context Protocol (MCP): Jarvis's own tools plus the apps in the user's Claude account</td></tr>
+      <tr><td>Speech recognition</td><td>whisper.cpp, on the computer</td></tr>
+      <tr><td>Voices</td><td>Kokoro natural voices, on the computer</td></tr>
+      <tr><td>Quality</td><td>324 automated tests, plus checks in the real app</td></tr>
+    </tbody>
+  </table></div>
+
+  <footer>Jarvis is open source: <a href="https://github.com/msja1729/Jarvis">github.com/msja1729/Jarvis</a>.</footer>
+</main>
+</body>
+</html>
