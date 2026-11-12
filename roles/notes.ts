@@ -12,7 +12,7 @@ const WHAT: Record<RoleId, string> = {
   jarvis: '',
   pm: 'Use your meeting-minutes skill: key points, decisions, action items with owners and due dates, and open questions. Put every task given to me on the board with its due date and a reminder the day before.',
   pa: 'Write meeting notes: key points, decisions, and every task, deadline or appointment that involves me. Put my tasks on the board with due dates and add reminders.',
-  doctor: 'Write notes of this medical appointment: what the doctor found or suspects, tests ordered, medicines (name, dose, how long), instructions, warning signs to watch, and the follow-up date. Ask Maya (PA) to add follow-ups and medicine reminders. Point out anything I should ask about.',
+  doctor: 'Write notes of this medical appointment: what the doctor found or suspects, tests ordered, medicines (name, dose, when, how long), instructions, warning signs to watch, and the follow-up date. Then set the reminders yourself: each medicine as a daily series (reminders add_series: its times, from today, for its number of days; say the dose and "after food" etc.), the follow-up visit the day before at 18:00 and two hours before, and any test to book. Add every medicine to your Profile (current medicines, with the end date). If a dose, time or length was unclear in the recording, do not guess: list it as a question for me. Point out anything I should ask about.',
   finance: 'Write notes of this conversation: figures discussed, options compared, decisions, risks, and every money task or deadline for me. Ask Maya (PA) to add the deadlines as reminders.',
 };
 

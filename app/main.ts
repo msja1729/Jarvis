@@ -112,26 +112,38 @@ async function announce(role: RoleId, title: string, text: string) {
 const PLAN_PROMPT =
   "Plan my day. Use your inbox-triage skill on new email first (put new deadlines and tasks on the board with reminders), then your daily-plan skill: today's calendar, tasks due soon or overdue, and my teammates' notes where useful. Save the plan in your Plans folder and give me a short, friendly version with times and the top 3 priorities. Add a reminder 10 minutes before each meeting today.";
 
-/** The PA's clock: due reminders, and the morning plan once a day. Free; Claude is only used for the plan. */
+const REVIEW_PROMPT =
+  "End-of-day review, to be read aloud, under 120 words. Look at: the board (what was done today, what is overdue, what is due tomorrow), today's calendar and tomorrow's first meetings, reminders still to come, and new email since this morning that needs me (deadlines, replies owed). Then tell me, warmly: what got done today, what is still open, what is due tomorrow (with times), and anything I missed. Put new deadlines on the board with reminders. Save the review in your Plans folder.";
+
+/** Once a day at its time (if it is no more than 3 hours late): the morning plan or the evening review. */
+function dueToday(at: string | null | undefined, last: string | undefined): string | null {
+  if (!at) return null;
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const [h, m] = at.split(':').map(Number);
+  const due = new Date(now);
+  due.setHours(h, m, 0, 0);
+  return last === today || now < due || now.getTime() - due.getTime() > 3 * 3600_000 ? null : today;
+}
+
+/** The PA's clock: due reminders, the morning plan and the evening review once a day. Free; Claude is only used for the plan and review. */
 function plannerTick() {
   for (const r of reminders.takeDue()) {
     const late = Date.now() - Date.parse(r.at) > 120_000 ? ' (while Jarvis was closed)' : '';
-    void announce('pa', `Reminder${late}`, r.text);
+    void announce(isRole(r.from) && r.from !== 'jarvis' ? r.from : 'pa', `Reminder${late}`, r.text);
   }
   const pa = store.snapshot().pa ?? {};
-  if (!pa.planAt || !orchestrator || orchestrator.isBusy) return;
-  const now = new Date();
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const [h, m] = pa.planAt.split(':').map(Number);
-  const due = new Date(now);
-  due.setHours(h, m, 0, 0);
-  if (pa.lastPlan === today || now < due || now.getTime() - due.getTime() > 3 * 3600_000) return;
-  store.setPa({ lastPlan: today });
+  if (!orchestrator || orchestrator.isBusy) return;
+  const plan = dueToday(pa.planAt, pa.lastPlan);
+  const review = plan ? null : dueToday(pa.reviewAt, pa.lastReview);
+  if (!plan && !review) return;
+  if (plan) store.setPa({ lastPlan: plan });
+  else store.setPa({ lastReview: review! });
   void (async () => {
     const w = await readyVoiceWindow();
     requestSender = w.webContents; // any popup appears on the voice card, not the main window
-    const res = await orchestrator!.handle(PLAN_PROMPT, 'pa');
-    void announce('pa', 'Your plan for today', res.reply);
+    const res = await orchestrator!.handle(plan ? PLAN_PROMPT : REVIEW_PROMPT, 'pa');
+    void announce('pa', plan ? 'Your plan for today' : 'Your day, wrapped up', res.reply);
   })();
 }
 
@@ -785,6 +797,10 @@ async function runLocal(cmd: LocalCommand, role: RoleId = 'jarvis'): Promise<str
       return startRecordingFor(role);
     case 'stop_recording':
       return stopRecordingWithNotes();
+    case 'start_listening':
+      return voice.startListening();
+    case 'stop_listening':
+      return voice.stopListening();
   }
 }
 
@@ -1045,9 +1061,11 @@ function registerIpc() {
   // the user's music stays paused from when they spoke until the answer has started (main releases 'reply')
   ipcMain.handle('ask', async (e, text: string, picked?: string, opts?: { stream?: boolean }) => {
     try {
-      const res = await askInner(e, text, picked, opts);
+      // during a recorded meeting, spoken questions are answered quietly on the card (nothing is played into the meeting)
+      const quiet = voice?.recorder.recording === true && BrowserWindow.fromWebContents(e.sender) === voiceWindow;
+      const res = await askInner(e, text, picked, quiet ? { ...opts, stream: false } : opts);
       notesFinished(String(text), res);
-      return res;
+      return quiet ? { ...res, quiet: true } : res;
     } finally {
       setTimeout(() => media?.hold('reply', false), 1500);
     }
@@ -1236,8 +1254,13 @@ function registerIpc() {
   });
   ipcMain.handle('usage:summary', () => usage.summary());
   // a window started or stopped speaking (each window counts separately)
+  const speakingWindows = new Set<number>();
   ipcMain.on('media:speaking', (e, on: boolean) => {
     media?.hold(`speak:${e.sender.id}`, on === true, 180_000);
+    // Jarvis's own voice is never added to "what was just said" (listen-along hears the computer's sound)
+    if (on === true) speakingWindows.add(e.sender.id);
+    else speakingWindows.delete(e.sender.id);
+    voice?.setJarvisSpeaking(speakingWindows.size > 0);
     if (on) media?.hold('reply', false); // the answer has started: the speaking hold takes over
   });
   ipcMain.handle('activity:list', () => activity.list());
@@ -1251,6 +1274,30 @@ function registerIpc() {
     if (err) throw new Error(err);
   });
   ipcMain.handle('settings:get', () => store.snapshot());
+  // files for the team (a bill, a form, a report, a photo): copied into Team/Inbox, where every member can read them
+  const attachInto = (paths: unknown) => {
+    const inbox = path.join(teamRoot(app.getPath('userData')), 'Inbox');
+    fs.mkdirSync(inbox, { recursive: true });
+    const day = new Date().toISOString().slice(0, 10);
+    const out: { name: string; path: string }[] = [];
+    for (const p of Array.isArray(paths) ? paths.slice(0, 6) : []) {
+      if (typeof p !== 'string' || !fs.existsSync(p) || !fs.statSync(p).isFile()) continue;
+      if (fs.statSync(p).size > 100 * 1024 * 1024) throw new Error(`${path.basename(p)} is over 100 MB.`);
+      const base = path.basename(p).replace(/[<>:"/\\|?*\x00-\x1f]/g, '_');
+      let dest = path.join(inbox, `${day} ${base}`);
+      for (let n = 2; fs.existsSync(dest); n++) dest = path.join(inbox, `${day} (${n}) ${base}`);
+      fs.copyFileSync(p, dest);
+      out.push({ name: path.basename(p), path: dest });
+    }
+    return out;
+  };
+  ipcMain.handle('attach:files', (_e, paths: unknown) => attachInto(paths));
+  ipcMain.handle('attach:pick', async (e) => {
+    const win = BrowserWindow.fromWebContents(e.sender);
+    const opts = { title: 'Add a file for your team', properties: ['openFile', 'multiSelections'] as ('openFile' | 'multiSelections')[] };
+    const r = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
+    return r.canceled ? [] : attachInto(r.filePaths);
+  });
   ipcMain.handle('meetings:openFolder', async () => {
     const dir = path.join(app.getPath('videos'), 'Jarvis Meetings');
     fs.mkdirSync(dir, { recursive: true });
@@ -1368,7 +1415,11 @@ function registerIpc() {
     return hooksInstalled(CLAUDE_SETTINGS());
   });
   // PA: morning plan and reminders; the shared project board
-  ipcMain.handle('pa:get', () => ({ planAt: store.snapshot().pa?.planAt ?? null, reminders: reminders.upcoming() }));
+  ipcMain.handle('pa:get', () => ({ planAt: store.snapshot().pa?.planAt ?? null, reviewAt: store.snapshot().pa?.reviewAt ?? null, reminders: reminders.upcoming() }));
+  ipcMain.handle('pa:setReview', (_e, at: string | null) => {
+    store.setPa({ reviewAt: at || null });
+    return store.snapshot().pa?.reviewAt ?? null;
+  });
   ipcMain.handle('pa:setPlan', (_e, at: string | null) => {
     store.setPa({ planAt: at || null });
     return store.snapshot().pa?.planAt ?? null;
@@ -1504,6 +1555,7 @@ app.whenReady().then(async () => {
       else voice.finishedScreens = null;
       return r.reply;
     },
+    recent: (minutes) => voice.recentText(minutes),
   });
   const files = new FilesExecutor({
     jarvisDir: app.getPath('userData'),

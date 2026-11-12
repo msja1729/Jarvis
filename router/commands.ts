@@ -6,7 +6,9 @@ export type LocalCommand =
   | 'new_conversation'
   | 'open_tool_hub'
   | 'mute_voice'
-  | 'unmute_voice';
+  | 'unmute_voice'
+  | 'start_listening'
+  | 'stop_listening';
 
 const EVENT = '(?:meeting|call|lecture|class|appointment|session|interview)';
 /** "… and take notes", "… and note down the tasks given to me". */
@@ -21,6 +23,9 @@ const PATTERNS: [LocalCommand, RegExp][] = [
   ['stop_recording', new RegExp(`^((stop|end|finish) (the )?(${EVENT} )?recording|stop recording (this|the) ${EVENT}|the ${EVENT} (is over|has ended|ended))$`)],
   ['new_conversation', /^(new|start (a )?new|reset( the)?) (conversation|chat)$/],
   ['open_tool_hub', /^(open|show) (the )?tool ?hub$/],
+  // listen-along: the computer's sound, as text, for "what did they just say?"
+  ['start_listening', /^(start )?(listen|listening) (along|in)( (to|with) (this|the|my) (video|lecture|class|call|meeting|computer|screen|talk))?$|^listen to (this|the|my) (video|lecture|class|call|talk)$/],
+  ['stop_listening', /^(stop|end) listening( along| in)?$|^(you can )?stop listening$/],
   ['mute_voice', /^mute( (the )?voice)?$/],
   ['unmute_voice', /^unmute( (the )?voice)?$/],
 ];

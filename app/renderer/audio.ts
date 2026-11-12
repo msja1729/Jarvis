@@ -10,7 +10,8 @@
 import { floatTo16, rms, SAMPLE_RATE } from '../../speech/pcm.js';
 import { ScreenChanges } from './screen-changes.js';
 
-export type CaptureKind = 'meeting' | 'ptt';
+/** ptt: the microphone; meeting: mic + computer sound (+ screen); listen: the computer's sound only (listen-along). */
+export type CaptureKind = 'meeting' | 'ptt' | 'listen';
 
 export interface MeetingSinks {
   /** A piece of the video file (in order). */
@@ -30,7 +31,8 @@ interface Active {
   watcher?: ScreenChanges;
 }
 
-let active: Active | null = null;
+/** Captures run side by side (you can push-to-talk during a recorded meeting or while listening along). */
+const active = new Map<CaptureKind, Active>();
 
 /** The best video format this computer can record: MP4 (H.264) plays everywhere; WebM otherwise. */
 export function pickVideoType(supported: (t: string) => boolean): string | null {
@@ -43,13 +45,27 @@ export async function startCapture(
   onChunk: (pcm: Uint8Array, level: number) => void,
   meeting?: { screen: boolean; sinks: MeetingSinks },
 ): Promise<{ systemAudio: boolean; screen: boolean }> {
-  await stopCapture();
-  const mic = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
-  });
-  const streams = [mic];
+  await stopCapture(kind);
+  // listen-along hears only the computer: never the microphone
+  const mic =
+    kind === 'listen'
+      ? null
+      : await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+        });
+  const streams: MediaStream[] = mic ? [mic] : [];
   let systemAudio = false;
   let display: MediaStream | null = null;
+  if (kind === 'listen') {
+    display = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: true });
+    display.getVideoTracks().forEach((t) => t.stop());
+    if (!display.getAudioTracks().length) {
+      display.getTracks().forEach((t) => t.stop());
+      throw new Error('the computer\'s sound is not available here');
+    }
+    streams.push(display);
+    systemAudio = true;
+  }
   if (kind === 'meeting') {
     try {
       // The main process answers this with the screen and its loopback audio (no picker).
@@ -75,19 +91,19 @@ export async function startCapture(
   mute.gain.value = 0;
   node.connect(mute).connect(ctx.destination);
   node.port.onmessage = (ev: MessageEvent<Float32Array>) => onChunk(floatTo16(ev.data), rms(ev.data));
-  active = { ctx, streams, node, systemAudio };
+  const a: Active = { ctx, streams, node, systemAudio };
+  active.set(kind, a);
 
   const videoTrack = display?.getVideoTracks()[0];
   let screen = false;
-  if (kind === 'meeting' && meeting?.screen && videoTrack && videoTrack.readyState === 'live') {
-    screen = startScreen(videoTrack, mic, display!, meeting.sinks);
+  if (kind === 'meeting' && mic && meeting?.screen && videoTrack && videoTrack.readyState === 'live') {
+    screen = startScreen(a, videoTrack, mic, display!, meeting.sinks);
   }
   return { systemAudio, screen };
 }
 
 /** The video file (screen + mic + computer sound, full quality) and the pictures of what was shown. */
-function startScreen(videoTrack: MediaStreamTrack, mic: MediaStream, display: MediaStream, sinks: MeetingSinks): boolean {
-  const a = active!;
+function startScreen(a: Active, videoTrack: MediaStreamTrack, mic: MediaStream, display: MediaStream, sinks: MeetingSinks): boolean {
   const type = pickVideoType((t) => MediaRecorder.isTypeSupported(t));
   if (!type) return false;
   // mix the microphone and the computer's sound at full quality for the video
@@ -118,9 +134,14 @@ function startScreen(videoTrack: MediaStreamTrack, mic: MediaStream, display: Me
   return true;
 }
 
-export async function stopCapture(): Promise<void> {
-  const a = active;
-  active = null;
+/** Stops one capture (or all of them). */
+export async function stopCapture(kind?: CaptureKind): Promise<void> {
+  if (!kind) {
+    await Promise.all([...active.keys()].map((k) => stopCapture(k)));
+    return;
+  }
+  const a = active.get(kind);
+  active.delete(kind);
   if (!a) return;
   a.node.port.onmessage = null;
   a.watcher?.stop();

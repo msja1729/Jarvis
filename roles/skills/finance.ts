@@ -2,6 +2,17 @@ import type { Skill } from './types.js';
 
 export const FINANCE_SKILLS: Skill[] = [
   {
+    id: 'bill-capture',
+    when: 'the user drops or shares a bill, invoice, receipt or statement',
+    body: `Bills and receipts, filed and never missed:
+1. Read it (the attached file, Read tool or documents tool; a screenshot via the screen tool). Pull out: who to pay, amount and currency, due date, billing period, account or reference number (last 4 digits only), category (rent, utilities, phone, card, insurance, subscription, medical, other).
+2. If anything is unclear (two amounts, no due date), ask; never guess an amount.
+3. Append one row to Budgets/Bills.csv (date added, payee, category, amount, due, period, status=unpaid, file) and to this month's spending if it is a receipt.
+4. Ask Maya (team) to set reminders: 3 days before the due date and on the day at 09:00, and to add it to the board if it needs action.
+5. Spot problems: higher than usual (compare earlier rows), a new subscription, a late fee, a duplicate charge; say so in one line.
+6. Reply in 2-3 lines: what it is, amount, due date, reminders set. Never pay, log in or share account numbers.`,
+  },
+  {
     id: 'budget',
     when: 'making a budget, tracking spending or saving money',
     body: `Budgeting from the user's real numbers:

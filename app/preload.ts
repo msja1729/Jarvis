@@ -1,5 +1,5 @@
 /** The only bridge between the renderer and the main process. */
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
 const on = (channel: string) => (cb: (payload: any) => void) => {
   const listener = (_e: unknown, payload: any) => cb(payload);
@@ -8,6 +8,11 @@ const on = (channel: string) => (cb: (payload: any) => void) => {
 };
 
 contextBridge.exposeInMainWorld('jarvis', {
+  /** Files for the team (bills, forms, reports): copied into Team/Inbox; returns where. */
+  attachFiles: (paths: string[]) => ipcRenderer.invoke('attach:files', paths),
+  pickAttachments: () => ipcRenderer.invoke('attach:pick'),
+  /** The real path of a file dropped on the window (Electron no longer puts it on File). */
+  pathOf: (file: File) => webUtils.getPathForFile(file),
   setupCheck: () => ipcRenderer.invoke('setup:check'),
   setupBaseline: () => ipcRenderer.invoke('setup:baseline'),
   ask: (text: string, role?: string | null, opts?: { stream?: boolean }) => ipcRenderer.invoke('ask', text, role ?? null, opts ?? {}),
@@ -103,6 +108,7 @@ contextBridge.exposeInMainWorld('jarvis', {
   supWatchOwn: (on: boolean) => ipcRenderer.invoke('sup:watchOwn', on),
   paGet: () => ipcRenderer.invoke('pa:get'),
   paSetPlan: (at: string | null) => ipcRenderer.invoke('pa:setPlan', at),
+  paSetReview: (at: string | null) => ipcRenderer.invoke('pa:setReview', at),
   remindersCancel: (id: string) => ipcRenderer.invoke('reminders:cancel', id),
   boardList: () => ipcRenderer.invoke('board:list'),
   boardAdd: (t: unknown) => ipcRenderer.invoke('board:add', t),

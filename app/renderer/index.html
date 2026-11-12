@@ -84,9 +84,13 @@
             </div>
             <div id="progress" class="progress hidden" aria-label="Replying"><span class="dots"><i></i><i></i><i></i></span></div>
             <div id="role-chips" class="role-chips" role="radiogroup" aria-label="Talk to"></div>
+            <div id="attachments" class="attachments hidden"></div>
             <form id="composer" class="glass">
               <button type="button" id="mic" class="mic" title="Talk to Jarvis (or press the push-to-talk shortcut from any app)" aria-label="Talk">
                 <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
+              </button>
+              <button type="button" id="attach" class="mic attach" title="Add a file for your team (a bill, a form, a report, a photo) or drop it here" aria-label="Add a file">
+                <svg viewBox="0 0 24 24"><path d="M20 11.5l-8.2 8.2a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8" /></svg>
               </button>
               <input id="input" autocomplete="off" placeholder="Ask anything… Jarvis passes it to the right expert" />
               <button type="submit" id="send" class="primary">Send</button>

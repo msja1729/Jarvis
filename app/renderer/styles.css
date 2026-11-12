@@ -511,3 +511,11 @@ body.box .chats, body.box .chats-show, body.box .old-banner { display: none !imp
 .link-btn:hover { color: var(--text); }
 .add-who { display: flex; flex-direction: column; gap: 8px; font-size: 12px; }
 #add-members { display: flex; flex-direction: column; gap: 6px; }
+
+/* ---------- files for the team (paperclip / drop) ---------- */
+#composer .attach svg { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.attachments { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 6px 8px; }
+.attachment { display: inline-flex; align-items: center; gap: 6px; max-width: 280px; padding: 5px 6px 5px 12px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--pill); font-size: 12px; }
+.attachment > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attachment-x { padding: 0 7px; height: 22px; line-height: 1; border-radius: 999px; font-size: 14px; }
+body.dropping #composer { border-color: var(--light); box-shadow: 0 0 0 3px rgb(255 255 255 / 0.12), var(--card-shadow); }

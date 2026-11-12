@@ -28,6 +28,8 @@ export function splitParts(text: string, size = PART_CHARS): string[] {
 export interface RecordingControl {
   start(role: string): Promise<string>;
   stop(): Promise<string>;
+  /** The last minutes of listen-along or of the meeting being recorded, as text. */
+  recent?(minutes: number): Promise<string>;
 }
 
 export class TranscriptExecutor implements AppExecutor {
@@ -50,6 +52,10 @@ export class TranscriptExecutor implements AppExecutor {
     if (ability === 'start_recording' || ability === 'stop_recording') {
       if (!this.control) throw new Error('Recording is not available here.');
       return { text: ability === 'start_recording' ? await this.control.start(ctx?.role || 'jarvis') : await this.control.stop() };
+    }
+    if (ability === 'recent_audio') {
+      if (!this.control?.recent) throw new Error('Listening is not available here.');
+      return { text: await this.control.recent(Math.max(1, Math.min(15, Number(input.minutes) || 3))) };
     }
     if (ability === 'list_transcripts') {
       const ids = this.ids().slice(0, 10);

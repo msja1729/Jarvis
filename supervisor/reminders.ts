@@ -29,7 +29,12 @@ export interface Reminder {
   /** ISO 8601 time. */
   at: string;
   fired?: boolean;
+  /** The team member who set it (they say it aloud); the PA when not given. */
+  from?: string;
 }
+
+/** Most reminders one series may create (e.g. a medicine twice a day for 30 days = 60). */
+export const MAX_SERIES = 120;
 
 export const MAX_REMINDERS = 200;
 /** Reminders missed while Jarvis was closed are still given if they are this recent. */
@@ -48,17 +53,42 @@ export class ReminderStore {
       .sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
   }
 
-  add(text: string, at: string, now = Date.now()): Reminder {
+  add(text: string, at: string, now = Date.now(), from?: string): Reminder {
     const t = Date.parse(at);
     if (!text.trim()) throw new Error('Say what to remind the user about.');
     if (!Number.isFinite(t)) throw new Error('Give the time as ISO 8601 with the offset, e.g. 2026-11-09T17:50:00+05:30.');
     if (t < now - 60_000) throw new Error('That time has already passed.');
     const list = this.all().filter((r) => !r.fired || Date.parse(r.at) > now - 86_400_000);
-    if (list.length >= MAX_REMINDERS) throw new Error('There are too many reminders; cancel some first.');
-    const r: Reminder = { id: newId(), text: text.trim().slice(0, 300), at: new Date(t).toISOString() };
+    if (list.length >= MAX_REMINDERS * 2) throw new Error('There are too many reminders; cancel some first.');
+    const r: Reminder = { id: newId(), text: text.trim().slice(0, 300), at: new Date(t).toISOString(), ...(from ? { from } : {}) };
     list.push(r);
     writeJson(this.file, list);
     return r;
+  }
+
+  /**
+   * The same reminder at the same times every day, e.g. a medicine at 08:00 and 20:00 for 5 days,
+   * starting `fromDate` (YYYY-MM-DD, this computer's time zone). Times already past are skipped.
+   */
+  addSeries(text: string, times: string[], fromDate: string, days: number, now = Date.now(), from?: string): Reminder[] {
+    if (!text.trim()) throw new Error('Say what to remind the user about.');
+    const hm = times.map((t) => t.trim().match(/^([01]?\d|2[0-3]):([0-5]\d)$/));
+    if (!hm.length || hm.some((m) => !m)) throw new Error('Give the times as HH:MM, e.g. ["08:00", "20:00"].');
+    const d = fromDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!d) throw new Error('Give the first day as YYYY-MM-DD.');
+    const n = Math.floor(days);
+    if (!(n >= 1 && n <= 90)) throw new Error('A series can run from 1 to 90 days.');
+    const at: number[] = [];
+    for (let k = 0; k < n; k++)
+      for (const m of hm) at.push(new Date(Number(d[1]), Number(d[2]) - 1, Number(d[3]) + k, Number(m![1]), Number(m![2])).getTime());
+    const future = at.filter((t) => t > now).sort((a, b) => a - b);
+    if (!future.length) throw new Error('All of those times have already passed.');
+    if (future.length > MAX_SERIES) throw new Error(`That is ${future.length} reminders; the most for one series is ${MAX_SERIES}.`);
+    const list = this.all().filter((r) => !r.fired || Date.parse(r.at) > now - 86_400_000);
+    if (list.length + future.length > MAX_REMINDERS * 2) throw new Error('There are too many reminders; cancel some first.');
+    const made = future.map((t) => ({ id: newId(), text: text.trim().slice(0, 300), at: new Date(t).toISOString(), ...(from ? { from } : {}) }));
+    writeJson(this.file, [...list, ...made]);
+    return made;
   }
 
   cancel(id: string): boolean {

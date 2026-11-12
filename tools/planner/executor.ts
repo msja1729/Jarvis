@@ -1,5 +1,5 @@
 /** Reminders and the project board, for the PA and the Project Manager. */
-import type { AppExecutor, RawResult } from '../../gateway/types.js';
+import type { AppExecutor, CallContext, RawResult } from '../../gateway/types.js';
 import { BoardStore, ReminderStore } from '../../supervisor/reminders.js';
 
 const str = (v: unknown) => (typeof v === 'string' ? v : undefined);
@@ -10,11 +10,21 @@ export class RemindersExecutor implements AppExecutor {
     private readonly onChange: () => void = () => undefined,
   ) {}
 
-  async call(ability: string, input: Record<string, unknown>): Promise<RawResult> {
+  async call(ability: string, input: Record<string, unknown>, ctx?: CallContext): Promise<RawResult> {
+    // the member who sets a reminder says it aloud when it is due (Sara for medicines, Maya for the rest)
+    const from = ctx?.role && ctx.role !== 'jarvis' ? ctx.role : undefined;
     if (ability === 'add') {
-      const r = this.store.add(str(input.text) ?? '', str(input.at) ?? '');
+      const r = this.store.add(str(input.text) ?? '', str(input.at) ?? '', Date.now(), from);
       this.onChange();
       return { text: `Reminder set (id ${r.id}) for ${new Date(r.at).toString().slice(0, 21)}: ${r.text}` };
+    }
+    if (ability === 'add_series') {
+      const times = Array.isArray(input.times) ? input.times.map(String) : [];
+      const made = this.store.addSeries(str(input.text) ?? '', times, str(input.from_date) ?? '', Number(input.days), Date.now(), from);
+      this.onChange();
+      return {
+        text: `${made.length} reminders set: "${made[0].text}" at ${times.join(' and ')} every day, from ${new Date(made[0].at).toString().slice(0, 21)} to ${new Date(made[made.length - 1].at).toString().slice(0, 21)}. (ids ${made[0].id} … ${made[made.length - 1].id})`,
+      };
     }
     if (ability === 'list') {
       const list = this.store.upcoming();

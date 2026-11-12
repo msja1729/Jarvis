@@ -85,7 +85,7 @@ export const ROLES: RoleDef[] = [
     title: 'Health and nutrition',
     blurb: 'Health questions, food, sleep and exercise; explains your reports. Not a replacement for a real doctor.',
     color: '#d55181',
-    apps: ['documents', 'lesson', 'screen', ...SHARED_APPS],
+    apps: ['documents', 'lesson', 'screen', 'reminders', ...SHARED_APPS],
     defaultVoice: 'af_heart',
     names: ['doctor', 'doc', 'physician'],
     topics: /\b(health|healthy|doctor|symptom|symptoms|pain|headache|fever|cold|cough|sick|ill|medicine|medication|diet|eat|eating|food|meal|nutrition|calorie|calories|protein|vitamin|sleep|exercise|workout|weight|blood|report|cholesterol|sugar|bp|blood pressure)\b/i,

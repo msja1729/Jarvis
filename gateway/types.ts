@@ -75,7 +75,7 @@ export interface JarvisSettings {
   /** Coding supervisor: how much Jarvis may approve on its own, update interval (minutes, 0 = milestones only), speak updates, last project folder. */
   supervisor?: { autonomy?: 'careful' | 'balanced' | 'handsoff'; updateEvery?: number; speak?: boolean; lastFolder?: string; watchOwn?: boolean };
   /** PA: the morning plan time ("08:30", null = off) and the last day it ran. */
-  pa?: { planAt?: string | null; lastPlan?: string };
+  pa?: { planAt?: string | null; lastPlan?: string; reviewAt?: string | null; lastReview?: string };
   /** Shortcut that shows/hides the voice card while Jarvis answers; null = default. */
   voiceCardHotkey?: string | null;
   /** OAuth client IDs for Google / Microsoft sign-in (not secret). */

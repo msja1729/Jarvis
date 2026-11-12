@@ -70,11 +70,14 @@ declare global {
       onScreenArea(cb: (req: any) => void): void;
       screenAreaReply(id: string, rect: unknown): void;
       onAudioStart(cb: (req: { id: string; kind: CaptureKind; screen?: boolean }) => void): void;
-      onAudioStop(cb: (req: { id: string }) => void): void;
+      onAudioStop(cb: (req: { id: string; kind?: CaptureKind }) => void): void;
       audioReply(channel: string, id: string, value: unknown): void;
       sendPcm(kind: string, data: Uint8Array, level: number): void;
       sendMeetingVideo(chunk: Uint8Array, mimeType: string): void;
       sendMeetingFrame(jpeg: Uint8Array): void;
+      attachFiles(paths: string[]): Promise<{ name: string; path: string }[]>;
+      pickAttachments(): Promise<{ name: string; path: string }[]>;
+      pathOf(file: File): string;
       openMeetingsFolder(): Promise<void>;
       voiceToggle(): void;
       onVoiceAsk(cb: (text: string) => void): void;
@@ -85,8 +88,9 @@ declare global {
       cardHotkey(): Promise<string | null>;
       supSettings(patch?: unknown): Promise<{ autonomy: string; updateEvery: number; speak: boolean; watchOwn: boolean; claudeSettings: string }>;
       supWatchOwn(on: boolean): Promise<boolean>;
-      paGet(): Promise<{ planAt: string | null; reminders: { id: string; text: string; at: string }[] }>;
+      paGet(): Promise<{ planAt: string | null; reviewAt: string | null; reminders: { id: string; text: string; at: string; from?: string }[] }>;
       paSetPlan(at: string | null): Promise<string | null>;
+      paSetReview(at: string | null): Promise<string | null>;
       remindersCancel(id: string): Promise<unknown>;
       boardList(): Promise<BoardTask[]>;
       boardAdd(t: { title: string; project?: string; due?: string }): Promise<BoardTask[]>;
@@ -365,7 +369,25 @@ async function paPanel(r: TeamRole): Promise<HTMLElement> {
     show('chat');
     submitText(PLAN_TEXT);
   });
-  box.append(el('label', { className: 'team-row pa-row' }, el('span', {}, `Morning plan from ${r.person}`), time, on), el('div', { className: 'team-row' }, el('span', { className: 'spacer' }), now));
+  // the spoken end-of-day review: what got done, what is open, what is due tomorrow, anything missed
+  const rOn = el('input', { type: 'checkbox', className: 'switch', checked: Boolean(pa.reviewAt) });
+  const rTime = el('input', { type: 'time', value: pa.reviewAt ?? '18:30', className: 'pa-time' });
+  const rSave = async () => void (await j.paSetReview(rOn.checked ? rTime.value : null));
+  rOn.addEventListener('change', rSave);
+  rTime.addEventListener('change', () => {
+    if (rOn.checked) void rSave();
+  });
+  const wrap = el('button', { type: 'button', className: 'chip' }, 'Wrap up my day now');
+  wrap.addEventListener('click', () => {
+    pickRole('pa');
+    show('chat');
+    submitText('Wrap up my day: what got done today, what is still open, what is due tomorrow, and anything I missed in email.');
+  });
+  box.append(
+    el('label', { className: 'team-row pa-row' }, el('span', {}, `Morning plan from ${r.person}`), time, on),
+    el('label', { className: 'team-row pa-row' }, el('span', {}, `Evening review from ${r.person}`), rTime, rOn),
+    el('div', { className: 'team-row' }, el('span', { className: 'spacer' }), now, wrap),
+  );
   const list = el('div', { className: 'pa-reminders' });
   if (!pa.reminders.length) list.append(el('div', { className: 'muted small' }, 'No upcoming reminders. Try "Maya, remind me to call Mom at 6 pm".'));
   for (const rem of pa.reminders.slice(0, 6)) {
@@ -832,8 +854,10 @@ document.querySelectorAll<HTMLButtonElement>('[data-suggest]').forEach((b) =>
 $('composer').addEventListener('submit', async (e) => {
   e.preventDefault();
   const input = $<HTMLInputElement>('input');
-  const text = input.value.trim();
-  if (!text) return;
+  const typed = input.value.trim() || (attached.length ? 'Please look at the file I attached.' : '');
+  if (!typed) return;
+  const files = attached.map((a) => a.name);
+  const text = withAttachments(typed);
   input.value = '';
   stopSpeaking();
   if (MODE === 'main') {
@@ -846,7 +870,7 @@ $('composer').addEventListener('submit', async (e) => {
       shownConv = prep.conv;
     }
   }
-  addMsg('user', text);
+  addMsg('user', files.length ? `${typed}\n(attached: ${files.join(', ')})` : typed);
   const send = $<HTMLButtonElement>('send');
   send.disabled = true;
   setProgress(true);
@@ -884,6 +908,64 @@ $('composer').addEventListener('submit', async (e) => {
 });
 
 let pendingFollowUp: string | null = null;
+/* ---------- files for the team: drop on the window or use the paperclip ---------- */
+let attached: { name: string; path: string }[] = [];
+function renderAttachments() {
+  const box = $('attachments');
+  box.classList.toggle('hidden', attached.length === 0);
+  box.replaceChildren(
+    ...attached.map((a, i) => {
+      const x = el('button', { type: 'button', className: 'attachment-x', title: 'Remove' }, '\u00d7');
+      x.addEventListener('click', () => {
+        attached.splice(i, 1);
+        renderAttachments();
+      });
+      return el('span', { className: 'attachment' }, el('span', {}, a.name), x);
+    }),
+  );
+}
+async function addAttachments(files: { name: string; path: string }[]) {
+  if (!files.length) return;
+  attached = [...attached, ...files].slice(-6);
+  renderAttachments();
+  $<HTMLInputElement>('input').focus();
+}
+$('attach').addEventListener('click', async () => {
+  try {
+    await addAttachments(await j.pickAttachments());
+  } catch (err) {
+    showNotice(cleanError(err));
+  }
+});
+window.addEventListener('dragover', (e) => {
+  if (e.dataTransfer?.types.includes('Files')) {
+    e.preventDefault();
+    document.body.classList.add('dropping');
+  }
+});
+window.addEventListener('dragleave', (e) => {
+  if (!e.relatedTarget) document.body.classList.remove('dropping');
+});
+window.addEventListener('drop', async (e) => {
+  e.preventDefault();
+  document.body.classList.remove('dropping');
+  const paths = [...(e.dataTransfer?.files ?? [])].map((f) => j.pathOf(f)).filter(Boolean);
+  if (!paths.length) return;
+  try {
+    await addAttachments(await j.attachFiles(paths));
+  } catch (err) {
+    showNotice(cleanError(err));
+  }
+});
+/** The message text with the attached files named, so the expert reads them. */
+function withAttachments(text: string): string {
+  if (!attached.length) return text;
+  const list = attached.map((a) => a.path).join('; ');
+  attached = [];
+  renderAttachments();
+  return `${text}\n[Attached for you to read: ${list}]`;
+}
+
 function submitText(text: string) {
   $<HTMLInputElement>('input').value = text;
   $<HTMLFormElement>('composer').requestSubmit();
@@ -900,9 +982,9 @@ j.onAudioStart(async ({ id, kind, screen }) => {
     j.audioReply('audio:start', id, { ok: false, error: err instanceof Error ? err.message : String(err) });
   }
 });
-j.onAudioStop(async ({ id }) => {
-  await stopCapture();
-  $('mic').classList.remove('live');
+j.onAudioStop(async ({ id, kind }) => {
+  await stopCapture(kind);
+  if (!kind || kind === 'ptt') $('mic').classList.remove('live');
   j.audioReply('audio:stop', id, { ok: true });
 });
 j.onVoiceAsk((text) => {
@@ -969,8 +1051,12 @@ async function voiceAsk(text: string): Promise<void> {
     followUp = r.followUp;
     voiceBusy = false;
     setVoiceStatus(false);
-    // Spoken requests are always answered out loud (usually already speaking while the reply was written).
-    if (!r.isError && !followUp) finishLive(r, !r.lessonShown, () => hideVoiceSoon(6000)); // a lesson narrates itself
+    // Spoken requests are answered out loud (usually already speaking while the reply was written),
+    // except during a recorded meeting: then the answer stays on the card, quietly, for longer.
+    if (!r.isError && !followUp && r.quiet) {
+      finishLive(r, false);
+      hideVoiceSoon(45000);
+    } else if (!r.isError && !followUp) finishLive(r, !r.lessonShown, () => hideVoiceSoon(6000)); // a lesson narrates itself
     else {
       finishLive({ ...r, isError: true }, false);
       if (!followUp) hideVoiceSoon(12000);

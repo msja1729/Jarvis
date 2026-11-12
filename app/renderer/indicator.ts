@@ -1,6 +1,6 @@
 /** Floating "REC" / "Listening" badge. Text comes from the main process. */
 interface IndicatorState {
-  mode: 'rec' | 'ptt';
+  mode: 'rec' | 'ptt' | 'listen';
   state: 'recording' | 'listening' | 'transcribing' | 'message';
   label: string;
   sub?: string;

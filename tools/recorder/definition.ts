@@ -52,6 +52,15 @@ export const RECORDER_APP: AppDef = {
       },
     },
     {
+      name: 'recent_audio',
+      title: 'What was just said',
+      description:
+        'The text of the last minutes of what the computer played (listen-along: a lecture, video or call) or of the meeting being recorded, with times. Use it when the user asks about something just said: "what did he just say?", "explain that", "what was the question?", "what should I answer?". For live meeting help, answer in 1-3 sentences they can use right away, checking Meetings notes and the board for past decisions.',
+      group: 'read',
+      progress: 'Catching up on what was said',
+      inputSchema: { type: 'object', properties: { minutes: { type: 'integer', minimum: 1, maximum: 15, description: 'how far back (default 3)' } } },
+    },
+    {
       name: 'view_screens',
       title: 'See what was on screen',
       description:

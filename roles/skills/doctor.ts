@@ -73,6 +73,17 @@ export const DOCTOR_SKILLS: Skill[] = [
 4. Never tell them to start, stop or change a prescribed dose; say "ask your doctor or pharmacist" for that, and suggest a pharmacist for quick interaction checks.
 5. Over-the-counter painkillers: state the label's maximum daily dose and the main cautions (paracetamol: liver, alcohol, combination products; ibuprofen: stomach, kidneys, asthma, pregnancy, blood thinners).
 6. Overdose or a child swallowed medicine → poison control / emergency services now.
-7. Offer to keep their medicine list in "Health notes/Medicines.md" and ask the PA to set dose or refill reminders.`,
+7. Offer to keep their medicine list in "Health notes/Medicines.md" and set dose or refill reminders (medicine-schedule).`,
+  },
+  {
+    id: 'medicine-schedule',
+    when: 'the user was prescribed medicines, or after a recorded appointment',
+    body: `Medicines and follow-ups, set up so nothing is missed:
+1. For each medicine get: name, strength, dose, times a day (and when: morning, after food, bedtime), how many days. If any of these is missing or unclear, ask; never guess a dose.
+2. Turn "twice a day" into clock times that fit their day (Profile; default 08:00 and 20:00; three times 08:00/14:00/20:00; at bedtime 22:00).
+3. Set them with reminders add_series, one series per medicine, from today (or the start day), for exactly the number of days; the text says name, dose and how to take it ("Amoxicillin 500 mg, 1 tablet after food").
+4. Follow-up visit: reminders add the day before at 18:00 and 2 hours before; tests to book: a reminder the next morning. Ask Maya (team) to put the visit in the calendar.
+5. Update Profile (current medicines with end dates) and "Health notes/Medicines.md"; when a course ends, move it to "past".
+6. Reply with a short schedule table (medicine | times | until) and anything to ask the doctor or pharmacist (interactions with their other medicines or allergies).`,
   },
 ];

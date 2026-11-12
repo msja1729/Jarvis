@@ -2,6 +2,16 @@ import type { Skill } from './types.js';
 
 export const PA_SKILLS: Skill[] = [
   {
+    id: 'forms',
+    when: 'the user needs to fill a form (application, registration, government, school, insurance)',
+    body: `Filling forms from what the team knows:
+1. Read the form (attached file or documents tool) and list its fields in order, with page numbers.
+2. Fill what is known from Profile files (yours and, by reading, the teammates': Sara's for health, Victor's for money) and earlier notes. Mark every guess with (check) and every unknown with (needed).
+3. Never fill passwords, full card or bank numbers, ID numbers or signatures: leave them for the user, marked (you fill this).
+4. Save the answers as "Personal lists/Forms/<date> <form name>.md" (field | answer | source), and list the documents to attach and the deadline; add the deadline to the board with a reminder.
+5. Reply with the questions only the user can answer, in one short list.`,
+  },
+  {
     id: 'inbox-triage',
     when: 'checking email, or finding deadlines and tasks in it',
     body: `Inbox triage (four tiers, then act):

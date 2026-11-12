@@ -16,6 +16,24 @@ export const REMINDERS_APP: AppDef = {
       defaultSetting: 'allowed', // only on this computer
       inputSchema: { type: 'object', properties: { text: { type: 'string' }, at: { type: 'string' } }, required: ['text', 'at'] },
     },
+    {
+      name: 'add_series',
+      title: 'Add daily reminders',
+      description:
+        'The same reminder at the same times every day for a number of days, e.g. a medicine at 08:00 and 20:00 for 5 days. Times are this computer\'s local time.',
+      group: 'write',
+      defaultSetting: 'allowed', // only on this computer
+      inputSchema: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', description: 'what to say, e.g. "Take amoxicillin 500 mg, after food"' },
+          times: { type: 'array', items: { type: 'string' }, description: 'times each day, HH:MM' },
+          from_date: { type: 'string', description: 'first day, YYYY-MM-DD' },
+          days: { type: 'integer', minimum: 1, maximum: 90 },
+        },
+        required: ['text', 'times', 'from_date', 'days'],
+      },
+    },
     { name: 'list', title: 'List reminders', description: 'Upcoming reminders with their ids.', group: 'read', inputSchema: { type: 'object', properties: {} } },
     {
       name: 'cancel',

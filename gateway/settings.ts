@@ -137,10 +137,12 @@ export class SettingsStore {
     this.save();
   }
 
-  setPa(patch: { planAt?: string | null; lastPlan?: string }): void {
+  setPa(patch: { planAt?: string | null; lastPlan?: string; reviewAt?: string | null; lastReview?: string }): void {
     const next = { ...(this.data.pa ?? {}) };
     if (patch.planAt === null || (typeof patch.planAt === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(patch.planAt))) next.planAt = patch.planAt;
     if (typeof patch.lastPlan === 'string') next.lastPlan = patch.lastPlan;
+    if (patch.reviewAt === null || (typeof patch.reviewAt === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(patch.reviewAt))) next.reviewAt = patch.reviewAt;
+    if (typeof patch.lastReview === 'string') next.lastReview = patch.lastReview;
     this.data.pa = next;
     this.save();
   }
