@@ -255,6 +255,9 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .dialog { padding: 24px 26px; width: min(540px, 92vw); max-height: 86vh; overflow: auto; }
 .dialog h1 { font-size: 20px; font-weight: 400; letter-spacing: .03em; margin: 8px 0 14px; }
 .dialog pre { white-space: pre-wrap; font: 12px/1.6 ui-monospace, Consolas, monospace; background: rgb(0 0 0 / 0.25); border: 1px solid var(--line); padding: 12px 14px; border-radius: 16px; }
+.dialog .project-input { width: 100%; box-sizing: border-box; font-family: inherit; font-size: 16px; font-weight: 600; line-height: 1.4; color: var(--text); background: rgb(0 0 0 / 0.25); border: 1px solid var(--line-strong, var(--line)); padding: 12px 14px; border-radius: 14px; outline: none; margin: 4px 0 10px; }
+.dialog .project-input:focus { border-color: rgb(255 255 255 / 0.45); }
+.dialog p.small { font-size: 12.5px; word-break: break-all; }
 .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
 .dialog .actions { position: sticky; bottom: -24px; margin: 16px -26px -24px; padding: 12px 26px 18px; background: linear-gradient(transparent, #1d1d1d 35%); }
 .badge { display: inline-block; font-size: 11px; padding: 4px 12px; border-radius: 999px; background: var(--pill); border: 1px solid var(--line); color: var(--muted); text-transform: capitalize; }

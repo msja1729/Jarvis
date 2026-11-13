@@ -91,8 +91,17 @@ export function splitCommand(cmd: string): string[] {
 
 /** Absolute paths in a command that point outside the project. */
 export function outsidePaths(cmd: string, root: string): string[] {
-  const found = cmd.match(/(?:[A-Za-z]:[\\/][^\s"'`;|&<>]*|(?<![\w.~-])\/(?:[\w.-]+\/?)+|~[\\/][^\s"'`;|&<>]*)/g) ?? [];
-  return found.filter((p) => !p.startsWith('/dev/null') && !(p.startsWith('/') && p.length <= 2) && !inside(root, p.replace(/^~/, process.env.USERPROFILE ?? process.env.HOME ?? '~')));
+  // a web address is not a folder ("https://en.wikipedia.org/wiki/…" once counted as "/wiki/…")
+  const text = cmd.replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s"'`;|&<>]*/gi, ' ');
+  const found = text.match(/(?:[A-Za-z]:[\\/][^\s"'`;|&<>]*|(?<![\w.~-])\/(?:[\w.-]+\/?)+|~[\\/][^\s"'`;|&<>]*)/g) ?? [];
+  return found.filter((p) => !p.startsWith('/dev/null') && !(p.startsWith('/') && p.length <= 2) && !inside(root, windowsPath(p.replace(/^~/, process.env.USERPROFILE ?? process.env.HOME ?? '~'))));
+}
+
+/** Git Bash writes D:\Academics as /d/Academics: the same folder, so it is compared as D:\Academics. */
+function windowsPath(p: string): string {
+  if (process.platform !== 'win32') return p;
+  const m = p.match(/^\/([a-zA-Z])(\/.*)?$/);
+  return m ? `${m[1].toUpperCase()}:${(m[2] ?? '/').replace(/\//g, '\\')}` : p;
 }
 
 export function classifyCommand(cmd: string, root: string): { risk: Risk; why: string } {

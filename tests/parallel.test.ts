@@ -21,9 +21,12 @@ describe('members work at the same time', () => {
     };
     const orch = new Orchestrator({ brain, sessions: new SessionManager(), usage: new UsageLog(null, null), runLocal: () => 'x' });
     const flush = () => new Promise((r) => setTimeout(r, 0));
+    const notes: string[] = [];
     const a = orch.handle('plan my week', 'pa');
     const b = orch.handle('how is my project', 'pm');
-    const c = orch.handle('and next week', 'pa');
+    const c = orch.handle('and next week', 'pa', { onNote: (_r, t) => notes.push(t) });
+    // the second request to Maya says at once that it is waiting its turn
+    expect(notes).toEqual(["I'm finishing your previous request first; this one comes right after."]);
     await flush();
     // Maya and Ryan are both working; Maya's second request waits for her first
     expect(log).toEqual(['start pa plan my week', 'start pm how is my project']);

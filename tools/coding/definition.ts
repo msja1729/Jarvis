@@ -12,7 +12,8 @@ export const CODING_APP: AppDef = {
     {
       name: 'start',
       title: 'Start a coding task',
-      description: 'Start Claude Code on a coding task in a project folder the user picks; Jarvis supervises it in the background.',
+      description:
+        "Start Claude Code on a coding task; Jarvis supervises it in the background. Every project lives in your Projects folder, in Projects/<project>, together with its SPEC.md: give the project's name (the same folder as its spec). A new project: the user is asked to name it in a popup, and the folder is created. Only when the user wants to work on a project they already have somewhere else, set existing_folder true (they pick it).",
       group: 'act',
       // The folder picker is the user's go-ahead; every risky step is still checked.
       defaultSetting: 'allowed',
@@ -21,6 +22,8 @@ export const CODING_APP: AppDef = {
         type: 'object',
         properties: {
           task: { type: 'string', description: 'what to build or fix, in the user\'s words plus any details' },
+          project: { type: 'string', description: "the project's folder name in Projects (e.g. \"Study planner\"); for a new project, your suggested name" },
+          existing_folder: { type: 'boolean', description: 'true only for a project the user already has outside your Projects folder (they pick its folder)' },
           team_decides: {
             type: 'boolean',
             description:

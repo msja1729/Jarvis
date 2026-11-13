@@ -43,6 +43,29 @@ export interface ClaudeCLIBrainOptions {
 }
 
 export const LIMIT_MESSAGE = 'Usage limit reached on your Claude plan.';
+/** After Claude's answer, how long the process may take to close by itself before it is stopped. */
+export const AFTER_RESULT_MS = 3000;
+/**
+ * A run that prints nothing for this long is stopped (a tool waits at most 5 minutes, a command at most
+ * 10, a popup a few minutes): the user gets an answer instead of a reply that never comes.
+ */
+export const SILENT_LIMIT_MS = 15 * 60_000;
+
+/**
+ * The result line that ends the answer. Not the empty one Claude Code prints first when a conversation
+ * continues while something it started earlier is still reported on (0 turns, no reason, no text).
+ */
+export function isFinalResult(line: string): boolean {
+  if (!line.includes('"result"')) return false;
+  try {
+    const ev = JSON.parse(line) as { type?: string; num_turns?: number; terminal_reason?: string; result?: unknown; is_error?: boolean };
+    if (ev.type !== 'result') return false;
+    if (ev.terminal_reason) return true;
+    return (ev.num_turns ?? 1) > 0 || Boolean(ev.is_error) || (typeof ev.result === 'string' && ev.result.length > 0);
+  } catch {
+    return false;
+  }
+}
 
 export class ClaudeCLIBrain implements Brain {
   private warned = false;
@@ -92,19 +115,55 @@ export class ClaudeCLIBrain implements Brain {
       if (stderr.length < 4000) stderr += d;
     });
 
-    const lines = createInterface({ input: child.stdout });
-    lines.on('line', (line) => {
-      for (const tool of applyLine(state, line, ask.onText, ask.onNote)) {
-        ask.onProgress?.(progressLabel(tool, this.opts.progressFor ?? (() => undefined)));
-      }
-    });
-
+    // The answer is complete at Claude's "result" line. The process itself may stay open after it: a
+    // website or server the member started in the background keeps it alive. So the reply never waits
+    // for the process to close: shortly after the result it is stopped (what it started keeps running).
+    let finish: (code: number | null) => void = () => undefined;
+    let quiet: ReturnType<typeof setTimeout> | null = null;
     const exitCode: number | null = await new Promise((resolve) => {
+      let done = false;
+      finish = (code) => {
+        if (done) return;
+        done = true;
+        if (quiet) clearTimeout(quiet);
+        resolve(code);
+      };
+      // a safety net: a run that says nothing at all for a long time is stopped, never left hanging
+      const watch = () => {
+        if (quiet) clearTimeout(quiet);
+        quiet = setTimeout(() => {
+          stderr += `\nNo answer for ${Math.round(SILENT_LIMIT_MS / 60000)} minutes, so Jarvis stopped waiting.`;
+          child.kill();
+          finish(-1);
+        }, SILENT_LIMIT_MS);
+      };
+      watch();
+      let closing: ReturnType<typeof setTimeout> | null = null;
+      const lines = createInterface({ input: child.stdout });
+      lines.on('line', (line) => {
+        watch();
+        // Claude is still working (a result line can come before more work, e.g. the report on a
+        // background task from the previous request when a conversation continues)
+        if (closing) {
+          clearTimeout(closing);
+          closing = null;
+        }
+        for (const tool of applyLine(state, line, ask.onText, ask.onNote)) {
+          ask.onProgress?.(progressLabel(tool, this.opts.progressFor ?? (() => undefined)));
+        }
+        if (isFinalResult(line)) {
+          // answered: give the process a moment to close by itself, then stop it
+          closing = setTimeout(() => {
+            if (child.exitCode === null && child.signalCode === null) child.kill();
+            finish(0);
+          }, AFTER_RESULT_MS);
+        }
+      });
       child.on('error', (err) => {
         stderr += String(err);
-        resolve(-1);
+        finish(-1);
       });
-      child.on('close', (code) => resolve(code));
+      child.on('close', (code) => finish(code));
     });
     ask.signal?.removeEventListener('abort', abort);
     if (state.init) this.opts.onConnectors?.(snapshotFromInit(state.init));

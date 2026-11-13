@@ -8,7 +8,7 @@ A personal assistant, a project manager, a doctor and a finance advisor on your 
 You talk to them by name, just like talking to a person, and they get the work done.
 They run on **your own Claude Pro or Max plan**.
 
-[**Download for Windows**](https://github.com/msja1729/Jarvis/releases/latest/download/Jarvis-Setup-0.9.0.exe) · [Project page](https://msja1729.github.io/Jarvis/) · [What Jarvis can do (PDF)](docs/Jarvis-Capabilities.pdf) · [All releases](https://github.com/msja1729/Jarvis/releases)
+[**Download for Windows**](https://github.com/msja1729/Jarvis/releases/latest/download/Jarvis-Setup-0.9.1.exe) · [Project page](https://msja1729.github.io/Jarvis/) · [What Jarvis can do (PDF)](docs/Jarvis-Capabilities.pdf) · [All releases](https://github.com/msja1729/Jarvis/releases)
 
 <img src="docs/images/chat.png" alt="Asking Sara, the doctor, about a headache" width="860" />
 
@@ -72,7 +72,7 @@ Start a message with a name, like *"Sara, …"*, and you stay with her until you
 **Learn and work**
 - Lessons: a narrated, step-by-step explanation plays beside your work, with diagrams, animated graphs and equations, at your level.
 - They read a PDF, a file or a code folder you pick and quote the exact page or line, and look at your screen when you ask.
-- "Ryan, add a login page to my project": Claude Code works in the background; Ryan brings you only the real decisions with his recommendation, in plain words ("Let Ryan install the add-on axios from the internet?"), and gives spoken updates.
+- "Ryan, build me a study planner app": you name the new project in a popup, and its spec and every code file go into its own folder in Ryan's Projects folder. Claude Code works in the background; Ryan brings you only the real decisions with his recommendation, in plain words ("Let Ryan install the add-on axios from the internet?"), and gives spoken updates. He can start your website and leave it running for you to try.
 - Busy? Say so in your own words ("I'm in a meeting, sort it out with the team") or turn on **Team decides** on the coding card: the team makes the decisions without popups and tells you everything at the end. Publishing online, anything outside the project folder and password files are never done without you: they are skipped and listed for you.
 - Web search steered to trusted sources, with the sources named. Conversations are kept by day, searchable, and can be continued.
 
@@ -120,7 +120,7 @@ Out of the box they are good in their field; what you give them makes them *your
 
 ## Install (Windows 10/11)
 
-1. **[Download Jarvis-Setup-0.9.0.exe](https://github.com/msja1729/Jarvis/releases/latest/download/Jarvis-Setup-0.9.0.exe)** and run it.
+1. **[Download Jarvis-Setup-0.9.1.exe](https://github.com/msja1729/Jarvis/releases/latest/download/Jarvis-Setup-0.9.1.exe)** and run it.
    Windows may say *"Windows protected your PC"* because the installer is not code-signed yet: click **More info → Run anyway**.
 2. A short welcome sets everything up: your name and how to say it, connecting your Claude (buttons install Claude Code and sign you in through your browser if needed), your team's tools, and the natural voices. Then each member introduces themselves.
 

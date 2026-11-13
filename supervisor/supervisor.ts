@@ -242,7 +242,7 @@ export class Supervisor {
     const mins = Math.max(1, Math.round((this.now() - s.startedAt) / 60000));
     const state = { working: 'is working on', waiting: 'is waiting for your answer on', done: 'finished', error: 'ran into a problem with', stopped: 'was stopped while working on' }[s.state];
     const ask = this.waiters.size ? ` It needs you: ${this.describe([...this.waiters.values()][0].p)}` : '';
-    return `Claude ${state} "${shortTask(s.task)}" (${mins} min). ${this.progressText(true)}${ask}`;
+    return `Claude ${state} "${shortTask(s.task)}" (${mins} min) in the project folder ${s.root}. ${this.progressText(true)}${ask}`;
   }
 
   private launch(prompt: string, resume: string | null) {

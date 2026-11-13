@@ -519,6 +519,40 @@ async function pickProject(task: string): Promise<string | null> {
   return folder;
 }
 
+/** Ryan's Projects folder: every new project gets a folder of its own here, with its spec and code. */
+function projectsDir(): string {
+  const dir = path.join(roleFolder(app.getPath('userData'), 'pm'), 'Projects');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+/**
+ * Asks the user to name a new project (a popup in the window they are talking in). The typed name,
+ * null if they cancelled, or 'timeout' after 3 minutes without an answer (Ryan's suggestion is used).
+ */
+async function askProjectName(suggested: string, task: string, where: string): Promise<string | null | 'timeout'> {
+  const w = await originWindow();
+  const id = crypto.randomUUID();
+  return withRoom(w, { width: 560, height: 420 }, () =>
+    new Promise<string | null | 'timeout'>((resolve) => {
+      const done = (v: string | null | 'timeout') => {
+        clearTimeout(timer);
+        ipcMain.removeListener('project:name:reply', listener);
+        w.removeListener('closed', onClosed);
+        resolve(v);
+      };
+      const listener = (_e: unknown, replyId: string, name: string | null) => {
+        if (replyId === id) done(typeof name === 'string' && name.trim() ? name.trim().slice(0, 80) : null);
+      };
+      const onClosed = () => done('timeout');
+      const timer = setTimeout(() => done('timeout'), 3 * 60_000);
+      ipcMain.on('project:name:reply', listener);
+      w.once('closed', onClosed);
+      w.webContents.send('project:name', { id, suggested, task, where });
+    }),
+  );
+}
+
 function makeSupervisor() {
   supervisor = new Supervisor({
     run: (args, cwd, onEvent, runId) => {
@@ -730,7 +764,21 @@ function createMainWindow(show = true) {
     const onPainted = (e: Electron.IpcMainEvent) => e.sender === w.webContents && reveal();
     ipcMain.on('welcome:painted', onPainted);
     setTimeout(reveal, 4000); // whatever happens, the window appears
-  } else if (show) mainWindow.once('ready-to-show', () => mainWindow?.show());
+  } else if (show) {
+    // shown only once the page has drawn everything (menu, map, conversations, team): no half-built
+    // first second. Whatever happens, it appears at most 3 seconds after it could first be shown.
+    const w = mainWindow;
+    let shown = false;
+    const reveal = () => {
+      if (shown || w.isDestroyed()) return;
+      shown = true;
+      ipcMain.removeListener('app:painted', onPainted);
+      w.show();
+    };
+    const onPainted = (e: Electron.IpcMainEvent) => e.sender === w.webContents && reveal();
+    ipcMain.on('app:painted', onPainted);
+    w.once('ready-to-show', () => setTimeout(reveal, 3000));
+  }
   mainWindow.on('closed', () => (mainWindow = null));
 }
 
@@ -1946,7 +1994,7 @@ app.whenReady().then(async () => {
     },
     onAsk: () => undefined,
   });
-  const coding = new CodingExecutor({ supervisor, pickFolder: pickProject });
+  const coding = new CodingExecutor({ supervisor, pickFolder: pickProject, projectsDir, askProjectName });
   lessons = new LessonExecutor({ show: showLesson, snip: (r) => snipScreen(screenExec.lastShot, r) });
   const documents = new DocumentsExecutor({
     pickFile: (reason) => pick('openFile', reason),

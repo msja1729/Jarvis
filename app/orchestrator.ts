@@ -140,6 +140,8 @@ export class Orchestrator {
     this.running++;
     // the same member finishes one request before the next (their conversation continues in order);
     // other members are not held up
+    // still busy with an earlier request: say so at once, so nothing looks stuck
+    if (this.turns.has(role) && role !== 'jarvis') live.onNote?.(role, "I'm finishing your previous request first; this one comes right after.");
     const endTurn = await this.turnFor(role);
     const decision = sessions.current();
     const now = this.deps.now?.() ?? new Date();

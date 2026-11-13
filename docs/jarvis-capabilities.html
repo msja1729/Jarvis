@@ -99,7 +99,7 @@
       </div>
     </div>
   </div>
-  <div class="meta"><span>Version 0.9.0 · Windows · November 2026</span><span>github.com/msja1729/Jarvis</span></div>
+  <div class="meta"><span>Version 0.9.1 · Windows · November 2026</span><span>github.com/msja1729/Jarvis</span></div>
 </div>
 
 <!-- ================= CONTENTS ================= -->
@@ -198,7 +198,7 @@ typing or by voice, from any app, and they work in the apps you connect, but onl
 
 <h3>Installing</h3>
 <ol class="steps">
-  <li>Download <b>Jarvis-Setup-0.9.0.exe</b> from the GitHub releases page and run it.</li>
+  <li>Download <b>Jarvis-Setup-0.9.1.exe</b> from the GitHub releases page and run it.</li>
   <li>Windows may show "Windows protected your PC" because the installer isn't code-signed yet: click <b>More info → Run anyway</b>.</li>
   <li>Choose where to install (or keep the default) and click Install. Jarvis opens when it finishes.</li>
 </ol>
@@ -607,12 +607,13 @@ straight away. There is nothing to register or set up.</p>
 <p>Ryan runs real coding work on your projects with Claude Code, in the background, and acts like a good team lead between you and it.
 (It's on by default; turn it off in the Tool Hub.)</p>
 <ol class="steps">
-  <li><span class="say">Ryan, add a login page to my project</span>: you pick the project folder.</li>
+  <li><span class="say">Ryan, build me a study planner app</span>: a popup asks you to name the new project (Ryan suggests a name). It gets its own folder in Ryan's <b>Projects</b> folder (Team page → Ryan → Open folder), and its spec and every code file go there. When you continue a project, he uses its folder without asking. Only for a project you already have somewhere else (<span class="say">add a login page to my project in D:\Code\shop</span>) do you pick its folder.</li>
   <li>Ryan writes the <b>spec</b> and waits for your OK (section 6).</li>
   <li>Claude Code works in the background while you do something else. Safe steps (reading, editing project files, running tests and builds) are approved for you according to your setting.</li>
   <li>When Claude has a question or wants to do something risky, a small card appears (and is spoken) with <b>Ryan's recommendation and reason</b>, in plain words (<i>"Let Ryan install the add-on axios from the internet?"</i>, with the exact command in small print). Answer by clicking or by voice: <span class="say">go with yours</span>, <span class="say">the second one</span>, <span class="say">no, keep it</span>.</li>
   <li><b>Or let the team decide.</b> Say so in your own words (<span class="say">I'm in a meeting, sort it out with the team</span>, <span class="say">don't ask me, you decide</span>) or turn on <b>Team decides</b> on the card. Ryan then answers Claude's questions himself, asking Victor, Sara or Maya when it touches their field, and approves ordinary steps. No popups and no spoken updates. Three things are never done without you: publishing online, anything outside the project folder (including your computer's settings) and files that may hold passwords or keys. These are skipped, and the summary at the end lists what the team decided and what it left for you.</li>
   <li>You get progress updates while it works, and a summary at the end with the <b>test results</b> and the <b>list of changed files</b>; Ryan checks it against the spec and updates the board.</li>
+  <li>He can start your website or app and leave it running for you to try; his reply comes right away, while it keeps running.</li>
 </ol>
 <table>
   <thead><tr><th style="width:24%">Setting</th><th>Options</th></tr></thead>
@@ -713,12 +714,11 @@ professional, and send you to emergency help for warning signs.</p>
 <table>
   <thead><tr><th style="width:30%">Setting</th><th>What it does</th></tr></thead>
   <tbody>
-    <tr><td><b>Model</b></td><td>Automatic (fast model for look-ups, stronger for drafting and explaining, Opus 5.5 for Ryan), or always use one model.</td></tr>
     <tr><td><b>Speak replies aloud</b></td><td>One switch for every answer: in the chat, the floating box and push-to-talk. Off, answers are only written (spoken questions get theirs on the voice card).</td></tr>
     <tr><td><b>Pause music and videos…</b></td><td>Pause other media while you talk and while the team speaks (on by default).</td></tr>
     <tr><td><b>Keep chat history</b></td><td>Keep conversations on this computer; clear them.</td></tr>
     <tr><td><b>How Jarvis explains things</b></td><td>Automatic, Like I'm five, Student, Professional.</td></tr>
-    <tr><td><b>Natural voice</b></td><td>Download, Jarvis's own voice, speaking speed (each member's voice is set on the Team page).</td></tr>
+    <tr><td><b>Natural voice</b></td><td>Download and speaking speed (each member's voice is set on the Team page).</td></tr>
     <tr><td><b>Voice shortcuts</b></td><td>Push-to-talk (default <code>Ctrl+Alt+Space</code>) and show/hide answer card (default <code>Ctrl+Alt+J</code>). Click a box and press the keys one at a time (no need to hold them), click away and Save. Any number of Ctrl, Alt, Shift and Windows keys plus one main key; shortcuts that would break other apps (a plain letter, Ctrl+Tab, Ctrl+C…) are refused with the reason.</td></tr>
     <tr><td><b>Coding supervisor</b></td><td>How much Ryan may approve, update interval, speak updates, watch your own Claude Code sessions.</td></tr>
     <tr><td><b>You</b></td><td>Your name and how to say it (type it the way it sounds, then Hear it).</td></tr>

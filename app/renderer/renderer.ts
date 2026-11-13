@@ -72,6 +72,8 @@ declare global {
       onSettings(cb: (s: any) => void): void;
       onScreenPick(cb: (req: any) => void): void;
       screenPickReply(id: string, choice: unknown): void;
+      onProjectName(cb: (req: { id: string; suggested: string; task: string; where: string; title?: string }) => void): void;
+      projectNameReply(id: string, name: string | null): void;
       onScreenArea(cb: (req: any) => void): void;
       screenAreaReply(id: string, rect: unknown): void;
       onAudioStart(cb: (req: { id: string; kind: CaptureKind; screen?: boolean }) => void): void;
@@ -138,6 +140,8 @@ const SETTING_LABEL: Record<string, string> = { off: 'Off', ask: 'Ask me first',
 let voiceOn = false;
 
 const MODE = new URLSearchParams(location.search).get('mode') ?? 'main';
+/** What the main window loads before it is shown (so it never appears half-built). */
+const startup: Promise<unknown>[] = [];
 // "Speak replies aloud" applies in every window, and follows changes made in another one
 void j.settingsGet().then((s: { voiceOutput: boolean }) => (voiceOn = s.voiceOutput !== false));
 j.onSettingsChanged((s) => {
@@ -807,7 +811,7 @@ if (MODE === 'main') {
   } catch {
     /* only a convenience */
   }
-  void renderChats();
+  startup.push(renderChats());
   $('chat-new').addEventListener('click', () => void startNewChat());
   $('old-new').addEventListener('click', () => void startNewChat());
   $('old-continue').addEventListener('click', () => void continueConv());
@@ -1276,6 +1280,46 @@ function showNotice(text: string) {
 function clearNotice(about: string) {
   const n = $('notice');
   if (n.textContent?.includes(about)) n.classList.add('hidden');
+}
+
+/* ---------- a new project's name (Ryan's Projects folder) ---------- */
+{
+  let projectId: string | null = null;
+  const box = $('project-name');
+  const input = $<HTMLInputElement>('project-input');
+  const close = (name: string | null) => {
+    if (projectId) j.projectNameReply(projectId, name);
+    projectId = null;
+    box.classList.add('hidden');
+  };
+  const showWhere = (where: string) => {
+    const n = input.value.trim().replace(/[<>:"/\\|?*]/g, '');
+    $('project-where').textContent = n ? `${where}\\${n}` : where;
+    $<HTMLButtonElement>('project-ok').disabled = !n;
+  };
+  let base = '';
+  j.onProjectName((req) => {
+    if (projectId) j.projectNameReply(projectId, null); // only one at a time
+    projectId = req.id;
+    base = req.where;
+    $('project-title').textContent = req.title ?? 'Name your new project';
+    $('project-sub').textContent = `Ryan will keep the plan and every code file for "${req.task}" in this folder.`;
+    input.value = req.suggested;
+    showWhere(base);
+    box.classList.remove('hidden');
+    input.focus();
+    input.select();
+  });
+  input.addEventListener('input', () => showWhere(base));
+  $('project-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const n = input.value.trim();
+    if (n) close(n);
+  });
+  $('project-cancel').addEventListener('click', () => close(null));
+  box.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') close(null);
+  });
 }
 
 /* ---------- confirmation popup ---------- */
@@ -2021,7 +2065,17 @@ $('sup-watch').addEventListener('change', async (e) => {
   void renderSupervisor();
 });
 if (MODE === 'main') void renderSupervisor();
-if (MODE === 'main') void loadTeam();
+if (MODE === 'main') {
+  startup.push(loadTeam());
+  // everything is drawn (conversations, team chips, suggestions, the menu highlight, the map's first
+  // frame): now the window may appear. Two frames later, so what is shown is what was drawn.
+  void Promise.allSettled(startup).then(() =>
+    requestAnimationFrame(() => {
+      movePill(activeTab(), true);
+      requestAnimationFrame(() => (j as unknown as { appPainted?: () => void }).appPainted?.());
+    }),
+  );
+}
 $('sup-autonomy').addEventListener('change', (e) => void renderSupervisor({ autonomy: (e.target as HTMLSelectElement).value }));
 $('sup-updates').addEventListener('change', (e) => void renderSupervisor({ updateEvery: Number((e.target as HTMLSelectElement).value) }));
 $('sup-speak').addEventListener('change', (e) => void renderSupervisor({ speak: (e.target as HTMLInputElement).checked }));

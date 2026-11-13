@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('jarvis', {
   onAskStart: on('ask:start'),
   /** The welcome has drawn its first frame: the window can be shown (nothing else flashes first). */
   welcomePainted: () => ipcRenderer.send('welcome:painted'),
+  appPainted: () => ipcRenderer.send('app:painted'),
   /** What the member says before they start working ("On it, about 2 minutes"). */
   onAskNote: on('ask:note'),
   /** A member shows the user files: the preview next to the chat. */
@@ -149,6 +150,8 @@ contextBridge.exposeInMainWorld('jarvis', {
   onSettings: on('settings:changed'),
   onScreenPick: on('screen:pick'),
   screenPickReply: (id: string, choice: unknown) => ipcRenderer.send('screen:pick:reply', id, choice),
+  onProjectName: on('project:name'),
+  projectNameReply: (id: string, name: string | null) => ipcRenderer.send('project:name:reply', id, name),
   onScreenArea: on('screen:area'),
   screenAreaReply: (id: string, rect: unknown) => ipcRenderer.send('screen:area:reply', id, rect),
 });
