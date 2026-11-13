@@ -1,5 +1,5 @@
 /** Renderer UI. All untrusted text is inserted with textContent, never innerHTML. */
-import { initTts, isSpeaking, speak, speakStream, stopSpeaking } from '../../speech/tts.js';
+import { initTts, isSpeaking, speak, speakStream, speakWhenFree, stopSpeaking } from '../../speech/tts.js';
 import { startWorldMap } from './worldmap.js';
 import { Onboarding, sayMyName } from './onboard.js';
 import { renderMarkdown } from './markdown.js';
@@ -248,6 +248,8 @@ let liveSpeech: ReturnType<typeof speakStream> | null = null;
 let liveText = '';
 /** True while this window waits for a streamed reply it asked for. */
 let awaitingLive = false;
+/** Requests sent from this window and not answered yet: members work at the same time. */
+let inflight = 0;
 j.onAskStart((s: { roleName: string; roleColor: string; voice: string }) => {
   if (!awaitingLive) return;
   liveText = '';
@@ -857,7 +859,7 @@ if (MODE === 'main') {
   j.onHistoryAdd((items) => {
     // the answer is in: what was shown while it was being answered makes way for the saved messages
     messages.querySelectorAll('.live-mirror').forEach((n) => n.remove());
-    if (!$('send').hasAttribute('disabled')) setProgress(false);
+    if (inflight === 0) setProgress(false);
     const conv = items[0]?.conv;
     if (!conv || viewingOld || (shownConv !== null && shownConv !== conv)) return;
     shownConv = conv;
@@ -934,7 +936,8 @@ $('composer').addEventListener('submit', async (e) => {
   const text = typed;
   const sendFiles = takeAttachments();
   input.value = '';
-  stopSpeaking();
+  // a new message quiets the last answer, unless a member is still working on an earlier one
+  if (inflight === 0) stopSpeaking();
   if (MODE === 'main') {
     const prep = await j.historyPrepare();
     if (prep.conv !== shownConv) {
@@ -946,12 +949,14 @@ $('composer').addEventListener('submit', async (e) => {
     }
   }
   addMsg('user', files.length ? `${typed}\n(attached: ${files.join(', ')})` : typed);
-  const send = $<HTMLButtonElement>('send');
-  send.disabled = true;
+  // the box stays open: you can ask another member while the first one works
+  inflight++;
   setProgress(true);
+  // one reply is spoken while it is written; the others are said after it, in turn
+  const streamThis = voiceOn && !awaitingLive;
   try {
-    awaitingLive = voiceOn;
-    const r = await j.ask(text, pickedRole, { stream: voiceOn, files: sendFiles.length ? sendFiles : undefined });
+    if (streamThis) awaitingLive = true;
+    const r = await j.ask(text, pickedRole, { stream: streamThis, files: sendFiles.length ? sendFiles : undefined });
     if (r.command === 'new_conversation' && MODE === 'main') {
       shownConv = null;
       clearChatView();
@@ -964,16 +969,18 @@ $('composer').addEventListener('submit', async (e) => {
     // you named someone else: the chip moves to them, so the next messages stay with them too
     if (pickedRole !== null && r.role && r.role !== 'jarvis' && r.role !== pickedRole) pickRole(r.role);
     if (r.limitReached) showNotice('Usage limit reached on your Claude plan. Jarvis will work again when the limit resets.');
-    if (voiceOn) finishLive(r, true);
+    if (streamThis) finishLive(r, true);
+    else if (voiceOn && !r.isError && !r.lessonShown) speakWhenFree(r.reply, { voice: r.voice }, () => awaitingLive);
     setStatus(r.isError ? 'err' : 'ok');
     if (r.followUp) pendingFollowUp = r.followUp;
   } catch (err) {
-    finishLive({ reply: '', isError: true }, false);
+    if (streamThis) finishLive({ reply: '', isError: true }, false);
     addMsg('jarvis', String(err), undefined, true);
     setStatus('err');
   } finally {
-    send.disabled = false;
-    setProgress(false);
+    inflight--;
+    setProgress(inflight > 0);
+    if (inflight > 0) setStatus('busy');
     if (pendingFollowUp) {
       const next = pendingFollowUp;
       pendingFollowUp = null;
@@ -1134,7 +1141,7 @@ function hideVoiceSoon(ms: number) {
   if (voiceHideTimer) window.clearTimeout(voiceHideTimer);
   voiceHideTimer = window.setTimeout(function check() {
     // Stay while the pointer is over the card or a popup is open.
-    if (card.matches(':hover') || !$('confirm').classList.contains('hidden') || !$('screen-pick').classList.contains('hidden')) {
+    if (card.matches(':hover') || voiceInflight > 0 || !$('confirm').classList.contains('hidden') || !$('screen-pick').classList.contains('hidden')) {
       voiceHideTimer = window.setTimeout(check, 2000);
       return;
     }
@@ -1154,7 +1161,60 @@ j.onAnnounce((a) => {
   speak(a.text, () => hideVoiceSoon(10_000), { voice: a.voice });
 });
 
+/** Spoken requests not answered yet. A second one, while the first member works, is answered after it. */
+let voiceInflight = 0;
+let voiceMore: Promise<void> = Promise.resolve();
 async function voiceAsk(text: string): Promise<void> {
+  if (voiceInflight > 0) return voiceAskMore(text);
+  voiceInflight++;
+  let followUp: string | undefined;
+  try {
+    followUp = await voiceAskFirst(text);
+  } finally {
+    voiceInflight--;
+  }
+  if (followUp) await voiceAsk(followUp);
+}
+
+/** Asked while another member is still answering: works at the same time, shown and said when the card is free. */
+async function voiceAskMore(text: string): Promise<void> {
+  voiceInflight++;
+  let r: Awaited<ReturnType<typeof j.ask>> | null = null;
+  let error = '';
+  try {
+    r = await j.ask(text, null, { stream: false });
+  } catch (err) {
+    error = cleanError(err);
+  }
+  const mine = voiceMore.then(async () => {
+    // wait until the first answer has been said (and nobody else on this card is speaking)
+    const t0 = Date.now();
+    while ((voiceBusy || awaitingLive || isSpeaking()) && Date.now() - t0 < 300_000) await new Promise((res) => setTimeout(res, 250));
+    voiceInflight--;
+    if (voiceHideTimer) window.clearTimeout(voiceHideTimer);
+    card.classList.remove('hidden');
+    (document.querySelector('.vc-you .muted') as HTMLElement).textContent = 'You said';
+    $('vc-you').textContent = text;
+    setVoiceStatus(false);
+    if (!r) {
+      card.classList.add('error');
+      $('vc-answer').textContent = error;
+      hideVoiceSoon(12000);
+      return;
+    }
+    $('vc-answer').replaceChildren(mdBlock(r.reply));
+    $('vc-name').textContent = r.roleName ?? 'Jarvis';
+    ($('vc-orb') as HTMLElement).style.setProperty('--c', r.roleColor ?? '');
+    card.classList.toggle('error', Boolean(r.isError));
+    fitVoice();
+    if (!r.isError && !r.quiet && voiceOn && !r.lessonShown) await new Promise<void>((res) => void speak(r!.reply, () => res(), { voice: r!.voice }).catch(() => res()));
+    hideVoiceSoon(r.isError ? 12000 : r.quiet || !voiceOn ? 30000 : 6000);
+  });
+  voiceMore = mine.catch(() => undefined);
+  await mine;
+}
+
+async function voiceAskFirst(text: string): Promise<string | undefined> {
   if (voiceHideTimer) window.clearTimeout(voiceHideTimer);
   stopSpeaking();
   voiceBusy = true;
@@ -1193,7 +1253,7 @@ async function voiceAsk(text: string): Promise<void> {
     setVoiceStatus(false);
     hideVoiceSoon(12000);
   }
-  if (followUp) await voiceAsk(followUp);
+  return followUp;
 }
 $('vc-close').addEventListener('click', () => {
   stopSpeaking();
@@ -1220,7 +1280,16 @@ function clearNotice(about: string) {
 
 /* ---------- confirmation popup ---------- */
 let confirmId: string | null = null;
+/** Popups waiting while another is open (members working at the same time may each ask): shown in turn. */
+const confirmQueue: ConfirmReq[] = [];
 j.onConfirm((req) => {
+  if (confirmId) {
+    confirmQueue.push(req);
+    return;
+  }
+  showConfirm(req);
+});
+function showConfirm(req: ConfirmReq) {
   confirmId = req.id;
   const badge = $('confirm-badge');
   badge.textContent = req.group;
@@ -1229,13 +1298,19 @@ j.onConfirm((req) => {
   $('confirm-body').textContent = req.summary;
   $('confirm').classList.remove('hidden');
   $('confirm-no').focus();
-});
+}
 j.onConfirmCancel((id) => {
   if (id === confirmId) closeConfirm();
+  else {
+    const i = confirmQueue.findIndex((q) => q.id === id);
+    if (i >= 0) confirmQueue.splice(i, 1);
+  }
 });
 function closeConfirm() {
   confirmId = null;
   $('confirm').classList.add('hidden');
+  const next = confirmQueue.shift();
+  if (next) setTimeout(() => showConfirm(next), 150);
 }
 $('confirm-yes').addEventListener('click', () => {
   if (confirmId) j.answerConfirm(confirmId, true);

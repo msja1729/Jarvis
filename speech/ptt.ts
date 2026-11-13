@@ -1,14 +1,25 @@
 /**
  * Push-to-talk (SPEC 6.1, criterion 25). Electron global shortcuts only report
  * key presses (not releases), so the hotkey toggles: press to talk; Jarvis stops
- * by itself after a short silence, or when the hotkey is pressed again.
+ * by itself after a short silence (a longer one once the user has talked for a while), or when the
+ * hotkey is pressed again. There is no practical length limit: long explanations are never cut.
  */
 export type PttState = 'idle' | 'listening' | 'transcribing';
 
 export const SPEECH_LEVEL = 0.02; // RMS above this counts as speech
-export const SILENCE_MS = 1200; // stop this long after the last speech
+export const SILENCE_MS = 1200; // a short request: stop this long after the last speech
+/**
+ * Someone explaining something long (a project's specification, a story) pauses to think:
+ * once they have talked for LONG_TALK_MS, a pause has to last this long before Jarvis stops.
+ */
+export const LONG_SILENCE_MS = 5000;
+export const LONG_TALK_MS = 8000;
+/** In between (talking for a few seconds already): a medium pause. */
+export const MID_SILENCE_MS = 2500;
+export const MID_TALK_MS = 3000;
 export const NO_SPEECH_MS = 8000; // give up if nothing was said
-export const MAX_MS = 30000; // hard limit for one utterance
+/** Only a safety net for a microphone left on by mistake: long explanations are never cut. */
+export const MAX_MS = 15 * 60_000;
 
 export interface PttDeps {
   startCapture(): Promise<void>;
@@ -26,6 +37,7 @@ export class PushToTalk {
   state: PttState = 'idle';
   private startedAt = 0;
   private lastVoice = 0;
+  private firstVoice = 0;
   private heard = false;
   private timer: ReturnType<typeof setInterval> | null = null;
 
@@ -62,6 +74,7 @@ export class PushToTalk {
   level(value: number): void {
     if (this.state !== 'listening') return;
     if (value >= SPEECH_LEVEL) {
+      if (!this.heard) this.firstVoice = this.now();
       this.heard = true;
       this.lastVoice = this.now();
     }
@@ -71,7 +84,10 @@ export class PushToTalk {
   tick(): void {
     if (this.state !== 'listening') return;
     const t = this.now();
-    if (this.heard && t - this.lastVoice >= SILENCE_MS) void this.finish('silence');
+    // a long explanation may pause to think; a short request ends quickly
+    const talked = this.lastVoice - this.firstVoice;
+    const pause = talked >= LONG_TALK_MS ? LONG_SILENCE_MS : talked >= MID_TALK_MS ? MID_SILENCE_MS : SILENCE_MS;
+    if (this.heard && t - this.lastVoice >= pause) void this.finish('silence');
     else if (!this.heard && t - this.startedAt >= NO_SPEECH_MS) void this.finish('nothing');
     else if (t - this.startedAt >= MAX_MS) void this.finish('max');
   }

@@ -6,6 +6,7 @@
  * voice is not installed.
  */
 import { cleanForSpeech } from '../../speech/speakable.js';
+import { Floor, FloorApi } from '../../speech/floor.js';
 
 export interface NarratorApi {
   ttsSpeak(text: string, opts?: { voice?: string }): Promise<number | null>;
@@ -33,8 +34,11 @@ export class Narrator {
   private sources: AudioBufferSourceNode[] = [];
   private playing: { clip: Clip; next: number; at: number; onEnd: () => void; my: number } | null = null;
   private seq = 0;
+  /** One voice at a time: a step waits while another window (a reply, the coding card) is speaking. */
+  private floor: Floor;
 
   constructor(private readonly api: NarratorApi) {
+    this.floor = new Floor(() => api as FloorApi);
     api.onTtsChunk((c) => {
       const clip = this.byId.get(c.id);
       if (!clip) {
@@ -131,13 +135,20 @@ export class Narrator {
     this.prefetch(key, text);
     const clip = this.clips.get(key)!;
     const my = ++this.seq;
-    if (clip.system) {
-      this.systemSay(clip.text, onEnd, my);
-      return;
-    }
-    this.ctx ??= new AudioContext();
-    this.playing = { clip, next: 0, at: this.ctx.currentTime + 0.02, onEnd, my };
-    this.schedule();
+    const done = () => {
+      this.floor.release();
+      onEnd();
+    };
+    void this.floor.take().then((ok) => {
+      if (!ok || my !== this.seq) return;
+      if (clip.system) {
+        this.systemSay(clip.text, done, my);
+        return;
+      }
+      this.ctx ??= new AudioContext();
+      this.playing = { clip, next: 0, at: this.ctx.currentTime + 0.02, onEnd: done, my };
+      this.schedule();
+    });
   }
 
   private schedule() {
@@ -197,6 +208,7 @@ export class Narrator {
   stop(): void {
     this.seq++;
     this.playing = null;
+    this.floor.release();
     for (const s of this.sources) {
       s.onended = null;
       try {

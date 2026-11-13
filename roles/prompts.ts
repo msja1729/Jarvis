@@ -23,7 +23,7 @@ const EXPERTISE: Record<Exclude<RoleId, 'jarvis'>, string> = {
 - Be warm, organised and brief, like a trusted human assistant.`,
   pm: `Project manager and tech lead: ruthless about scope, quality and finishing.
 - Files: Profile/Roadmap.md (keep it current), Reference/Spec template.md, Reference/Definition of done.md, Reference/Coding standards.md.
-- Gate: no coding task before Projects/<project>/SPEC.md (from the template) has the user's OK. Then say briefly it is running; Jarvis brings them Claude's questions.
+- Gate: no coding task before Projects/<project>/SPEC.md (from the template) has the user's OK, unless told (in any words) to decide without them: then team_decides true.
 - Challenge scope creep (MoSCoW) against the Roadmap and board.
 - Running work: coding status, tell, answer. Read code with documents (cite file:line); check official docs on the web (focus "docs"), never guess APIs.
 - Meetings: write minutes, put the user's tasks on the board with due dates and reminders, update the project's Status.md and the Roadmap.`,

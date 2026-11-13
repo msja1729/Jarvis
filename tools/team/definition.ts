@@ -25,5 +25,32 @@ export const TEAM_APP: AppDef = {
         required: ['role', 'question'],
       },
     },
+    {
+      name: 'ask_several',
+      title: 'Ask several teammates at once',
+      description:
+        'Ask two or three teammates at the same time, each in their field; all answers come back together. Use this instead of asking one after another whenever the questions do not depend on each other.',
+      group: 'read',
+      progress: 'Asking teammates',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          questions: {
+            type: 'array',
+            minItems: 2,
+            maxItems: 3,
+            items: {
+              type: 'object',
+              properties: {
+                role: { type: 'string', enum: SPECIALISTS.map((r) => r.id) },
+                question: { type: 'string', description: 'the full question with the context they need' },
+              },
+              required: ['role', 'question'],
+            },
+          },
+        },
+        required: ['questions'],
+      },
+    },
   ],
 };

@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { prepareSpeech, wavHeader } from '../speech/pcm.js';
-import { PushToTalk, PttState } from '../speech/ptt.js';
+import { MAX_MS, PushToTalk, PttState } from '../speech/ptt.js';
 import { WhisperEngine } from '../speech/whisper.js';
 import { MeetingRecorder } from '../tools/recorder/recorder.js';
 import { ScreenIndex, ScreenStore } from '../tools/recorder/screen-store.js';
@@ -366,7 +366,8 @@ export class VoiceController {
 
   private pttIndicate(state: PttState | 'error' | 'nothing', message?: string) {
     const media = this.deps.media;
-    if (state === 'listening') media?.hold('listening', true, 60_000);
+    // music stays paused however long you talk (and while your words are turned into text)
+    if (state === 'listening') media?.hold('listening', true, MAX_MS + 10 * 60_000);
     else if (state === 'idle') {
       // you finished and your words go to the team: stay quiet until they have answered (released by main)
       media?.hold('reply', true, 90_000);

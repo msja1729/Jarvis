@@ -22,6 +22,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { downloadVerified } from './download.js';
+import { splitAtPauses, wavData, wavHeader } from './pcm.js';
 
 export const ENGINE_VERSION = 'b5454';
 
@@ -267,15 +268,37 @@ export class WhisperEngine {
     form.append('response_format', 'json');
     form.append('temperature', '0.0');
     if (this.vocabulary) form.append('prompt', this.vocabulary);
-    const r = await fetch(`${s.url}/inference`, { method: 'POST', body: form, signal: AbortSignal.timeout(120_000) });
+    // long speech takes longer to turn into text: allow 2 minutes plus 4 seconds per second of audio
+    const seconds = Math.max(0, (fs.statSync(wavPath).size - 44) / 32_000);
+    const r = await fetch(`${s.url}/inference`, { method: 'POST', body: form, signal: AbortSignal.timeout(120_000 + seconds * 4_000) });
     if (!r.ok) throw new Error(`speech server ${r.status}`);
     const j = (await r.json()) as { text?: string; error?: string };
     if (typeof j.text !== 'string') throw new Error(j.error ?? 'no text');
     return j.text;
   }
 
-  /** Transcribes a 16 kHz mono WAV file to plain text. */
+  /**
+   * Transcribes a 16 kHz mono WAV file to plain text. Long speech (a project's specification, a
+   * story) goes in pieces cut at pauses, because the engine skips sentences in long recordings.
+   */
   async transcribe(wavPath: string): Promise<string> {
+    const data = wavData(new Uint8Array(fs.readFileSync(wavPath)));
+    const pieces = splitAtPauses(data);
+    if (pieces.length <= 1) return this.transcribeOne(wavPath);
+    const texts: string[] = [];
+    for (const piece of pieces) {
+      const part = path.join(os.tmpdir(), `jarvis-part-${crypto.randomBytes(6).toString('hex')}.wav`);
+      fs.writeFileSync(part, Buffer.concat([wavHeader(piece.length), piece]));
+      try {
+        texts.push(await this.transcribeOne(part));
+      } finally {
+        fs.rmSync(part, { force: true });
+      }
+    }
+    return texts.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+  }
+
+  private async transcribeOne(wavPath: string): Promise<string> {
     const bin = this.binary();
     if (!bin || !this.status().model) throw new Error('The speech engine is not installed yet.');
     try {

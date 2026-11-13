@@ -16,6 +16,7 @@ interface SupApi extends TtsApi {
   onSupState(cb: (s: SupState) => void): void;
   supAnswer(id: string, a: { choose?: string[]; allow?: boolean; text?: string }): void;
   supStop(): void;
+  supTeamDecides(on: boolean): void;
   supHide(): void;
   supOpenCode(): void;
   supOpenFile(rel: string): void;
@@ -80,14 +81,21 @@ function renderAsk(p: Pending | null) {
     const q = $('ask-text');
     q.textContent = isPlan ? 'Shall Claude go ahead with this plan?' : p.what;
     if (!isPlan) {
+      q.appendChild(document.createTextNode('?'));
       const r = el('span', `risk ${p.risk}`, q);
-      r.textContent = `${p.risk} risk`;
+      r.textContent = RISK[p.risk];
       r.title = p.riskWhy;
     }
     const text = isPlan ? p.plan : p.detail;
+    $('detail-head').classList.add('hidden');
     if (text && (isPlan || text !== p.what)) {
       detail.textContent = text;
       detail.classList.remove('hidden');
+      // the exact command or file, for those who want it; the plain words above say what it means
+      if (!isPlan) {
+        $('detail-head').textContent = /[\/]/.test(text) && !/s/.test(text) ? 'The file' : 'The exact command';
+        $('detail-head').classList.remove('hidden');
+      }
     }
     if (p.allow !== undefined) {
       advice.classList.remove('hidden');
@@ -120,6 +128,10 @@ $('reply').addEventListener('submit', (e) => {
 $('hide').addEventListener('click', () => j.supHide());
 $('stop').addEventListener('click', () => j.supStop());
 $('open').addEventListener('click', () => j.supOpenCode());
+$<HTMLInputElement>('team').addEventListener('change', (e) => j.supTeamDecides((e.target as HTMLInputElement).checked));
+
+/** Risk in everyday words. */
+const RISK: Record<string, string> = { low: 'safe', medium: 'worth a look', high: 'risky' };
 
 const LABEL: Record<string, string> = { working: 'Working', waiting: 'Needs you', done: 'Done', error: 'Problem', stopped: 'Stopped' };
 
@@ -132,7 +144,10 @@ j.onSupState((s) => {
   $('task').title = v ? `${v.task} · ${v.folder}` : '';
   $('state').textContent = v ? LABEL[v.state] : 'Idle';
   $('files').textContent = v ? `${v.folder}${v.changed.length ? ` · ${v.changed.length} file${v.changed.length > 1 ? 's' : ''} changed` : ''}` : '';
-  $('stop').classList.toggle('hidden', !v || !(v.state === 'working' || v.state === 'waiting'));
+  const running = Boolean(v && (v.state === 'working' || v.state === 'waiting'));
+  $('stop').classList.toggle('hidden', !running);
+  document.querySelector('.team-switch')!.classList.toggle('hidden', !running);
+  $<HTMLInputElement>('team').checked = Boolean(v?.teamDecides);
   renderAsk(v?.pending[0] ?? null);
   // what changed, and whether the tests pass (each file opens in VS Code)
   const changes = $('changes');

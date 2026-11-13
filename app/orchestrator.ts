@@ -60,7 +60,10 @@ export interface OrchestratorDeps {
 }
 
 export class Orchestrator {
-  private busy = false;
+  /** Requests being answered right now (different members work at the same time). */
+  private running = 0;
+  /** Each member answers one request at a time (one Claude conversation each); the next waits its turn. */
+  private turns = new Map<RoleId, Promise<void>>();
   /** One conversation per team role (Jarvis itself uses deps.sessions). */
   private roleSessions = new Map<RoleId, SessionManager>();
   private last: { role: RoleId; at: number } | null = null;
@@ -68,7 +71,21 @@ export class Orchestrator {
   constructor(private readonly deps: OrchestratorDeps) {}
 
   get isBusy(): boolean {
-    return this.busy;
+    return this.running > 0;
+  }
+
+  /** Waits until this member has finished their earlier request; returns the function that ends this one. */
+  private async turnFor(role: RoleId): Promise<() => void> {
+    const before = this.turns.get(role) ?? Promise.resolve();
+    let end!: () => void;
+    const mine = new Promise<void>((r) => (end = r));
+    const chain = before.then(() => mine);
+    this.turns.set(role, chain);
+    await before;
+    return () => {
+      end();
+      if (this.turns.get(role) === chain) this.turns.delete(role);
+    };
   }
 
   /** A new conversation: every member starts a fresh Claude session. */
@@ -119,11 +136,14 @@ export class Orchestrator {
 
     const model = modelFor(role);
     const sessions = this.sessionsFor(role);
+    this.last = { role, at: (this.deps.now?.() ?? new Date()).getTime() };
+    this.running++;
+    // the same member finishes one request before the next (their conversation continues in order);
+    // other members are not held up
+    const endTurn = await this.turnFor(role);
     const decision = sessions.current();
     const now = this.deps.now?.() ?? new Date();
-    this.last = { role, at: now.getTime() };
     live.onRole?.(role);
-    this.busy = true;
     this.deps.onRequestStart?.();
     try {
       const level = this.deps.level?.();
@@ -164,7 +184,8 @@ export class Orchestrator {
         sessionId: res.session_id,
       };
     } finally {
-      this.busy = false;
+      this.running--;
+      endTurn();
     }
   }
 }

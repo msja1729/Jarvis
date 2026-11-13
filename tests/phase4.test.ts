@@ -8,7 +8,7 @@ import { Orchestrator } from '../app/orchestrator.js';
 import { SessionManager } from '../brain/session.js';
 import { UsageLog } from '../brain/usage.js';
 import { floatTo16, rms, wavHeader } from '../speech/pcm.js';
-import { MAX_MS, NO_SPEECH_MS, PushToTalk, SILENCE_MS } from '../speech/ptt.js';
+import { LONG_SILENCE_MS, MAX_MS, NO_SPEECH_MS, PushToTalk, SILENCE_MS } from '../speech/ptt.js';
 import { cleanTranscript, extractZip, WhisperEngine, WHISPER_MODEL } from '../speech/whisper.js';
 import { MeetingRecorder, SEGMENT_SECONDS } from '../tools/recorder/recorder.js';
 import { PART_CHARS, splitParts, TranscriptExecutor } from '../tools/recorder/executor.js';
@@ -213,18 +213,50 @@ describe('C25 push-to-talk', () => {
     expect(h.log.at(-1)).toContain("didn't hear anything");
   });
 
-  it('stops at the 30-second limit even if the room is noisy', async () => {
+  it('a long explanation (several minutes, with pauses to think) is never cut in the middle', async () => {
     const h = harness();
     await h.ptt.toggle();
-    for (let i = 0; i < 40; i++) {
-      h.ptt.level(0.3);
+    // 3 minutes of talking: 10 seconds of speech, then a 3-second pause to think, again and again
+    for (let s = 0; s < 180; s++) {
+      if (s % 13 < 10) h.ptt.level(0.1);
+      h.advance(1000);
+      h.ptt.tick();
+    }
+    expect(h.ptt.state).toBe('listening');
+    expect(h.delivered).toEqual([]);
+    // done talking: after a longer pause it stops by itself
+    h.advance(LONG_SILENCE_MS);
+    h.ptt.tick();
+    await h.flush();
+    await h.flush();
+    expect(h.delivered).toHaveLength(1);
+  });
+
+  it('a short request still ends quickly after you stop', async () => {
+    const h = harness();
+    await h.ptt.toggle();
+    h.ptt.level(0.1);
+    h.advance(2000);
+    h.ptt.level(0.1);
+    h.advance(SILENCE_MS);
+    h.ptt.tick();
+    await h.flush();
+    await h.flush();
+    expect(h.delivered).toHaveLength(1);
+  });
+
+  it('only a microphone left on by mistake is stopped, after 15 minutes', async () => {
+    expect(MAX_MS).toBe(15 * 60_000);
+    const h = harness();
+    await h.ptt.toggle();
+    for (let s = 0; s <= MAX_MS / 1000; s++) {
+      h.ptt.level(0.3); // a noisy room that never goes quiet
       h.advance(1000);
       h.ptt.tick();
     }
     await h.flush();
     await h.flush();
     expect(h.delivered).toHaveLength(1);
-    expect(MAX_MS).toBe(30000);
   });
 
   it('explains microphone and speech-engine problems instead of failing silently', async () => {

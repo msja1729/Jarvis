@@ -17,7 +17,27 @@ export const CODING_APP: AppDef = {
       // The folder picker is the user's go-ahead; every risky step is still checked.
       defaultSetting: 'allowed',
       progress: 'Starting Claude Code',
-      inputSchema: { type: 'object', properties: { task: { type: 'string', description: 'what to build or fix, in the user\'s words plus any details' } }, required: ['task'] },
+      inputSchema: {
+        type: 'object',
+        properties: {
+          task: { type: 'string', description: 'what to build or fix, in the user\'s words plus any details' },
+          team_decides: {
+            type: 'boolean',
+            description:
+              'true only when the user, in any words, asks the team to decide or approve things themselves, not to ask them, or not to disturb them ("you decide", "don\'t ask me", "handle it yourselves", "I\'ll be busy"). Otherwise false: the user is asked.',
+          },
+        },
+        required: ['task'],
+      },
+    },
+    {
+      name: 'team_decides',
+      title: 'Let the team decide',
+      description:
+        'Turn "team decides" on or off for the running coding task: on when the user, in any words, says the team should decide on its own or not disturb them; off when they want to be asked again. When on, the team answers Claude\'s questions and permissions with no popups; publishing online, anything outside the project folder and password files are skipped and listed at the end.',
+      group: 'act',
+      defaultSetting: 'allowed',
+      inputSchema: { type: 'object', properties: { on: { type: 'boolean' } }, required: ['on'] },
     },
     {
       name: 'tell',

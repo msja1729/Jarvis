@@ -21,7 +21,7 @@ export class CodingExecutor implements AppExecutor {
         if (sup.active) throw new Error(`A coding task is already running. ${sup.status()}`);
         const folder = await this.deps.pickFolder(task);
         if (!folder) throw new Error('The user cancelled choosing the project folder.');
-        return { text: `${sup.start(task, folder)} Tell the user in one short sentence; do not wait for it to finish.` };
+        return { text: `${sup.start(task, folder, { teamDecides: input.team_decides === true })} Tell the user in one short sentence; do not wait for it to finish.` };
       }
       case 'tell':
         if (!text) throw new Error('Say what to tell Claude.');
@@ -34,6 +34,8 @@ export class CodingExecutor implements AppExecutor {
         if (!pending) return { text: 'Claude is not waiting for an answer right now.' };
         return { text: `That did not sound like a clear yes or no. ${sup.describe(pending)}` };
       }
+      case 'team_decides':
+        return { text: sup.setTeamDecides(input.on !== false) };
       case 'status':
         return { text: sup.status() };
       case 'stop':

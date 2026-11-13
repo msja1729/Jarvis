@@ -9,6 +9,7 @@
  *    sent to the voice at once, so speaking starts while Claude is still writing.
  */
 import { cleanForSpeech } from './speakable.js';
+import { Floor, FloorApi } from './floor.js';
 
 export interface TtsApi {
   ttsSpeak(text: string, opts?: { voice?: string }): Promise<number | null>;
@@ -19,6 +20,33 @@ export interface TtsApi {
 }
 
 let api: TtsApi | null = null;
+
+type Chunk = { rate: number; audio: Float32Array; words?: number; pause?: number };
+/** One voice at a time across all windows: this window waits its turn before playing (floor.ts). */
+const floor = new Floor(() => api as FloorApi | null);
+/** False while waiting for the turn: voice that arrives meanwhile is kept and played when the turn comes. */
+let granted = true;
+let held: Chunk[] = [];
+let turnGen = 0;
+let turn: Promise<boolean> = Promise.resolve(true);
+/** speak() calls still asking the voice engine (so the window counts as speaking meanwhile). */
+let starting = 0;
+
+function waitTurn(): Promise<boolean> {
+  const my = ++turnGen;
+  granted = false;
+  held = [];
+  turn = floor.take().then((ok) => {
+    if (my !== turnGen || !ok) return false;
+    granted = true;
+    const h = held;
+    held = [];
+    h.forEach(playNow);
+    finishIfDone();
+    return true;
+  });
+  return turn;
+}
 let ctx: AudioContext | null = null;
 let sources: AudioBufferSourceNode[] = [];
 let nextTime = 0;
@@ -69,6 +97,8 @@ interface Live {
   queue: Promise<void>;
   /** The natural voice is not available: the OS voice speaks instead. */
   system: boolean;
+  /** This reply's turn to speak, given back when it is finished. */
+  token: string | null;
 }
 let live: Live | null = null;
 
@@ -115,7 +145,15 @@ export function speakAndWait(text: string, opts: { voice?: string } = {}, maxMs 
   });
 }
 
-function play(c: { rate: number; audio: Float32Array; words?: number; pause?: number }) {
+function play(c: Chunk) {
+  if (!granted) {
+    held.push(c);
+    return;
+  }
+  playNow(c);
+}
+
+function playNow(c: Chunk) {
   const out = output();
   ctx ??= new AudioContext();
   const buffer = ctx.createBuffer(1, c.audio.length, c.rate);
@@ -158,7 +196,8 @@ export function initTts(bridge: TtsApi): void {
     if (d.error && current.chunks === 0) {
       const { text, onEnd } = current;
       current = null;
-      systemSpeak(text, onEnd);
+      const [t, g, tok] = [turn, turnGen, floor.current];
+      void t.then((ok) => ok && g === turnGen && systemSpeak(text, () => (floor.releaseIf(tok), onEnd?.())));
       return;
     }
     finishIfDone();
@@ -167,16 +206,19 @@ export function initTts(bridge: TtsApi): void {
 }
 
 function finishIfDone() {
+  if (!granted || held.length) return;
   if (current && current.done && sources.length === 0) {
     const end = current.onEnd;
     current = null;
     nextTime = 0;
+    floor.release(); // the next window may speak now
     end?.();
   }
   if (live && live.ended && live.pending === 0 && sources.length === 0 && !live.system) {
     const end = live.onEnd;
     live = null;
     nextTime = 0;
+    floor.release();
     end?.();
   }
 }
@@ -213,9 +255,17 @@ export async function speak(text: string, onEnd?: () => void, opts: { voice?: st
   stopSpeaking();
   timeline = [];
   systemAt = null;
-  const id = api ? await api.ttsSpeak(text, opts).catch(() => null) : null;
+  const t = waitTurn();
+  const [g, tok] = [turnGen, floor.current];
+  starting++;
+  const id = api ? await api.ttsSpeak(text, opts).catch(() => null).finally(() => starting--) : (starting--, null);
+  if (g !== turnGen) {
+    // stopped, or newer speech came, while the voice was being asked for
+    if (id !== null) api?.ttsStop(id);
+    return;
+  }
   if (id === null) {
-    systemSpeak(text, onEnd);
+    void t.then((ok) => ok && g === turnGen && systemSpeak(text, () => (floor.releaseIf(tok), onEnd?.())));
     return;
   }
   current = { id, text, onEnd, done: false, chunks: 0 };
@@ -252,7 +302,9 @@ export function takeSentences(buf: string, final: boolean, min = 28): { ready: s
 /** Speak a reply that is still being written: push() pieces as they come, end() when it is complete. */
 export function speakStream(opts: { voice?: string } = {}): { push(text: string): void; end(onEnd?: () => void): void; cancel(): void } {
   stopSpeaking();
-  const me: Live = { voice: opts.voice, buf: '', ids: new Set(), pending: 0, ended: false, queue: Promise.resolve(), system: false };
+  // sentences are only sent to the voice once it is this window's turn (one voice at a time)
+  const t = waitTurn();
+  const me: Live = { voice: opts.voice, buf: '', ids: new Set(), pending: 0, ended: false, queue: t.then(() => undefined), system: false, token: floor.current };
   live = me;
   const send = (sentence: string) => {
     const text = cleanForSpeech(sentence);
@@ -307,6 +359,7 @@ export function speakStream(opts: { voice?: string } = {}): { push(text: string)
 function endSystem(me: Live) {
   if (live !== me) return;
   live = null;
+  floor.releaseIf(me.token);
   me.onEnd?.();
 }
 
@@ -327,6 +380,10 @@ export function stopSpeaking(): void {
   current = null;
   if (live && api) for (const id of live.ids) api.ttsStop(id);
   live = null;
+  ++turnGen;
+  granted = true;
+  held = [];
+  floor.release();
   if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
 }
 
@@ -335,5 +392,36 @@ export function stopSpeaking(): void {
  * is talking). Used to pause the user's music while the team speaks.
  */
 export function isSpeaking(): boolean {
-  return sources.length > 0 || current !== null || live !== null || (typeof speechSynthesis !== 'undefined' && speechSynthesis.speaking);
+  return sources.length > 0 || current !== null || live !== null || starting > 0 || !granted || (typeof speechSynthesis !== 'undefined' && speechSynthesis.speaking);
+}
+
+/**
+ * Speak once this window is quiet: a reply that arrives while another member is still speaking (or
+ * about to, `busy`) waits its turn instead of cutting them off. Replies are said in the order they came.
+ */
+let afterQueue: Promise<void> = Promise.resolve();
+export function speakWhenFree(text: string, opts: { voice?: string } = {}, busy: () => boolean = () => false, onEnd?: () => void): void {
+  const mine = afterQueue.then(
+    () =>
+      new Promise<void>((resolve) => {
+        const started = Date.now();
+        const go = () => {
+          // never wait for ever: after 5 minutes it is said anyway
+          if ((isSpeaking() || busy()) && Date.now() - started < 300_000) {
+            setTimeout(go, 200);
+            return;
+          }
+          void speak(text, () => (resolve(), onEnd?.()), opts).catch(() => resolve());
+          // stopped by the user (push-to-talk, a new message): the queue moves on
+          const watch = setInterval(() => {
+            if (!isSpeaking()) {
+              clearInterval(watch);
+              resolve();
+            }
+          }, 500);
+        };
+        go();
+      }),
+  );
+  afterQueue = mine;
 }

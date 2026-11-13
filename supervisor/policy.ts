@@ -14,6 +14,7 @@
  *   handsoff - Jarvis approves low and medium; high goes to the user
  */
 import path from 'node:path';
+import { plainCommand } from './plain.js';
 
 export const AUTONOMY = ['careful', 'balanced', 'handsoff'] as const;
 export type Autonomy = (typeof AUTONOMY)[number];
@@ -81,7 +82,7 @@ const LOW: RegExp[] = [
   /^(python|python3|py)\s+-m\s+(pytest|unittest|mypy|ruff|black\s+--check|compileall)\b/i,
 ];
 
-function splitCommand(cmd: string): string[] {
+export function splitCommand(cmd: string): string[] {
   return cmd
     .split(/&&|\|\||;|\||\r?\n/)
     .map((s) => s.trim().replace(/^\(+\s*/, '').replace(/\s*\)+$/, '')) // (a && b) grouping
@@ -89,7 +90,7 @@ function splitCommand(cmd: string): string[] {
 }
 
 /** Absolute paths in a command that point outside the project. */
-function outsidePaths(cmd: string, root: string): string[] {
+export function outsidePaths(cmd: string, root: string): string[] {
   const found = cmd.match(/(?:[A-Za-z]:[\\/][^\s"'`;|&<>]*|(?<![\w.~-])\/(?:[\w.-]+\/?)+|~[\\/][^\s"'`;|&<>]*)/g) ?? [];
   return found.filter((p) => !p.startsWith('/dev/null') && !(p.startsWith('/') && p.length <= 2) && !inside(root, p.replace(/^~/, process.env.USERPROFILE ?? process.env.HOME ?? '~')));
 }
@@ -131,24 +132,25 @@ export function judge(req: PermissionRequest, root: string, autonomy: Autonomy):
   const out = (risk: Risk, what: string, why: string, readOnly: boolean): Verdict => ({ decision: allowedAt(risk, readOnly, autonomy) ? 'allow' : 'ask', risk, what, why, readOnly });
 
   if (READ_TOOLS.has(name)) {
-    if (file && SECRET.test(file)) return out('high', `read ${rel(file)}`, 'it looks like a file with keys or passwords', true);
-    if (file && !inside(root, file)) return out('medium', `read ${file}`, 'it is outside your project folder', true);
-    return out('low', file ? `read ${rel(file)}` : `look through the project (${name})`, 'it only reads', true);
+    if (file && SECRET.test(file)) return out('high', `open ${rel(file)}, a file that may hold passwords or keys`, 'it looks like a file with keys or passwords', true);
+    if (file && !inside(root, file)) return out('medium', `open ${file}, outside your project`, 'it is outside your project folder', true);
+    return out('low', file ? `read ${rel(file)}` : 'look through the project', 'it only reads', true);
   }
   if (EDIT_TOOLS.has(name)) {
-    if (!file) return out('medium', `edit a file (${name})`, 'Jarvis could not see which file', false);
-    if (!inside(root, file)) return out('high', `change ${file}`, 'it is outside your project folder', false);
-    if (SECRET.test(file)) return out('high', `change ${rel(file)}`, 'it looks like a file with keys or passwords', false);
+    if (!file) return out('medium', 'change a file', 'Jarvis could not see which file', false);
+    if (!inside(root, file)) return out('high', `change the file ${file}, outside your project`, 'it is outside your project folder', false);
+    if (SECRET.test(file)) return out('high', `change ${rel(file)}, a file that may hold passwords or keys`, 'it looks like a file with keys or passwords', false);
     if (/(^|[\\/])\.git([\\/]|$)/.test(rel(file))) return out('high', `change ${rel(file)}`, 'it is inside git\'s own folder', false);
-    return out('low', `${name === 'Write' ? 'write' : 'edit'} ${rel(file)}`, 'it changes a file inside your project', false);
+    return out('low', `${name === 'Write' ? 'create or replace' : 'change'} the file ${rel(file)}`, 'it changes a file inside your project', false);
   }
   if (SHELL_TOOLS.has(name)) {
     const cmd = typeof input.command === 'string' ? input.command : '';
     const { risk, why } = classifyCommand(cmd, root);
-    return out(risk, `run: ${short(withoutCdToRoot(cmd, root))}`, why, false);
+    // everyday words; the command itself is shown in small print (the detail)
+    return out(risk, plainCommand(withoutCdToRoot(cmd, root)), why, false);
   }
   if (name === 'WebSearch') return out('low', `search the web for "${short(String(input.query ?? ''), 80)}"`, 'it only searches', true);
-  if (name === 'WebFetch') return out('medium', `open the web page ${short(String(input.url ?? ''), 100)}`, 'web pages can contain misleading instructions', true);
+  if (name === 'WebFetch') return out('medium', `open a web page (${short(String(input.url ?? '').replace(/^https?:\/\//, '').split('/')[0], 60)})`, 'web pages can contain misleading instructions', true);
   if (name === 'Task' || name === 'Agent') return out('low', `start a helper for: ${short(String(input.description ?? input.prompt ?? ''), 80)}`, 'its own actions are still checked one by one', true);
   if (name === 'KillShell' || name === 'KillBash') return out('low', 'stop a command it started', 'it only stops its own command', false);
   return out('medium', `use the tool ${name}`, 'Jarvis does not know this tool', false);

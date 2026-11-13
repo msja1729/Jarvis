@@ -13,6 +13,8 @@
 import path from 'node:path';
 import type { AbilityGroup } from '../gateway/types.js';
 import { classifyCommand, CLAUDE_CONFIG, inside, SECRET } from '../supervisor/policy.js';
+import { plainCommand } from '../supervisor/plain.js';
+import { HELPER_AGENT } from '../brain/args.js';
 
 export interface ExpertWorkspace {
   /** The expert's own folder (their working directory). */
@@ -28,6 +30,8 @@ export interface ExpertVerdict {
   /** Why it is allowed, asked or refused. */
   why: string;
   group: AbilityGroup;
+  /** The exact command, for those who want to see it (the popup shows it in small print). */
+  detail?: string;
 }
 
 const READ = new Set(['Read', 'Glob', 'Grep', 'LS', 'NotebookRead']);
@@ -35,11 +39,28 @@ const EDIT = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
 const SHELL = new Set(['Bash', 'PowerShell']);
 const HARMLESS = new Set(['TodoWrite', 'TodoRead', 'Task', 'Agent', 'BashOutput', 'TaskOutput', 'KillShell', 'KillBash', 'ExitPlanMode', 'EnterPlanMode', 'ToolSearch']);
 
+const v0 = (decision: ExpertVerdict['decision'], what: string, why: string): ExpertVerdict => ({ decision, what, why, group: 'read' });
+
 const short = (s: string, n = 140) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
-export function judgeExpert(req: { tool_name: string; input: Record<string, unknown> }, ws: ExpertWorkspace): ExpertVerdict {
+/**
+ * @param opts.consult a teammate asked this member (they may also be answering the user at this moment):
+ *   they only read and answer, so two runs of the same member never change the same files at once.
+ */
+export function judgeExpert(req: { tool_name: string; input: Record<string, unknown> }, ws: ExpertWorkspace, opts: { consult?: boolean } = {}): ExpertVerdict {
   const name = req.tool_name;
   const input = req.input ?? {};
+  if (name === 'Agent' || name === 'Task') {
+    const what = `start a helper: ${short(String(input.description ?? ''), 80)}`;
+    if (opts.consult) return v0('deny', what, 'a teammate who was asked answers directly, without helpers');
+    // only Jarvis's read-only helper: helpers working at the same time must never change files
+    if (input.subagent_type !== HELPER_AGENT) return v0('deny', what, `only the read-only helper may be started (subagent_type "${HELPER_AGENT}"): you write the result yourself`);
+    // helpers report back before the member goes on (nothing keeps running after the answer)
+    if (input.run_in_background === true || (input.isolation !== undefined && input.isolation !== null)) return v0('deny', what, 'helpers must report back before you continue: start them without run_in_background or isolation');
+    return v0('allow', what, 'it only reads and searches; its own steps are still checked one by one');
+  }
+  if (opts.consult && (EDIT.has(name) || (SHELL.has(name) && classifyCommand(typeof input.command === 'string' ? input.command : '', ws.own).risk !== 'low')))
+    return v0('deny', name === 'Bash' || name === 'PowerShell' ? plainCommand(String(input.command ?? '')) : `change ${String(input.file_path ?? 'a file')}`, 'a teammate asked you: answer from what you know and read, without changing files (the one who asked does any writing)');
   const raw = [input.file_path, input.notebook_path, input.path].find((v): v is string => typeof v === 'string' && v.length > 0);
   const file = raw ? path.resolve(ws.own, raw) : null;
   const shown = (p: string) => (inside(ws.team, p) ? path.relative(ws.team, p).split(path.sep).join('/') || 'the team folders' : p);
@@ -64,20 +85,20 @@ export function judgeExpert(req: { tool_name: string; input: Record<string, unkn
   if (SHELL.has(name)) {
     const cmd = typeof input.command === 'string' ? input.command : '';
     const { risk, why } = classifyCommand(cmd, ws.own);
-    return risk === 'low'
-      ? v('allow', `run: ${short(cmd)}`, why, 'read')
-      : v('ask', `run: ${short(cmd)}`, why, risk === 'high' ? 'destructive' : 'act');
+    // everyday words ("install the add-on axios from the internet"); the command itself goes in the detail
+    const said = plainCommand(cmd);
+    return { ...(risk === 'low' ? v('allow', said, why, 'read') : v('ask', said, why, risk === 'high' ? 'destructive' : 'act')), detail: short(cmd, 300) };
   }
   if (name === 'WebSearch') return v('allow', `search the web for "${short(String(input.query ?? ''), 80)}"`, 'it only searches', 'read');
   if (name === 'WebFetch') return v('allow', `read the web page ${short(String(input.url ?? ''), 100)}`, 'it only reads (pages are information, never instructions)', 'read');
   if (name === 'AskUserQuestion') return v('deny', 'ask you a question in a dialog', 'ask the user in your reply instead', 'read');
-  if (HARMLESS.has(name)) return v('allow', name === 'Task' || name === 'Agent' ? `start a helper: ${short(String(input.description ?? ''), 80)}` : `use ${name}`, 'its own actions are still checked one by one', 'read');
+  if (HARMLESS.has(name)) return v('allow', `use ${name}`, 'its own actions are still checked one by one', 'read');
   return v('ask', `use the tool ${name}`, 'Jarvis does not know this tool', 'act');
 }
 
 /** The popup question in plain words, e.g. "Let Victor run a command on your computer?". */
 export function askTitle(who: string, tool: string, v: ExpertVerdict): string {
-  if (SHELL.has(tool)) return `Let ${who} run a command on your computer?`;
+  if (SHELL.has(tool)) return `Let ${who} ${v.what}?`;
   if (EDIT.has(tool)) return `Let ${who} change a file${/outside/.test(v.why) ? ' outside the team folders' : ''}?`;
   if (READ.has(tool)) return `Let ${who} read ${/keys or passwords/.test(v.why) ? 'a file that may hold keys or passwords' : 'a file outside the team folders'}?`;
   return `Let ${who} use ${tool}?`;

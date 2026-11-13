@@ -36,7 +36,8 @@ describe('what an expert may do with Claude Code tools', () => {
     expect(j('Bash', { command: 'ls' }).decision).toBe('allow');
     const py = j('Bash', { command: 'python -c "print(1200*1.08**5)"' });
     expect(py.decision).toBe('ask');
-    expect(py.what).toMatch(/run: python/);
+    expect(py.what).toMatch(/run the program/);
+    expect(py.detail).toMatch(/python/);
     const rm = j('PowerShell', { command: 'Remove-Item -Recurse notes' });
     expect(rm.decision).toBe('ask');
     expect(rm.group).toBe('destructive');
@@ -46,7 +47,7 @@ describe('what an expert may do with Claude Code tools', () => {
     expect(j('WebSearch', { query: 'RBI repo rate' }).decision).toBe('allow');
     expect(j('WebFetch', { url: 'https://rbi.org.in' }).decision).toBe('allow');
     expect(j('TodoWrite').decision).toBe('allow');
-    expect(j('Task', { description: 'research' }).decision).toBe('allow');
+    expect(j('Agent', { description: 'research', subagent_type: 'helper' }).decision).toBe('allow');
     expect(j('AskUserQuestion').decision).toBe('deny');
     expect(j('SomethingNew').decision).toBe('ask');
   });

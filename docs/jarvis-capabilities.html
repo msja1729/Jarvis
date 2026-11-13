@@ -99,7 +99,7 @@
       </div>
     </div>
   </div>
-  <div class="meta"><span>Version 0.8.1 · Windows · November 2026</span><span>github.com/msja1729/Jarvis</span></div>
+  <div class="meta"><span>Version 0.9.0 · Windows · November 2026</span><span>github.com/msja1729/Jarvis</span></div>
 </div>
 
 <!-- ================= CONTENTS ================= -->
@@ -198,7 +198,7 @@ typing or by voice, from any app, and they work in the apps you connect, but onl
 
 <h3>Installing</h3>
 <ol class="steps">
-  <li>Download <b>Jarvis-Setup-0.8.1.exe</b> from the GitHub releases page and run it.</li>
+  <li>Download <b>Jarvis-Setup-0.9.0.exe</b> from the GitHub releases page and run it.</li>
   <li>Windows may show "Windows protected your PC" because the installer isn't code-signed yet: click <b>More info → Run anyway</b>.</li>
   <li>Choose where to install (or keep the default) and click Install. Jarvis opens when it finishes.</li>
 </ol>
@@ -227,7 +227,7 @@ typing or by voice, from any app, and they work in the apps you connect, but onl
   <thead><tr><th style="width:24%">Where</th><th style="width:22%">How</th><th>Good for</th></tr></thead>
   <tbody>
     <tr><td><b>Main window</b></td><td>Open Jarvis → Chat</td><td>Longer conversations, history, lessons, everything at once.</td></tr>
-    <tr><td><b>Push-to-talk</b></td><td><code>Ctrl+Alt+Space</code> from any app</td><td>Talk without switching windows: press, speak, and it stops listening when you pause (or press again).</td></tr>
+    <tr><td><b>Push-to-talk</b></td><td><code>Ctrl+Alt+Space</code> from any app</td><td>Talk without switching windows: press, speak, and it stops listening when you pause (or press again). Speak as long as you need: a long explanation, like a project's specification, is never cut, and you can pause to think.</td></tr>
     <tr><td><b>Voice card</b></td><td>Appears above the taskbar; <code>Ctrl+Alt+J</code> shows or hides it</td><td>Hands-free answers: the reply is spoken; the card stays hidden unless you want to read it (hiding it doesn't stop the speech). It comes up by itself when a member needs something from you (a drop box) or when answers are not spoken. Drag its top row to move it, drag an edge to resize it, <b>–</b> minimises it to the taskbar, <b>×</b> closes it; it stays where you put it.</td></tr>
     <tr><td><b>Floating box</b></td><td><code>Ctrl+Shift+Space</code></td><td>A small chat window that floats over your work, with the world map behind it. Drag its title bar to move it, drag an edge to resize it; its buttons minimise it, open the main window or close it.</td></tr>
   </tbody>
@@ -302,7 +302,10 @@ a memory of you, a folder on your computer, a natural voice and a name you can c
 
 <h3>Working as a team</h3>
 <ul>
-  <li><b>They consult each other.</b> A member can ask one teammate for facts. Maya asks Ryan about project deadlines before planning your day, or asks Victor about a bill before drafting a reply.</li>
+  <li><b>They consult each other.</b> A member can ask a teammate for facts. Maya asks Ryan about project deadlines before planning your day, or asks Victor about a bill before drafting a reply. When the questions don't depend on each other, a member asks two or three teammates <b>at the same time</b> and gets all the answers together (Ryan asks Victor about the cost and Sara about the health side at once). A teammate who is asked only reads and answers; they never change files while doing so.</li>
+  <li><b>They work at the same time.</b> Ask Maya something, then Victor straight away: both work at once, and you can keep typing while they do. Each member answers their own requests in order.</li>
+  <li><b>Helpers for big jobs.</b> A member can split a job into parts that run side by side, for example three countries' interest rates or five lab reports at once. Helpers only read and search; the member writes the result after they report back, so they never get in each other's way.</li>
+  <li><b>One voice at a time.</b> When several members have something to say (a reply, a coding update, a lesson), they speak in turn, never over each other.</li>
   <li><b>They read each other's folders</b> (but only write in their own): Maya can see Ryan's roadmap and Sara's health notes when planning.</li>
   <li><b>Each keeps their own conversation</b>, so a chat with Sara never gets mixed up with your coding work with Ryan.</li>
   <li><b>You can rename them</b> and choose each one's voice on the Team page.</li>
@@ -573,12 +576,13 @@ straight away. There is nothing to register or set up.</p>
 <section>
 <h2><span class="num">16</span>Coding supervisor</h2>
 <p>Ryan runs real coding work on your projects with Claude Code, in the background, and acts like a good team lead between you and it.
-(Turn it on in the Tool Hub; it's off by default.)</p>
+(It's on by default; turn it off in the Tool Hub.)</p>
 <ol class="steps">
   <li><span class="say">Ryan, add a login page to my project</span>: you pick the project folder.</li>
   <li>Ryan writes the <b>spec</b> and waits for your OK (section 6).</li>
   <li>Claude Code works in the background while you do something else. Safe steps (reading, editing project files, running tests and builds) are approved for you according to your setting.</li>
-  <li>When Claude has a question or wants to do something risky, a small card appears (and is spoken) with <b>Ryan's recommendation and reason</b>. Answer by clicking or by voice: <span class="say">go with yours</span>, <span class="say">the second one</span>, <span class="say">no, keep it</span>.</li>
+  <li>When Claude has a question or wants to do something risky, a small card appears (and is spoken) with <b>Ryan's recommendation and reason</b>, in plain words (<i>"Let Ryan install the add-on axios from the internet?"</i>, with the exact command in small print). Answer by clicking or by voice: <span class="say">go with yours</span>, <span class="say">the second one</span>, <span class="say">no, keep it</span>.</li>
+  <li><b>Or let the team decide.</b> Say so in your own words (<span class="say">I'm in a meeting, sort it out with the team</span>, <span class="say">don't ask me, you decide</span>) or turn on <b>Team decides</b> on the card. Ryan then answers Claude's questions himself, asking Victor, Sara or Maya when it touches their field, and approves ordinary steps. No popups and no spoken updates. Three things are never done without you: publishing online, anything outside the project folder (including your computer's settings) and files that may hold passwords or keys. These are skipped, and the summary at the end lists what the team decided and what it left for you.</li>
   <li>You get progress updates while it works, and a summary at the end with the <b>test results</b> and the <b>list of changed files</b>; Ryan checks it against the spec and updates the board.</li>
 </ol>
 <table>
@@ -656,7 +660,7 @@ straight away. There is nothing to register or set up.</p>
   <li><b>Members only use the apps you give them</b> (Who can use it). Asking for anything else is blocked.</li>
   <li><b>Everything is logged</b> in Activity.</li>
   <li><b>Content is never obeyed:</b> text inside emails, documents, web pages, transcripts and screenshots is treated as information, never as instructions, even if it claims to come from you.</li>
-  <li><b>Coding work never skips permission checks;</b> risky steps always come to you.</li>
+  <li><b>Coding work never skips permission checks;</b> risky steps come to you. Even when you let the team decide, publishing online, anything outside the project folder and password files are left for you.</li>
 </ul>
 <h3>Your data stays yours</h3>
 <table>

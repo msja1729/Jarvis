@@ -35,7 +35,8 @@ import { BoardExecutor, RemindersExecutor } from '../tools/planner/executor.js';
 import { BoardStore, ReminderStore } from '../supervisor/reminders.js';
 import { ChatHistory } from './history.js';
 import { hookCommand, hooksInstalled, installHooks, removeHooks } from '../supervisor/hooks.js';
-import { shortTask } from '../supervisor/supervisor.js';
+import { shortTask, TEAM_SYSTEM } from '../supervisor/supervisor.js';
+import { FloorQueue } from '../speech/floor-queue.js';
 import os from 'node:os';
 import { fullName, isRole, peopleNames, PERSON_NAME, roleById, RoleId, ROLES } from '../roles/roles.js';
 import { canUse, cleanMembers, guessMembers, isShared, membersOf } from '../roles/access.js';
@@ -178,9 +179,16 @@ let voice: VoiceController;
 let kokoro: KokoroEngine;
 
 /** Stops any reply being spoken, in every window (e.g. when push-to-talk starts). */
+/** One voice at a time across all windows: a window waits for its turn before it speaks. */
+const speechFloor = new FloorQueue();
+const floorWatched = new Set<number>();
+
 function stopAllSpeech() {
   kokoro?.cancel();
+  speechFloor.clear();
   send('tts:stop-all');
+  // the coding card speaks too (its updates); the lesson keeps its own stop
+  if (supWindow && !supWindow.isDestroyed()) supWindow.webContents.send('tts:stop-all');
 }
 
 /** Make sure the main window exists, is loaded, and is in front. */
@@ -526,6 +534,15 @@ function makeSupervisor() {
     },
     // the advisor runs in Jarvis's own folder, not the project, so no project files steer it
     advise: (prompt, system) => (coder ? coder.advise(prompt, system, data('brain-cwd')) : Promise.resolve(null)),
+    // team decides: the project manager settles Claude's question, asking teammates when it needs their field
+    decide: async (prompt) => {
+      if (!brain) return null;
+      const notes = memoryPrefix('pm');
+      const ask = brain.ask(`${notes ? `${notes}\n` : ''}${timePrefix()} ${TEAM_SYSTEM}\n\n${prompt}`, null, modelFor('pm'), { role: 'pm' });
+      const late = new Promise<null>((r) => setTimeout(() => r(null), 180_000));
+      const res = await Promise.race([ask, late]).catch(() => null);
+      return res && !res.is_error ? res.reply : null;
+    },
     ui: {
       ask: (p) => void pushSup(supervisor.describe(p), true),
       settled: () => void pushSup(undefined, false),
@@ -1022,14 +1039,14 @@ async function connectorApprove(role: RoleId, conn: { key: string; tool: string 
  * Claude Code asks permission for a tool that is not Jarvis's own: an app from the Claude account
  * (any member, the front desk too), or one of Claude Code's own tools (experts only).
  */
-async function approveTool(role: string, req: { tool_name: string; input: Record<string, unknown> }) {
+async function approveTool(role: string, req: { tool_name: string; input: Record<string, unknown> }, consult = false) {
   const conn = splitConnectorTool(req.tool_name);
   if (conn) return connectorApprove(isRole(role) ? role : 'jarvis', conn, req);
   if (!isRole(role) || role === 'jarvis' || store.snapshot().claudeTools === false) {
     return { behavior: 'deny', message: 'Claude Code tools are turned off in Settings.' };
   }
   const jdir = app.getPath('userData');
-  const v = judgeExpert(req, { own: roleFolder(jdir, role), team: teamRoot(jdir) });
+  const v = judgeExpert(req, { own: roleFolder(jdir, role), team: teamRoot(jdir) }, { consult });
   const who = fullName(role, people());
   const log = (outcome: 'done' | 'blocked' | 'declined', detail: string) => activity.add({ role, appId: 'claude', ability: req.tool_name, outcome, detail });
   if (v.decision === 'deny') {
@@ -1049,7 +1066,9 @@ async function approveTool(role: string, req: { tool_name: string; input: Record
     input: req.input,
     summary: `${who} wants to ${v.what}.
 
-Jarvis asks you because ${v.why}.`,
+Jarvis asks you because ${v.why}.${v.detail ? `
+
+The exact command: ${v.detail}` : ''}`,
     title: askTitle(who, req.tool_name, v),
   });
   log(yes ? 'done' : 'declined', yes ? `${v.what} (you said yes)` : 'user clicked No');
@@ -1098,7 +1117,17 @@ async function askToShare(role: RoleId, prompt: string) {
 /* ---------- a member shows the user files: the preview next to the chat ---------- */
 /** What was shown during the request being answered (saved with the reply, so the chat can reopen it). */
 type LiveSet = ShownSet & { id: string; role: RoleId; at: number; titled: boolean };
-let shownThisRequest: LiveSet[] = [];
+/** Per member: they may work at the same time, each on their own request. */
+const shownByRole = new Map<RoleId, LiveSet[]>();
+/** Members answering a request right now, and the latest one to start (a consulted teammate's files go there). */
+const answering = new Set<RoleId>();
+let lastAnswering: RoleId | null = null;
+function shownFor(role: RoleId): LiveSet[] {
+  const r = answering.has(role) || !lastAnswering ? role : lastAnswering;
+  let list = shownByRole.get(r);
+  if (!list) shownByRole.set(r, (list = []));
+  return list;
+}
 
 async function showUser(role: RoleId, title: string, files: ShownFile[]) {
   const card = originIsMain(); // asked in the main chat: the chat shows a card for it right away
@@ -1116,6 +1145,7 @@ async function showUser(role: RoleId, title: string, files: ShownFile[]) {
     }
   }
   // several calls in a row (a member may show files one by one, even at once) make one preview and one card
+  const shownThisRequest = shownFor(role);
   const last = shownThisRequest[shownThisRequest.length - 1];
   let set: LiveSet;
   if (last && last.role === role && Date.now() - last.at < 15_000) {
@@ -1362,6 +1392,15 @@ function registerIpc() {
       setTimeout(() => media?.hold('reply', false), 1500);
     }
   });
+  /** What a member showed while answering (saved with the reply); their request is over. */
+  const takeShown = (r: RoleId | null): ShownSet[] => {
+    if (!r) return [];
+    answering.delete(r);
+    if (lastAnswering === r) lastAnswering = [...answering].at(-1) ?? null;
+    const list = shownByRole.get(r) ?? [];
+    shownByRole.delete(r);
+    return list.map((x) => ({ title: x.title, files: x.files }));
+  };
   const askInner = async (e: Electron.IpcMainInvokeEvent, text: string, picked?: string, opts?: { stream?: boolean; files?: string[] }) => {
     requestSender = e.sender;
     // files shown with the message (paperclip or dropped): saved in the folder of the member who will answer
@@ -1381,7 +1420,7 @@ function registerIpc() {
     const fromVoice = BrowserWindow.fromWebContents(target) === voiceWindow;
     const stream = opts?.stream === true;
     const conv = prepareConversation().conv;
-    shownThisRequest = [];
+    let asked: RoleId | null = null;
     // said on the voice card or typed in the box: the main chat shows it at once (not only once answered)
     const mirror = (m: Record<string, unknown>) => {
       if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents !== target) mainWindow.webContents.send('chat:mirror', m);
@@ -1399,10 +1438,14 @@ function registerIpc() {
         if (notes.length === 1) mirror({ kind: 'note', text: note, roleName: name, color: roleById(r).color });
       },
       spoken: fromVoice,
-      // who answers, so the window can show their name and use their voice right away
-      onRole: stream
-        ? (r) => !target.isDestroyed() && target.send('ask:start', { role: r, roleName: r === 'jarvis' ? 'Jarvis' : `${people()[r]} · ${roleById(r).name}`, roleColor: roleById(r).color, voice: roleVoice(r) })
-        : undefined,
+      // who answers (once it is their turn), so the window can show their name and use their voice right away
+      onRole: (r) => {
+        asked = r;
+        answering.add(r);
+        lastAnswering = r;
+        shownByRole.set(r, []);
+        if (stream && !target.isDestroyed()) target.send('ask:start', { role: r, roleName: r === 'jarvis' ? 'Jarvis' : `${people()[r]} · ${roleById(r).name}`, roleColor: roleById(r).color, voice: roleVoice(r) });
+      },
       // the reply as it is written; stops once a lesson opens (the lesson narrates itself)
       onText: stream ? (d) => !target.isDestroyed() && (lessons?.shown ?? 0) === before && target.send('ask:partial', d) : undefined,
     });
@@ -1422,8 +1465,7 @@ function registerIpc() {
       send('history:changed', { newChat: true });
       return { ...res, role, roleName, person: who, roleColor: roleById(role).color, voice: roleVoice(role), conv: null };
     }
-    const shown: ShownSet[] = shownThisRequest.map((x) => ({ title: x.title, files: x.files }));
-    shownThisRequest = [];
+    const shown: ShownSet[] = takeShown(asked);
     const items = history.add([
       { who: 'user', text: String(text), via },
       // only the first thing said while working is kept (the later ones are passing status)
@@ -1657,6 +1699,23 @@ function registerIpc() {
     kokoro.warmUp();
     return kokoro.status();
   });
+  ipcMain.handle('speech:floor', (e, token: string, on: boolean) => {
+    if (typeof token !== 'string') return false;
+    if (!on) {
+      speechFloor.release(token);
+      return true;
+    }
+    const wc = e.sender;
+    if (!floorWatched.has(wc.id)) {
+      floorWatched.add(wc.id);
+      const id = wc.id;
+      wc.once('destroyed', () => {
+        floorWatched.delete(id);
+        speechFloor.dropOwner(id);
+      });
+    }
+    return speechFloor.take({ token, owner: wc.id });
+  });
   ipcMain.handle('tts:speak', (e, text: string, opts: { voice?: string }) => {
     if (!kokoro.status().installed) return null; // the window falls back to the OS voice
     const snap = store.snapshot();
@@ -1721,6 +1780,8 @@ function registerIpc() {
     void pushSup(reply, true, 5000);
   });
   ipcMain.on('sup:stop', () => void pushSup(supervisor.stop(), true, 8000));
+  // the "Team decides" switch on the card
+  ipcMain.on('sup:teamDecides', (_e, on: boolean) => void pushSup(supervisor.setTeamDecides(Boolean(on)), true, 6000));
   ipcMain.on('sup:hide', () => supWindow?.hide());
   ipcMain.on('sup:openCode', () => {
     const root = supervisor.view()?.root;
@@ -1928,7 +1989,7 @@ app.whenReady().then(async () => {
   });
   control = await startControlServer(() => core, {
     approve: (runId, req) => supervisor.onPermission(runId, req),
-    expertApprove: (role, _consult, req) => approveTool(role, req),
+    expertApprove: (role, consult, req) => approveTool(role, req, consult),
     // each team member sees only its own apps; a consulted member cannot consult others (one hop)
     hook: (p) => {
       const folder = typeof p.cwd === 'string' ? path.basename(p.cwd) : 'your project';

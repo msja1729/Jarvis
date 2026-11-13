@@ -65,6 +65,8 @@ export class ClaudeCLIBrain implements Brain {
         builtinTools: ws ? { addDirs: ws.addDirs } : undefined,
         approve: this.opts.approve?.(ask.role, ask.consult) ?? null,
         hidden: this.opts.hidden?.(ask.role, ask.consult),
+        // a consulted teammate answers directly: no helpers of their own
+        helpers: Boolean(ws) && !ask.consult,
       }),
     ];
     const { env, removed } = sanitizeEnv(this.opts.baseEnv ?? process.env, { MCP_TOOL_TIMEOUT: '300000', ...CONNECTOR_ENV });

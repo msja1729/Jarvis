@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { classifyCommand, judge } from '../supervisor/policy.js';
 import { readChoice, readPermission } from '../supervisor/answer.js';
 import { Pending, Supervisor, SupervisorUI, Update } from '../supervisor/supervisor.js';
+import { keptForUser, plainCommand } from '../supervisor/plain.js';
 import { codeArgs, parseCodeLine, type CodeEvent } from '../brain/coder.js';
 import { startControlServer } from '../gateway/control-server.js';
 import { CODING_APP } from '../tools/coding/definition.js';
@@ -84,7 +85,7 @@ describe('understanding the user\'s answer', () => {
 });
 
 /** A fake coding session the test drives by hand. */
-function harness(opts: { advice?: string | null; autonomy?: 'careful' | 'balanced' | 'handsoff'; failStart?: boolean } = {}) {
+function harness(opts: { advice?: string | null; autonomy?: 'careful' | 'balanced' | 'handsoff'; failStart?: boolean; decide?: (prompt: string) => Promise<string | null> } = {}) {
   const asked: Pending[] = [];
   const updates: Update[] = [];
   const runs: { task: string; resume: string | null; runId: string; emit: (e: CodeEvent) => void; stopped: boolean }[] = [];
@@ -98,6 +99,7 @@ function harness(opts: { advice?: string | null; autonomy?: 'careful' | 'balance
       return { stop: () => (r.stopped = true), done: Promise.resolve() };
     },
     advise: async () => (opts.advice === undefined ? '{"pick":"PostgreSQL","why":"it handles many users well"}' : opts.advice),
+    decide: opts.decide,
     ui,
     settings: () => ({ autonomy: opts.autonomy ?? 'balanced', updateEvery: 5 }),
     setInterval: (f) => ((tick = f), 1),
@@ -118,7 +120,7 @@ describe('the supervisor at work', () => {
     expect(h.asked).toHaveLength(1);
     const p = h.asked[0];
     expect(p).toMatchObject({ kind: 'permission', risk: 'high', allow: false });
-    expect(h.sup.describe(p)).toMatch(/Claude wants to run: rm -rf build\. My rules ask you first because it deletes files\. I'd say no\. The build folder is needed by the tests\. Should I allow it\?/);
+    expect(h.sup.describe(p)).toMatch(/Claude wants to delete build\. My rules ask you first because it deletes files\. I'd say no\. The build folder is needed by the tests\. Should I allow it\?/);
     expect(h.sup.view()!.state).toBe('waiting');
     // the user answers by voice
     expect(h.sup.answerFromText("no, don't delete it")).toMatch(/told Claude not to/);
@@ -273,5 +275,94 @@ describe('test results (stage 2)', () => {
     expect(h.sup.view()!.tests).toMatchObject({ passed: 7, failed: 1, ok: false });
     run.emit({ type: 'result', text: 'Almost done; one test still fails.', isError: false, subtype: 'success', tokens: 1 });
     expect(h.updates.at(-1)!.text).toMatch(/changed 1 file \(src\/login\.ts\) and ran 1 command\. Tests: 7 passed, 1 failed\./);
+  });
+});
+
+describe('permissions in everyday words', () => {
+  it.each([
+    ['npm install axios', 'install the add-on axios from the internet'],
+    ['npm install', 'install the add-ons this project needs from the internet'],
+    ['pip install -r requirements.txt', 'install the Python add-ons this project needs from the internet'],
+    ['git push origin main', 'publish the code changes online (to GitHub or another server)'],
+    ['git commit -m "x"', 'save a checkpoint of the code changes'],
+    ['rm -rf build', 'delete build'],
+    ['cd app && npm test', "run the project's tests"],
+    ['npm run build && npm test', "build the project and then run the project's tests"],
+    ['curl https://example.com/x.zip -o x.zip', 'download something from the internet (example.com)'],
+    ['python train.py', 'run the program train.py'],
+  ])('%s → %s', (cmd, said) => {
+    expect(plainCommand(cmd)).toBe(said);
+  });
+});
+
+describe('steps the team never takes on its own', () => {
+  const bash = (command: string) => ({ tool_name: 'Bash', input: { command } });
+  it('keeps publishing, outside the folder, passwords and computer settings for the user', () => {
+    expect(keptForUser(bash('git push'), ROOT)).toMatch(/publishes online/);
+    expect(keptForUser(bash('npm publish'), ROOT)).toMatch(/publishes online/);
+    expect(keptForUser(bash('cat .env'), ROOT)).toMatch(/passwords/);
+    expect(keptForUser({ tool_name: 'Edit', input: { file_path: path.resolve(ROOT, '..', 'other', 'a.ts') } }, ROOT)).toMatch(/outside the project/);
+    expect(keptForUser(bash('setx PATH "%PATH%;C:\tools"'), ROOT)).toMatch(/changes your computer/);
+  });
+  it('lets ordinary project work through', () => {
+    expect(keptForUser(bash('npm install axios'), ROOT)).toBeNull();
+    expect(keptForUser(bash('rm -rf build'), ROOT)).toBeNull();
+    expect(keptForUser({ tool_name: 'Edit', input: { file_path: inRoot('src/a.ts') } }, ROOT)).toBeNull();
+  });
+});
+
+describe('team decides', () => {
+  it('approves, answers and skips on its own, with no popups, and tells the user at the end', async () => {
+    const prompts: string[] = [];
+    const h = harness({
+      advice: '{"allow": true, "why": "the tests need it"}',
+      decide: async (p) => (prompts.push(p), 'I asked Victor; cost matters here. {"pick": "SQLite", "why": "free and simple for one user"}'),
+    });
+    h.sup.start('build a budget app', ROOT, { teamDecides: true });
+    const runId = h.runs[0].runId;
+    // a risky step the advisor is fine with: allowed without asking
+    expect(await h.sup.onPermission(runId, { tool_name: 'Bash', input: { command: 'rm -rf build' } })).toMatchObject({ behavior: 'allow' });
+    // publishing online: skipped, never asked
+    const push = await h.sup.onPermission(runId, { tool_name: 'Bash', input: { command: 'git push' } });
+    expect(push).toMatchObject({ behavior: 'deny', message: expect.stringMatching(/^Skipped: publish the code changes online.*publishes online.*carry on/) });
+    // a question: the project manager decides
+    const q = await h.sup.onPermission(runId, { tool_name: 'AskUserQuestion', input: { questions: [{ question: 'Which database?', options: [{ label: 'SQLite' }, { label: 'PostgreSQL' }] }] } });
+    expect(q).toMatchObject({ behavior: 'allow', updatedInput: { answers: { 'Which database?': 'SQLite' } } });
+    expect(prompts[0]).toMatch(/Which database\?[\s\S]*1\. SQLite/);
+    expect(h.asked).toHaveLength(0);
+    // no spoken progress updates while the team decides
+    h.runs[0].emit({ type: 'tool', name: 'Bash', input: { command: 'npm test' } });
+    h.tick();
+    expect(h.updates.filter((u) => u.kind === 'progress')).toHaveLength(0);
+    h.runs[0].emit({ type: 'result', text: 'All done.', isError: false, subtype: 'success', tokens: 0 });
+    const done = h.updates.at(-1)!;
+    expect(done.kind).toBe('done');
+    expect(done.text).toMatch(/The team decided 2 things on its own: let Claude delete build; "Which database\?": SQLite \(free and simple for one user\)\./);
+    expect(done.text).toMatch(/I skipped 1 step that needs you: publish the code changes online .*\(it publishes online\)\. Tell me if you want any of them done\./);
+  });
+
+  it('turning it on mid-task settles the question already waiting; off brings questions back', async () => {
+    const h = harness({ advice: '{"pick":"PostgreSQL","why":"it handles many users well"}' });
+    h.sup.start('add a database', ROOT);
+    const runId = h.runs[0].runId;
+    const pending = h.sup.onPermission(runId, { tool_name: 'AskUserQuestion', input: { questions: [{ question: 'Which database?', options: [{ label: 'SQLite' }, { label: 'PostgreSQL' }] }] } });
+    await h.flush();
+    expect(h.asked).toHaveLength(1);
+    expect(h.sup.setTeamDecides(true)).toMatch(/without disturbing you/);
+    // no decide hook here: the advisor's pick is used
+    expect(await pending).toMatchObject({ behavior: 'allow', updatedInput: { answers: { 'Which database?': 'PostgreSQL' } } });
+    expect(h.sup.view()!.teamDecides).toBe(true);
+    h.sup.setTeamDecides(false);
+    const next = h.sup.onPermission(runId, { tool_name: 'Bash', input: { command: 'rm -rf dist' } });
+    await h.flush();
+    expect(h.asked).toHaveLength(2);
+    h.sup.answer(h.asked[1].id, { allow: false });
+    expect(await next).toMatchObject({ behavior: 'deny', message: expect.stringMatching(/^The user said no/) });
+  });
+
+  it('the coding tool turns it on from the request, and has a switch for a running task', () => {
+    const start = CODING_APP.abilities.find((a) => a.name === 'start')!;
+    expect(JSON.stringify(start.inputSchema)).toMatch(/team_decides/);
+    expect(CODING_APP.abilities.some((a) => a.name === 'team_decides')).toBe(true);
   });
 });

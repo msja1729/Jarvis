@@ -8,7 +8,7 @@ A personal assistant, a project manager, a doctor and a finance advisor on your 
 You talk to them by name, just like talking to a person, and they get the work done.
 They run on **your own Claude Pro or Max plan**.
 
-[**Download for Windows**](https://github.com/msja1729/Jarvis/releases/latest/download/Jarvis-Setup-0.8.1.exe) · [Project page](https://msja1729.github.io/Jarvis/) · [What Jarvis can do (PDF)](docs/Jarvis-Capabilities.pdf) · [All releases](https://github.com/msja1729/Jarvis/releases)
+[**Download for Windows**](https://github.com/msja1729/Jarvis/releases/latest/download/Jarvis-Setup-0.9.0.exe) · [Project page](https://msja1729.github.io/Jarvis/) · [What Jarvis can do (PDF)](docs/Jarvis-Capabilities.pdf) · [All releases](https://github.com/msja1729/Jarvis/releases)
 
 <img src="docs/images/chat.png" alt="Asking Sara, the doctor, about a headache" width="860" />
 
@@ -37,12 +37,18 @@ Start a message with a name, like *"Sara, …"*, and you stay with her until you
 - Press **Ctrl+Alt+Space** in any app, speak, and the right member answers out loud in their own natural voice. Speech recognition and the voices run on your computer; your voice never leaves it.
 - Before working, a member tells you what they will do and how long it takes ("On it, about 2 minutes"), then does it.
 - The **voice card** above the taskbar (Ctrl+Alt+J) and the **floating chat box** (Ctrl+Shift+Space) can be moved, resized and minimised; whatever you ask there also shows in the main chat.
-- One switch, **Speak replies aloud**, decides whether answers are read out, everywhere. Music and videos pause while you talk.
+- Speak as long as you need: a long explanation, like a project's specification, is never cut, and you can pause to think.
+- One switch, **Speak replies aloud**, decides whether answers are read out, everywhere. Music and videos pause while you talk, and when several members have something to say, they speak one at a time, never over each other.
 
 **They know you**
 - Each member keeps their own notes and profile files about you (Sara your health profile and every lab value, Victor your budget, Ryan your roadmap, Maya your routine and writing style) and uses them in every answer.
 - Each follows the method of their field: Sara checks warning signs first, Victor reads your investment policy before any money decision, Ryan writes a spec before any coding.
 - They ask each other for help and read each other's notes. They can also use Claude Code's own tools (files, web pages, Python for exact sums) in their own folder.
+
+**They work at the same time**
+- Ask Maya something, then Victor straight away: both work at once, and you can keep typing while they do.
+- A member asks two or three teammates at once ("Ryan, ask Victor about the cost and Sara about the health side") and gets all the answers together.
+- For big jobs a member starts helpers that work side by side (three countries' interest rates, five lab reports). Helpers only read and search, and the member writes the result after they report back, so nothing gets in each other's way.
 
 **They work in your apps**
 - Gmail, Google Calendar, Microsoft 365, Notion, Slack, Spotify and the rest of Claude's connectors: connect an app once on claude.ai (the Tool Hub opens the page and notices when it is connected) and your team can use it.
@@ -66,12 +72,21 @@ Start a message with a name, like *"Sara, …"*, and you stay with her until you
 **Learn and work**
 - Lessons: a narrated, step-by-step explanation plays beside your work, with diagrams, animated graphs and equations, at your level.
 - They read a PDF, a file or a code folder you pick and quote the exact page or line, and look at your screen when you ask.
-- "Ryan, add a login page to my project": Claude Code works in the background; Ryan brings you only the real decisions with his recommendation and gives spoken updates. Risky steps always wait for you.
+- "Ryan, add a login page to my project": Claude Code works in the background; Ryan brings you only the real decisions with his recommendation, in plain words ("Let Ryan install the add-on axios from the internet?"), and gives spoken updates.
+- Busy? Say so in your own words ("I'm in a meeting, sort it out with the team") or turn on **Team decides** on the coding card: the team makes the decisions without popups and tells you everything at the end. Publishing online, anything outside the project folder and password files are never done without you: they are skipped and listed for you.
 - Web search steered to trusted sources, with the sources named. Conversations are kept by day, searchable, and can be continued.
 
 <img src="docs/images/preview.png" alt="Maya shows the trip plan in the preview next to the chat" width="860" />
 
 <table>
+<tr>
+<td><img src="docs/images/coding-card.png" alt="The coding card with Team decides on, and the summary at the end" /></td>
+<td><img src="docs/images/permission.png" alt="A permission popup in plain words" /></td>
+</tr>
+<tr>
+<td align="center">Team decides: the team handled Claude's questions and left publishing to you</td>
+<td align="center">Permissions in plain words, with the exact command in small print</td>
+</tr>
 <tr>
 <td><img src="docs/images/team.png" alt="The Team page" /></td>
 <td><img src="docs/images/tool-hub.png" alt="The Tool Hub" /></td>
@@ -84,7 +99,7 @@ Start a message with a name, like *"Sara, …"*, and you stay with her until you
 
 ## Install (Windows 10/11)
 
-1. **[Download Jarvis-Setup-0.8.1.exe](https://github.com/msja1729/Jarvis/releases/latest/download/Jarvis-Setup-0.8.1.exe)** and run it.
+1. **[Download Jarvis-Setup-0.9.0.exe](https://github.com/msja1729/Jarvis/releases/latest/download/Jarvis-Setup-0.9.0.exe)** and run it.
    Windows may say *"Windows protected your PC"* because the installer is not code-signed yet: click **More info → Run anyway**.
 2. A short welcome sets everything up: your name and how to say it, connecting your Claude (buttons install Claude Code and sign you in through your browser if needed), your team's tools, and the natural voices. Then each member introduces themselves.
 

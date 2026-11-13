@@ -95,3 +95,51 @@ export function prepareSpeech(pcm: Uint8Array, sampleRate = SAMPLE_RATE): Uint8A
   }
   return out;
 }
+
+/**
+ * Long speech is turned into text in pieces: the speech engine skips sentences in recordings much
+ * longer than 30 seconds. Each piece is at most maxSec long and ends at the quietest moment between
+ * minSec and maxSec (a pause between words), so no word is cut in two.
+ */
+export function splitAtPauses(pcm: Uint8Array, maxSec = 25, minSec = 12, sampleRate = SAMPLE_RATE): Uint8Array[] {
+  const bytesPerSec = sampleRate * 2;
+  const frame = Math.round(sampleRate * 0.1) * 2; // 100 ms
+  const pieces: Uint8Array[] = [];
+  let start = 0;
+  const v = new DataView(pcm.buffer, pcm.byteOffset, pcm.byteLength - (pcm.byteLength % 2));
+  const energy = (at: number) => {
+    let sum = 0;
+    const end = Math.min(at + frame, v.byteLength);
+    for (let i = at; i + 1 < end; i += 2) {
+      const x = v.getInt16(i, true);
+      sum += x * x;
+    }
+    return sum;
+  };
+  while (pcm.length - start > maxSec * bytesPerSec) {
+    let best = start + maxSec * bytesPerSec;
+    let bestE = Infinity;
+    for (let at = start + minSec * bytesPerSec; at + frame <= start + maxSec * bytesPerSec; at += frame) {
+      const e = energy(at);
+      if (e < bestE) {
+        bestE = e;
+        best = at + frame / 2 - ((at + frame / 2) % 2);
+      }
+    }
+    pieces.push(pcm.subarray(start, best));
+    start = best;
+  }
+  pieces.push(pcm.subarray(start));
+  return pieces.filter((p) => p.length > 0);
+}
+
+/** The sound data of a WAV file (after its "data" header). */
+export function wavData(wav: Uint8Array): Uint8Array {
+  for (let i = 12; i + 8 <= wav.length && i < 4096; ) {
+    const id = String.fromCharCode(wav[i], wav[i + 1], wav[i + 2], wav[i + 3]);
+    const size = wav[i + 4] | (wav[i + 5] << 8) | (wav[i + 6] << 16) | (wav[i + 7] << 24);
+    if (id === 'data') return wav.subarray(i + 8, Math.min(wav.length, i + 8 + (size >>> 0)));
+    i += 8 + size + (size % 2);
+  }
+  return wav.subarray(44);
+}

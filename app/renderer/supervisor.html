@@ -23,6 +23,7 @@
       <section id="ask" class="ask hidden">
         <div id="ask-label" class="label">Claude is asking</div>
         <div id="ask-text" class="question"></div>
+        <div id="detail-head" class="detail-head hidden"></div>
         <pre id="ask-detail" class="detail hidden"></pre>
         <div id="advice" class="advice hidden"><span class="who">PM</span><span id="advice-text"></span></div>
         <div id="choices" class="choices"></div>
@@ -41,6 +42,9 @@
 
       <footer class="foot">
         <span id="files" class="files"></span>
+        <label class="team-switch" title="The team answers Claude's questions and permissions without asking you. Publishing online, anything outside the project folder and password files are skipped and told to you at the end.">
+          <input id="team" type="checkbox" /><span class="track"></span><span>Team decides</span>
+        </label>
         <button id="open" class="chip" title="Open the project in VS Code">Open in VS Code</button>
         <button id="stop" class="chip danger">Stop</button>
       </footer>
