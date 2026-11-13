@@ -97,6 +97,27 @@ Start a message with a name, like *"Sara, …"*, and you stay with her until you
 </tr>
 </table>
 
+## Make your team better
+
+Out of the box they are good in their field; what you give them makes them *your* assistant, doctor, advisor and project manager. Open a member's folder from the **Team** page (**Open folder**): the files are ordinary documents, and your edits are never overwritten.
+
+- **Fill in their Profile files** (the `Profile` folder). The facts there are read at the start of every conversation, so you never repeat yourself.
+  Sara: *Health profile* and *Biomarkers.csv* (conditions, medicines, allergies, lab values). Victor: *Balance sheet*, *Cash flow*, *Investment policy*. Ryan: *Roadmap*. Maya: *About me*, *Writing style* (so her drafts sound like you).
+- **Or just tell them once:** "Victor, I earn 60,000 a month after tax", "Sara, I'm allergic to penicillin". They write it into their profile themselves.
+- **Give them your reference material** (the `Reference` folder): Ryan's *Coding standards*, *Spec template* and *Definition of done*; the ranges printed on your own lab's report in Sara's *Lab ranges*; your country's tax slabs and rates in Victor's *Rates and rules* (with the date you checked).
+- **Teach them your own skills** (the `Skills` folder): a Markdown file whose first line says what it is for, then the steps or rules. They pick it when a task matches. For example, `Project Manager/Skills/Weekly status report.md`:
+  ```markdown
+  # Weekly status report for my team (every Friday, or when I ask for a status report)
+  1. Read Roadmap.md and the board; list what was finished this week.
+  2. List what is late, with the reason and a new date.
+  3. Name the top 3 risks, each with one action.
+  4. Under 200 words, in bullet points; save it in Projects/<project>/Status/ with today's date.
+  ```
+  More ideas: Sara: "My diabetes check-in"; Victor: "Monthly budget review" with your categories and limits; Maya: "How I want my inbox sorted". A skill can't switch off their safety rules.
+- **Show them your documents:** lab reports, prescriptions, bank statements, bills, project briefs (paperclip, drop box or "Sara, I want to show you something"). They are kept in that member's folder for later.
+- **Check and correct what they remember:** Team page → *What Sara remembers*. And when they get something wrong, say so ("No, I stopped that medicine in June"); they update their notes.
+- **Give them the right apps** in the Tool Hub (Maya: email and calendar; Ryan: GitHub or Notion), and choose how they explain things in Settings.
+
 ## Install (Windows 10/11)
 
 1. **[Download Jarvis-Setup-0.9.0.exe](https://github.com/msja1729/Jarvis/releases/latest/download/Jarvis-Setup-0.9.0.exe)** and run it.
